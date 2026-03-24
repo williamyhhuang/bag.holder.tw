@@ -213,15 +213,12 @@ docs-serve:
 # Environment validation
 validate-env:
 	@echo "✅ Validating environment..."
-	python -c "
-import os
-required_vars = ['FUBON_API_KEY', 'FUBON_SECRET', 'TELEGRAM_BOT_TOKEN', 'POSTGRES_PASSWORD']
-missing = [var for var in required_vars if not os.getenv(var)]
-if missing:
-    print(f'❌ Missing environment variables: {missing}')
-    exit(1)
-else:
-    print('✅ All required environment variables are set')
+	@python -c " \
+import os; \
+required_vars = ['FUBON_API_KEY', 'FUBON_SECRET', 'TELEGRAM_BOT_TOKEN', 'POSTGRES_PASSWORD']; \
+missing = [var for var in required_vars if not os.getenv(var)]; \
+print('❌ Missing environment variables: ' + str(missing)) if missing else print('✅ All required environment variables are set'); \
+exit(1) if missing else None \
 "
 
 # System info
