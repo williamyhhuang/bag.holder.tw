@@ -30,6 +30,12 @@ help:
 	@echo "  make health     - Check system health"
 	@echo "  make metrics    - View system metrics"
 	@echo "  make status     - Show service status"
+	@echo ""
+	@echo "Git Operations:"
+	@echo "  make commit MSG='message' - Create commit with message"
+	@echo "  make smart-commit - Auto-detect changes and commit"
+	@echo "  make git-status  - Show git status with file changes"
+	@echo "  make git-log     - Show recent commit history"
 
 # Installation and setup
 install:
@@ -227,3 +233,35 @@ info:
 	@echo "💻 System:" && uname -a
 	@echo "🧠 Memory:" && free -h 2>/dev/null || vm_stat | head -5
 	@echo "💽 Disk:" && df -h . | head -2
+
+# Git operations
+commit:
+	@if [ -z "$(MSG)" ]; then \
+		echo "❌ Please provide a commit message: make commit MSG='your message'"; \
+		exit 1; \
+	fi
+	@echo "📝 Creating commit with message: $(MSG)"
+	./scripts/auto-commit.sh "$(MSG)"
+
+smart-commit:
+	@echo "🤖 Running smart commit..."
+	./scripts/smart-commit.sh -y
+
+git-status:
+	@echo "📊 Git Status"
+	@echo "============="
+	@git status --short --branch
+	@echo ""
+	@echo "📋 Recent Changes:"
+	@git diff --stat
+
+git-log:
+	@echo "📜 Recent Commit History"
+	@echo "======================="
+	@git log --oneline --graph --decorate -10
+
+git-setup:
+	@echo "⚙️  Setting up Git configuration..."
+	@git config user.name "Taiwan Stock Monitor"
+	@git config user.email "dev@twstock.local"
+	@echo "✅ Git configuration completed"
