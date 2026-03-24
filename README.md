@@ -29,12 +29,25 @@
 
 ## 🚀 快速開始
 
+### 支援平台
+
+- 🍎 **macOS** (Mac Mini 2015+)
+- 🪟 **Windows 11** (筆電/桌機)
+- 🐧 **Linux** (Ubuntu 20.04+)
+
 ### 1. 環境需求
 
+#### macOS / Linux
 - Docker & Docker Compose
 - Python 3.11+ (開發用)
 - PostgreSQL 15+ (可用 Docker)
 - Redis 7+ (可用 Docker)
+
+#### Windows 11
+- Docker Desktop for Windows
+- Python 3.11+
+- Windows Terminal (建議)
+- WSL 2 (建議)
 
 ### 2. 設定配置
 
@@ -61,23 +74,53 @@ POSTGRES_PASSWORD=your_secure_password
 
 ### 3. 啟動服務
 
+#### macOS / Linux
 ```bash
-# 啟動所有服務
-docker-compose up -d
+# 開發環境
+make dev
+
+# 生產環境
+make prod
 
 # 查看服務狀態
-docker-compose ps
-
-# 查看日誌
-docker-compose logs -f
+make status
 ```
 
-### 4. Mac Mini 2015 優化部署
+#### Windows 11
+```batch
+# 開發環境
+scripts\start-windows-dev.bat
+
+# 生產環境
+scripts\start-windows-prod.bat
+
+# 檢查服務健康
+scripts\windows-health-check.bat
+```
+
+### 4. 平台最佳化部署
+
+#### Mac Mini 2015 優化
 
 ```bash
 # 使用資源限制版本
 docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
 ```
+
+#### Windows 11 筆電優化
+
+```batch
+# 使用 Windows 最佳化配置
+docker-compose -f docker-compose.yml -f docker-compose.windows.yml up -d
+
+# 或使用便捷腳本
+scripts\start-windows-prod.bat
+```
+
+**效能配置差異：**
+- **Mac Mini 2015**: 2GB RAM, 2 CPU cores
+- **Windows 11 筆電**: 4GB RAM, 4 CPU cores
+- **掃描間隔**: Windows 版本較短 (5分鐘 vs 10分鐘)
 
 ## 📁 專案結構
 

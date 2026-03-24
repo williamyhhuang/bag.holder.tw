@@ -1,0 +1,111 @@
+# Windows-specific Docker Compose configuration
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.windows.yml up
+version: '3.8'
+
+services:
+  # PostgreSQL with Windows path mapping
+  postgres:
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./data/backups:/backups  # Windows path format
+    environment:
+      # Windows-optimized settings
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_WORK_MEM: 8MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 128MB
+
+  # Redis with Windows optimization
+  redis:
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --dir /data
+
+  # Main application with Windows paths
+  app:
+    environment:
+      # Windows-optimized performance settings
+      - MAX_WORKERS=4
+      - MEMORY_LIMIT_MB=4096
+      - CPU_LIMIT=4.0
+      - BATCH_PROCESSING_DELAY=0.5
+      # Windows path format
+      - LOG_FILE_PATH=C:/app/logs/app.log
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.0'
+
+  # Scanner service optimized for Windows
+  scanner:
+    environment:
+      # Windows laptop optimization
+      - SCAN_INTERVAL_SECONDS=300
+      - SCAN_BATCH_SIZE=50
+      - SCAN_MAX_CONCURRENT=8
+      - MAX_WORKERS=2
+      - MEMORY_LIMIT_MB=2048
+      - BATCH_PROCESSING_DELAY=1.0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+
+  # Telegram bot with Windows paths
+  telegram-bot:
+    environment:
+      - MAX_WORKERS=2
+      - MEMORY_LIMIT_MB=512
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+
+  # Windows-specific monitoring (optional)
+  windows-monitor:
+    image: prom/node-exporter:latest
+    container_name: tw-stock-windows-monitor
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: tw-stock-network-windows
