@@ -63,7 +63,7 @@ class FubonAPISettings(BaseSettings):
 
 class TelegramSettings(BaseSettings):
     """Telegram bot configuration"""
-    bot_token: str = Field(env="TELEGRAM_BOT_TOKEN")
+    bot_token: str = Field(default="dummy_token", env="TELEGRAM_BOT_TOKEN")
     webhook_url: Optional[str] = Field(default=None, env="TELEGRAM_WEBHOOK_URL")
     webhook_secret: Optional[str] = Field(default=None, env="TELEGRAM_WEBHOOK_SECRET")
 
@@ -85,7 +85,7 @@ class AppSettings(BaseSettings):
 class LoggingSettings(BaseSettings):
     """Logging configuration"""
     level: str = Field(default="INFO", env="LOG_LEVEL")
-    file_path: str = Field(default="/app/logs/app.log", env="LOG_FILE_PATH")
+    file_path: str = Field(default="logs/app.log", env="LOG_FILE_PATH")
     max_file_size: str = Field(default="10MB", env="LOG_MAX_FILE_SIZE")
     backup_count: int = Field(default=5, env="LOG_BACKUP_COUNT")
 
@@ -148,7 +148,7 @@ class DataRetentionSettings(BaseSettings):
 
 class SecuritySettings(BaseSettings):
     """Security configuration"""
-    secret_key: str = Field(env="SECRET_KEY")
+    secret_key: str = Field(default="dummy_secret_key", env="SECRET_KEY")
     allowed_hosts: List[str] = Field(default=["localhost", "127.0.0.1"], env="ALLOWED_HOSTS")
     cors_origins: List[str] = Field(default=[], env="CORS_ORIGINS")
 
@@ -160,6 +160,21 @@ class SecuritySettings(BaseSettings):
 
     class Config:
         env_prefix = "SECURITY_"
+
+class FuturesSettings(BaseSettings):
+    """Futures monitoring configuration"""
+    enabled_contracts: List[str] = Field(default=["TXF", "MXF", "MTX"], env="FUTURES_ENABLED_CONTRACTS")
+    monitor_interval: int = Field(default=30, env="FUTURES_MONITOR_INTERVAL")
+    max_position_size: int = Field(default=10, env="FUTURES_MAX_POSITION_SIZE")
+
+    @validator('enabled_contracts', pre=True)
+    def split_contracts(cls, v):
+        if isinstance(v, str):
+            return [contract.strip() for contract in v.split(',')]
+        return v
+
+    class Config:
+        env_prefix = "FUTURES_"
 
 class PerformanceSettings(BaseSettings):
     """Performance optimization settings (for Mac Mini 2015)"""
@@ -182,12 +197,14 @@ class Settings(BaseSettings):
     alerts: AlertSettings = AlertSettings()
     data_retention: DataRetentionSettings = DataRetentionSettings()
     security: SecuritySettings = SecuritySettings()
+    futures: FuturesSettings = FuturesSettings()
     performance: PerformanceSettings = PerformanceSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")
         env_file_encoding = 'utf-8'
         case_sensitive = False
+        extra = 'ignore'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

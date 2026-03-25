@@ -111,6 +111,39 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Taiwan Index Futures monitor (TXF, MXF, MTX only)
+  futures-monitor:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: tw-stock-futures
+    command: ["python", "-m", "src.futures.main"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-tw_stock}
+      - REDIS_URL=redis://redis:6379
+      - FUBON_API_KEY=${FUBON_API_KEY}
+      - FUBON_API_SECRET=${FUBON_API_SECRET}
+      - FUBON_USER_ID=${FUBON_USER_ID}
+      - FUBON_PASSWORD=${FUBON_PASSWORD}
+      - FUBON_CERT_PATH=${FUBON_CERT_PATH}
+      - FUBON_CERT_PASSWORD=${FUBON_CERT_PASSWORD}
+      - FUBON_IS_SIMULATION=${FUBON_IS_SIMULATION:-true}
+      - FUTURES_ENABLED_CONTRACTS=${FUTURES_ENABLED_CONTRACTS:-TXF,MXF,MTX}
+      - FUTURES_MONITOR_INTERVAL=${FUTURES_MONITOR_INTERVAL:-30}
+      - FUTURES_MAX_POSITION_SIZE=${FUTURES_MAX_POSITION_SIZE:-10}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - futures  # Optional service, enable with --profile futures
+
 volumes:
   postgres_data:
   redis_data:

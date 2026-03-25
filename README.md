@@ -1,30 +1,32 @@
 # 台股監控機器人 (Taiwan Stock Monitoring Robot)
 
-基於富邦 API 的台股監控機器人，能夠全市場掃描 1,800+ 檔股票，進行即時技術指標分析，並透過 Telegram 發送買賣信號通知。
+基於富邦證券官方 SDK 的台股監控機器人，能夠全市場掃描 1,800+ 檔股票，進行即時技術指標分析，並支援台指期貨監控，透過 Telegram 發送買賣信號通知。
 
 ## 🎯 專案特色
 
 - **全市場掃描**: 監控 TSE/OTC 市場 1,800+ 檔股票
+- **期貨監控**: 專注台指期貨三大合約 (TXF大台/MXF小台/MTX微台)
 - **即時技術分析**: 支援多種技術指標 (MA, RSI, MACD, 布林通道)
 - **智能通知系統**: Telegram Bot 推送買賣信號
 - **投資組合追蹤**: 個人投資組合管理與績效追蹤
 - **容器化部署**: Docker + Docker Compose 一鍵部署
-- **Mac Mini 最佳化**: 針對 Mac Mini 2015 資源優化
+- **跨平台支援**: macOS、Windows 11、Linux 全平台最佳化
+- **官方 SDK 整合**: 使用富邦證券 fubon_neo 官方 SDK
 
 ## 🏗️ 系統架構
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   Taiwan Stock Monitor                      │
-├─────────────────────────────────────────────────────────────┤
-│  📱 Telegram Bot  │  🔍 Scanner  │  📊 API Server  │  📈 Web │
-├─────────────────────────────────────────────────────────────┤
-│                    🧠 Core Services                         │
-│  • Rate Limiter   • Logger      • Error Handler            │
-│  • Config Mgr     • DB Models   • Tech Indicators          │
-├─────────────────────────────────────────────────────────────┤
-│  💾 PostgreSQL    │  🚀 Redis Cache  │  📊 Fubon API      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                   Taiwan Stock Monitor                         │
+├─────────────────────────────────────────────────────────────────┤
+│  📱 Telegram Bot  │  🔍 Scanner  │  🎯 Futures  │  📊 API Server │
+├─────────────────────────────────────────────────────────────────┤
+│                        🧠 Core Services                        │
+│  • Rate Limiter   • Logger      • Error Handler              │
+│  • Config Mgr     • DB Models   • Tech Indicators            │
+├─────────────────────────────────────────────────────────────────┤
+│  💾 PostgreSQL  │  🚀 Redis Cache  │  📊 Fubon Neo SDK        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 快速開始
@@ -61,26 +63,46 @@ nano .env
 
 必要配置項目：
 ```env
-# 富邦 API
+# 富邦證券 API 認證 (二選一)
+# 方式 1: API Key (推薦)
 FUBON_API_KEY=your_fubon_api_key_here
-FUBON_SECRET=your_fubon_secret_here
+FUBON_API_SECRET=your_fubon_api_secret_here
+
+# 方式 2: 憑證檔案
+FUBON_USER_ID=your_fubon_user_id_here
+FUBON_PASSWORD=your_fubon_password_here
+FUBON_CERT_PATH=/path/to/your/certificate.pfx
+FUBON_CERT_PASSWORD=your_certificate_password_here
+
+# 環境設定
+FUBON_IS_SIMULATION=true
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 
 # 資料庫
 POSTGRES_PASSWORD=your_secure_password
+
+# 期貨監控設定
+FUTURES_ENABLED_CONTRACTS=TXF,MXF,MTX
+FUTURES_MONITOR_INTERVAL=30
 ```
 
 ### 3. 啟動服務
 
 #### macOS / Linux
 ```bash
-# 開發環境
+# 開發環境 (股票監控)
 make dev
 
-# 生產環境
+# 生產環境 (股票監控)
 make prod
+
+# 啟動期貨監控
+docker-compose --profile futures up -d
+
+# 啟動全部服務 (股票 + 期貨)
+docker-compose --profile futures up -d
 
 # 查看服務狀態
 make status
@@ -94,8 +116,21 @@ scripts\start-windows-dev.bat
 # 生產環境
 scripts\start-windows-prod.bat
 
+# 啟動期貨監控
+docker-compose --profile futures up -d
+
 # 檢查服務健康
 scripts\windows-health-check.bat
+```
+
+#### 期貨監控獨立啟動
+```bash
+# 僅啟動期貨監控 (TXF, MXF, MTX)
+docker-compose up postgres redis futures-monitor -d
+
+# 開發模式直接執行
+source venv/bin/activate
+python -m src.futures.main
 ```
 
 ### 4. 平台最佳化部署
@@ -128,12 +163,15 @@ scripts\start-windows-prod.bat
 bag.holder.tw/
 ├── src/                          # 主要程式碼
 │   ├── api/                      # API 客戶端
-│   │   └── fubon_client.py      # 富邦 API 客戶端
+│   │   └── fubon_client.py      # 富邦證券 SDK 客戶端
 │   ├── database/                 # 資料庫相關
 │   │   ├── models.py            # 資料模型
 │   │   └── connection.py        # 資料庫連線
 │   ├── scanner/                  # 市場掃描引擎
 │   ├── indicators/               # 技術指標計算
+│   ├── futures/                  # 期貨監控模組
+│   │   ├── main.py              # 期貨監控主程式
+│   │   └── monitor.py           # 台指期貨監控邏輯
 │   ├── telegram/                 # Telegram Bot
 │   └── utils/                    # 工具模組
 │       ├── logger.py            # 日誌系統
@@ -154,10 +192,53 @@ bag.holder.tw/
 └── README.md                     # 專案說明
 ```
 
+## 🎯 台指期貨監控
+
+### 監控範圍
+本系統專注於台灣指數期貨最重要的三大合約：
+
+- **TXF (大台)**: 台指期貨，合約大小 200 點，適合大額交易
+- **MXF (小台)**: 小台指期貨，合約大小 50 點，適合中額交易
+- **MTX (微台)**: 微型台指期貨，合約大小 10 點，適合小額交易
+
+### 自動化功能
+- **近月合約追蹤**: 自動計算並追蹤近月到期合約
+- **價格突破警示**: 1.5% 以上價格變動即時通知
+- **成交量異常檢測**: 各合約專用成交量監控
+- **高波動檢測**: 3% 以上振幅變化警報
+- **技術指標分析**: 專為期貨設計的技術指標
+
+### 啟動期貨監控
+
+```bash
+# 啟動期貨監控服務 (推薦)
+docker-compose --profile futures up -d
+
+# 僅啟動期貨監控
+docker-compose up postgres redis futures-monitor -d
+
+# 開發模式
+source venv/bin/activate
+python -m src.futures.main
+```
+
+### 期貨監控設定
+
+在 `.env` 檔案中配置：
+
+```env
+# 期貨監控設定
+FUTURES_ENABLED_CONTRACTS=TXF,MXF,MTX  # 啟用的合約
+FUTURES_MONITOR_INTERVAL=30            # 監控間隔 (秒)
+FUTURES_MAX_POSITION_SIZE=10           # 最大部位大小
+FUBON_IS_SIMULATION=true               # 模擬交易模式
+```
+
 ## 🔧 主要功能模組
 
 ### 📊 資料庫架構
 
+#### 股票相關
 - **stocks**: 股票主檔 (代號、名稱、市場)
 - **stock_prices**: 歷史價格資料 (OHLCV)
 - **stock_realtime**: 即時報價
@@ -165,6 +246,12 @@ bag.holder.tw/
 - **alerts**: 警報信號
 - **portfolios**: 投資組合
 - **transactions**: 交易記錄
+
+#### 期貨相關
+- **futures_contracts**: 期貨合約主檔 (TXF, MXF, MTX)
+- **futures_quotes**: 期貨即時報價
+- **futures_signals**: 期貨交易信號
+- **futures_positions**: 期貨部位記錄
 
 ### 🚦 Rate Limiting 系統
 
@@ -199,11 +286,19 @@ source venv/bin/activate  # Linux/Mac
 # 安裝依賴
 pip install -r requirements.txt
 
+# 重要: 安裝富邦證券 SDK
+# 1. 下載官方 fubon_neo SDK (.whl 檔案)
+# 2. 安裝 SDK
+pip install fubon_neo-<version>.whl
+
 # 設定資料庫
 export DATABASE_URL="postgresql://postgres:password@localhost:5432/tw_stock"
 
-# 執行應用
+# 執行股票監控應用
 python src/main.py
+
+# 或執行期貨監控
+python -m src.futures.main
 ```
 
 ### 測試
@@ -252,6 +347,12 @@ docker-compose logs app
 
 # 掃描器日誌
 docker-compose logs scanner
+
+# 期貨監控日誌
+docker-compose logs futures-monitor
+
+# Telegram Bot 日誌
+docker-compose logs telegram-bot
 
 # 資料庫日誌
 docker-compose logs postgres
@@ -308,10 +409,17 @@ docker-compose logs postgres
 
 ## 📈 效能指標
 
+### 股票監控
 - 掃描速度: ~1,800 股票/5分鐘
 - 記憶體使用: <4GB (含所有服務)
 - CPU 使用: <50% (雙核心)
 - 資料庫大小: ~500MB/年
+
+### 期貨監控
+- 監控合約: 3 個 (TXF, MXF, MTX)
+- 監控頻率: 每 30 秒更新
+- 額外記憶體: ~200MB
+- 期貨資料: ~100MB/年
 
 ## 🤝 貢獻指南
 
@@ -327,9 +435,11 @@ docker-compose logs postgres
 
 ## 🙏 致謝
 
-- [富邦證券 API](https://www.fubon.com/) - 股價資料來源
+- [富邦證券 fubon_neo SDK](https://www.fbs.com.tw/) - 官方 API 與期貨資料來源
 - [Telegram Bot API](https://core.telegram.org/bots/api) - 通知系統
 - [TA-Lib](https://ta-lib.org/) - 技術指標計算
+- [FastAPI](https://fastapi.tiangolo.com/) - 高效能 Web 框架
+- [PostgreSQL](https://www.postgresql.org/) - 穩定的資料庫系統
 
 ---
 

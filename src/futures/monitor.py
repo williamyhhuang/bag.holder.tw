@@ -59,74 +59,123 @@ class TaiwanFuturesMonitor:
         self.fubon_client = fubon_client
         self.logger = get_logger(self.__class__.__name__)
 
-        # Taiwan futures contracts
+        # Taiwan futures contracts - 僅追蹤大台、小台、微台近月合約
         self.futures_contracts = {
-            'TXFA4': FuturesContract(
-                symbol='TXFA4',
-                name='台指期貨',
+            'TXF': FuturesContract(
+                symbol='TXF',
+                name='台指期貨(大台)',
                 underlying='台灣加權指數',
-                expiry_date=date(2024, 4, 17),  # Example expiry
+                expiry_date=self._get_near_month_expiry(),
                 contract_size=200,
                 tick_size=Decimal('1'),
                 is_active=True
             ),
-            'MXFA4': FuturesContract(
-                symbol='MXFA4',
-                name='小台指期貨',
+            'MXF': FuturesContract(
+                symbol='MXF',
+                name='小台指期貨(小台)',
                 underlying='台灣加權指數',
-                expiry_date=date(2024, 4, 17),
+                expiry_date=self._get_near_month_expiry(),
                 contract_size=50,
                 tick_size=Decimal('1'),
                 is_active=True
             ),
-            'TXO': FuturesContract(
-                symbol='TXO',
-                name='台指選擇權',
+            'MTX': FuturesContract(
+                symbol='MTX',
+                name='微型台指期貨(微台)',
                 underlying='台灣加權指數',
-                expiry_date=date(2024, 4, 17),
-                contract_size=200,
-                tick_size=Decimal('0.1'),
-                is_active=True
-            ),
-            'EXF': FuturesContract(
-                symbol='EXF',
-                name='電子期貨',
-                underlying='電子類指數',
-                expiry_date=date(2024, 4, 17),
-                contract_size=4000,
-                tick_size=Decimal('0.05'),
-                is_active=True
-            ),
-            'FXF': FuturesContract(
-                symbol='FXF',
-                name='金融期貨',
-                underlying='金融類指數',
-                expiry_date=date(2024, 4, 17),
-                contract_size=1000,
-                tick_size=Decimal('0.05'),
+                expiry_date=self._get_near_month_expiry(),
+                contract_size=10,
+                tick_size=Decimal('1'),
                 is_active=True
             )
         }
 
         self.is_monitoring = False
 
-    async def start_monitoring(self, contracts: List[str] = None):
+    def _get_near_month_expiry(self) -> date:
+        """
+        計算台指期貨近月合約到期日
+        台指期貨到期日為每月第三個週三
+        """
+        today = date.today()
+        current_month = today.month
+        current_year = today.year
+
+        # 找到當月第三個週三
+        first_day = date(current_year, current_month, 1)
+        first_weekday = first_day.weekday()  # 0=Monday, 2=Wednesday
+
+        # 計算第一個週三是幾號
+        if first_weekday <= 2:  # 如果1號是週一、二、三
+            first_wednesday = 3 - first_weekday
+        else:  # 如果1號是週四到週日
+            first_wednesday = 10 - first_weekday
+
+        # 第三個週三
+        third_wednesday = first_wednesday + 14
+
+        try:
+            expiry_date = date(current_year, current_month, third_wednesday)
+
+            # 如果今天已過當月到期日，使用下月合約
+            if today >= expiry_date:
+                if current_month == 12:
+                    next_month = 1
+                    next_year = current_year + 1
+                else:
+                    next_month = current_month + 1
+                    next_year = current_year
+
+                # 計算下月第三個週三
+                first_day_next = date(next_year, next_month, 1)
+                first_weekday_next = first_day_next.weekday()
+
+                if first_weekday_next <= 2:
+                    first_wednesday_next = 3 - first_weekday_next
+                else:
+                    first_wednesday_next = 10 - first_weekday_next
+
+                third_wednesday_next = first_wednesday_next + 14
+                expiry_date = date(next_year, next_month, third_wednesday_next)
+
+        except ValueError:
+            # 如果日期無效（如2月沒有29、30、31日），回退到月底
+            if current_month == 12:
+                expiry_date = date(current_year + 1, 1, 15)  # 使用下年1月中
+            else:
+                expiry_date = date(current_year, current_month + 1, 15)  # 使用下月中
+
+        return expiry_date
+
+    async def start_monitoring(self, contracts: List[str] = None, monitor_interval: int = 30):
         """
         Start futures monitoring
 
         Args:
-            contracts: List of contract symbols to monitor (None for all)
+            contracts: List of contract symbols to monitor (None for enabled contracts)
+            monitor_interval: Monitoring interval in seconds
         """
         if contracts is None:
-            contracts = list(self.futures_contracts.keys())
+            # 只監控啟用的合約：TXF(大台), MXF(小台), MTX(微台)
+            contracts = ['TXF', 'MXF', 'MTX']
+
+        # 過濾出實際存在的合約
+        valid_contracts = [c for c in contracts if c in self.futures_contracts]
+
+        if not valid_contracts:
+            self.logger.warning("No valid contracts to monitor")
+            return
 
         self.is_monitoring = True
-        self.logger.info(f"Starting futures monitoring for: {contracts}")
+        self.logger.info(f"🔍 Starting futures monitoring for Taiwan Index Futures:")
+        for contract in valid_contracts:
+            contract_info = self.futures_contracts[contract]
+            self.logger.info(f"  • {contract_info.name} ({contract}) - 合約大小: {contract_info.contract_size}")
 
         while self.is_monitoring:
             try:
-                await self._monitor_cycle(contracts)
-                await asyncio.sleep(30)  # Monitor every 30 seconds
+                await self._monitor_cycle(valid_contracts)
+                await asyncio.sleep(monitor_interval)
             except KeyboardInterrupt:
                 break
             except Exception as e:
@@ -234,36 +283,82 @@ class TaiwanFuturesMonitor:
         signals = []
 
         try:
-            # Example signal detection logic
-            # In practice, you'd implement more sophisticated analysis
+            # 台指期貨專用信號檢測邏輯
 
-            # Volume surge detection
-            if quote.volume > 1000:  # Example threshold
+            # 大台成交量異常檢測 (TXF)
+            if contract.symbol == 'TXF' and quote.volume > 5000:
                 signals.append(FuturesSignal(
                     contract_symbol=contract.symbol,
                     signal_type='LONG' if quote.change_amount > 0 else 'SHORT',
-                    signal_name='Volume Surge',
-                    current_price=quote.current_price,
-                    target_price=None,
-                    stop_loss=None,
-                    confidence=0.6,
-                    description=f'異常成交量: {quote.volume:,} 口',
-                    triggered_at=datetime.now()
-                ))
-
-            # Price breakout detection
-            if abs(quote.change_percent) > Decimal('2.0'):
-                signals.append(FuturesSignal(
-                    contract_symbol=contract.symbol,
-                    signal_type='LONG' if quote.change_percent > 0 else 'SHORT',
-                    signal_name='Price Breakout',
+                    signal_name='大台成交量暴增',
                     current_price=quote.current_price,
                     target_price=None,
                     stop_loss=None,
                     confidence=0.7,
-                    description=f'價格突破: {quote.change_percent:+.2f}%',
+                    description=f'大台異常成交量: {quote.volume:,} 口 (正常約1000-3000口)',
                     triggered_at=datetime.now()
                 ))
+
+            # 小台成交量異常檢測 (MXF)
+            elif contract.symbol == 'MXF' and quote.volume > 8000:
+                signals.append(FuturesSignal(
+                    contract_symbol=contract.symbol,
+                    signal_type='LONG' if quote.change_amount > 0 else 'SHORT',
+                    signal_name='小台成交量暴增',
+                    current_price=quote.current_price,
+                    target_price=None,
+                    stop_loss=None,
+                    confidence=0.6,
+                    description=f'小台異常成交量: {quote.volume:,} 口 (正常約3000-6000口)',
+                    triggered_at=datetime.now()
+                ))
+
+            # 微台成交量異常檢測 (MTX)
+            elif contract.symbol == 'MTX' and quote.volume > 10000:
+                signals.append(FuturesSignal(
+                    contract_symbol=contract.symbol,
+                    signal_type='LONG' if quote.change_amount > 0 else 'SHORT',
+                    signal_name='微台成交量暴增',
+                    current_price=quote.current_price,
+                    target_price=None,
+                    stop_loss=None,
+                    confidence=0.5,
+                    description=f'微台異常成交量: {quote.volume:,} 口 (正常約2000-5000口)',
+                    triggered_at=datetime.now()
+                ))
+
+            # 台指期貨價格突破檢測 (適用所有合約)
+            if abs(quote.change_percent) > Decimal('1.5'):  # 台指期貨1.5%突破
+                signal_type = 'LONG' if quote.change_percent > 0 else 'SHORT'
+                confidence = min(0.9, 0.5 + abs(float(quote.change_percent)) / 10)
+
+                signals.append(FuturesSignal(
+                    contract_symbol=contract.symbol,
+                    signal_type=signal_type,
+                    signal_name='台指期貨價格突破',
+                    current_price=quote.current_price,
+                    target_price=None,
+                    stop_loss=None,
+                    confidence=confidence,
+                    description=f'{contract.name} 價格突破: {quote.change_percent:+.2f}% (當前: {quote.current_price})',
+                    triggered_at=datetime.now()
+                ))
+
+            # 台指期貨盤中急漲急跌檢測
+            if quote.high_price > 0 and quote.low_price > 0:
+                intraday_range = ((quote.high_price - quote.low_price) / quote.low_price) * 100
+                if intraday_range > Decimal('3.0'):  # 當日振幅超過3%
+                    signals.append(FuturesSignal(
+                        contract_symbol=contract.symbol,
+                        signal_type='NEUTRAL',
+                        signal_name='台指期貨高波動',
+                        current_price=quote.current_price,
+                        target_price=None,
+                        stop_loss=None,
+                        confidence=0.8,
+                        description=f'{contract.name} 當日振幅: {intraday_range:.2f}% (高: {quote.high_price}, 低: {quote.low_price})',
+                        triggered_at=datetime.now()
+                    ))
 
             return signals
 
