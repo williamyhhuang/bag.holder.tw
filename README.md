@@ -2,6 +2,8 @@
 
 基於富邦證券官方 SDK 的台股監控機器人，能夠全市場掃描 1,800+ 檔股票，進行即時技術指標分析，並支援台指期貨監控，透過 Telegram 發送買賣信號通知。
 
+🆕 **新增回測系統**: 完整的策略回測功能，使用 YFinance 資料源驗證交易策略績效！
+
 ## 🎯 專案特色
 
 - **全市場掃描**: 監控 TSE/OTC 市場 1,800+ 檔股票
@@ -9,6 +11,7 @@
 - **即時技術分析**: 支援多種技術指標 (MA, RSI, MACD, 布林通道)
 - **智能通知系統**: Telegram Bot 推送買賣信號
 - **投資組合追蹤**: 個人投資組合管理與績效追蹤
+- **🆕 策略回測**: 完整的回測系統，驗證策略勝率與績效
 - **容器化部署**: Docker + Docker Compose 一鍵部署
 - **跨平台支援**: macOS、Windows 11、Linux 全平台最佳化
 - **官方 SDK 整合**: 使用富邦證券 fubon_neo 官方 SDK
@@ -176,6 +179,14 @@ bag.holder.tw/
 │   │   └── connection.py        # 資料庫連線
 │   ├── scanner/                  # 市場掃描引擎
 │   ├── indicators/               # 技術指標計算
+│   ├── backtest/                 # 🆕 回測系統
+│   │   ├── main.py              # 回測主程式
+│   │   ├── data_source.py       # YFinance 資料源
+│   │   ├── engine.py            # 回測引擎
+│   │   ├── strategy.py          # 策略執行器
+│   │   ├── analyzer.py          # 績效分析器
+│   │   ├── reporter.py          # 報告生成器
+│   │   └── models.py            # 回測資料模型
 │   ├── futures/                  # 期貨監控模組
 │   │   ├── main.py              # 期貨監控主程式
 │   │   └── monitor.py           # 台指期貨監控邏輯
@@ -188,6 +199,7 @@ bag.holder.tw/
 │   └── settings.py              # 設定檔
 ├── data/                         # 資料目錄
 │   └── init.sql                 # 資料庫初始化
+├── reports/                      # 🆕 回測報告目錄
 ├── docker/                       # 容器化
 │   └── Dockerfile               # Docker 映像檔
 ├── logs/                         # 日誌檔案
@@ -197,6 +209,132 @@ bag.holder.tw/
 ├── requirements.txt              # Python 依賴
 ├── .env.example                  # 配置範例
 └── README.md                     # 專案說明
+```
+
+## 🔬 策略回測系統
+
+### 系統概述
+
+完整的策略回測框架，整合 YFinance 資料源，驗證技術分析策略在台股市場的實際績效。
+
+### 核心功能
+
+#### 📊 資料獲取 (YFinance)
+- **台股資料**: 自動獲取台股上市櫃股票歷史資料
+- **基準比較**: 大盤指數 (TAIEX) 資料用於績效比較
+- **資料快取**: 本地 CSV 檔案快取，提升回測效率
+- **市場篩選**: 自動篩選市值大於 10 億、日均量 > 1000 張的股票
+
+#### ⚙️ 技術指標引擎
+- **移動平均**: MA5, MA10, MA20, MA60
+- **動量指標**: RSI (14日)
+- **趨勢追蹤**: MACD (12,26,9)
+- **波動分析**: 布林通道 (20日，2標準差)
+- **成交量確認**: 成交量移動平均 (20日)
+
+#### 🎯 交易訊號系統
+**買進訊號**:
+- Golden Cross: MA5 突破 MA20 向上
+- RSI Oversold: RSI < 30
+- MACD Golden Cross: MACD 線突破訊號線向上
+- BB Squeeze Break: 突破布林通道上軌
+
+**賣出訊號**:
+- Death Cross: MA5 跌破 MA20 向下
+- RSI Overbought: RSI > 70
+- MACD Death Cross: MACD 線跌破訊號線向下
+
+#### 💼 投資組合管理
+- **風險控制**: 停損 -10%、停利 +20%
+- **資金管理**: 每筆交易最多使用 10% 資金
+- **交易成本**: 手續費 0.1425%、交易稅 0.3%
+- **最長持倉**: 30 個交易日自動出場
+
+#### 📈 績效分析
+- **基本指標**: 總報酬率、年化報酬率、夏普比率
+- **風險指標**: 最大回撤、波動度、VaR、CVaR
+- **交易統計**: 勝率、獲利因子、平均持倉期間
+- **基準比較**: vs 大盤表現，計算 Alpha、Beta 值
+
+### 快速開始
+
+#### 安裝依賴
+```bash
+# 啟動虛擬環境
+source venv/bin/activate
+
+# 安裝回測系統依賴
+pip install yfinance numpy
+```
+
+#### 運行回測
+```bash
+# 完整回測 (2024-09-01 至今)
+python run_backtest.py
+
+# 快速測試 (最近 30 天)
+python -c "
+import asyncio
+from src.backtest.main import BacktestRunner
+runner = BacktestRunner()
+asyncio.run(runner.run_quick_test())
+"
+```
+
+#### 輸出檔案
+回測完成後會在以下目錄生成檔案：
+
+**data/ 目錄**:
+- `historical_data_*.csv`: 歷史價格資料
+- `trades_*.csv`: 交易明細記錄
+- `portfolio_*.csv`: 投資組合歷史
+- `signals_*.csv`: 交易訊號記錄
+
+**reports/ 目錄**:
+- `report_*.md`: 詳細回測報告，包含:
+  - 📊 投資績效摘要
+  - 🎯 交易統計分析
+  - 🔍 訊號效果分析
+  - ⚠️ 風險指標詳情
+  - 📋 策略優化建議
+
+### 回測報告範例
+
+```
+📊 BACKTEST RESULTS
+==================================================
+📈 Total Return: 15.2%
+🎯 Win Rate: 62.5%
+📉 Max Drawdown: -8.3%
+⚡ Sharpe Ratio: 1.45
+🔢 Total Trades: 48
+✅ Winning Trades: 30
+❌ Losing Trades: 18
+```
+
+### 自定義回測參數
+
+```python
+from src.backtest.main import BacktestRunner
+from decimal import Decimal
+from datetime import date
+
+runner = BacktestRunner()
+result = await runner.run_full_backtest(
+    start_date=date(2024, 1, 1),
+    end_date=date.today(),
+    initial_capital=Decimal('500000')  # 50萬初始資金
+)
+```
+
+### 單元測試
+
+```bash
+# 運行回測系統測試
+python -m pytest tests/test_backtest.py -v
+
+# 測試特定模組
+python -m pytest tests/test_backtest.py::TestBacktestEngine -v
 ```
 
 ## 🎯 台指期貨監控
