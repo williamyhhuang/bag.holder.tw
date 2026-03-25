@@ -26,8 +26,7 @@ pandas==2.1.4
 numpy==1.25.2
 
 # Technical indicators
-TA-Lib==0.4.25
-talib-binary==0.4.25
+TA-Lib==0.6.8
 
 # Telegram bot
 python-telegram-bot==20.7
@@ -38,13 +37,16 @@ asyncio-mqtt==0.16.1
 # Configuration
 python-dotenv==1.0.0
 
-# Development dependencies
-pytest==7.4.3
-pytest-asyncio==0.21.1
+# Development and testing dependencies
+pytest==8.4.2
+pytest-asyncio==1.2.0
 pytest-cov==4.1.0
 black==23.11.0
 flake8==6.1.0
 mypy==1.7.1
+
+# System monitoring
+psutil==5.9.6
 
 # Monitoring and metrics
 prometheus-client==0.19.0
