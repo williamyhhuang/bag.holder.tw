@@ -92,14 +92,11 @@ FUTURES_MONITOR_INTERVAL=30
 
 #### macOS / Linux
 ```bash
-# 開發環境 (股票監控)
+# 開發環境 (僅股票監控)
 make dev
 
-# 生產環境 (股票監控)
+# 生產環境 (僅股票監控)
 make prod
-
-# 啟動期貨監控
-docker-compose --profile futures up -d
 
 # 啟動全部服務 (股票 + 期貨)
 docker-compose --profile futures up -d
@@ -110,13 +107,13 @@ make status
 
 #### Windows 11
 ```batch
-# 開發環境
+# 開發環境 (僅股票監控)
 scripts\start-windows-dev.bat
 
-# 生產環境
+# 生產環境 (僅股票監控)
 scripts\start-windows-prod.bat
 
-# 啟動期貨監控
+# 啟動全部服務 (股票 + 期貨)
 docker-compose --profile futures up -d
 
 # 檢查服務健康
@@ -125,12 +122,16 @@ scripts\windows-health-check.bat
 
 #### 期貨監控獨立啟動
 ```bash
-# 僅啟動期貨監控 (TXF, MXF, MTX)
+# 僅啟動期貨監控所需服務 (資料庫 + Redis + 期貨監控)
 docker-compose up postgres redis futures-monitor -d
 
-# 開發模式直接執行
+# 開發模式直接執行期貨監控
 source venv/bin/activate
 python -m src.futures.main
+
+# 注意：期貨監控需要 postgres 和 redis 服務支援
+# 如果資料庫未啟動，請先執行：
+# docker-compose up postgres redis -d
 ```
 
 ### 4. 平台最佳化部署
