@@ -142,7 +142,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
     profiles:
-      - futures  # Optional service, enable with --profile futures
+      - full     # Enable with --profile full for complete monitoring
+      - futures  # Enable with --profile futures for futures-only
 
 volumes:
   postgres_data:

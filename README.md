@@ -99,6 +99,9 @@ make dev
 make prod
 
 # 啟動全部服務 (股票 + 期貨)
+docker-compose --profile full up -d
+
+# 僅啟動期貨監控
 docker-compose --profile futures up -d
 
 # 查看服務狀態
@@ -114,6 +117,9 @@ scripts\start-windows-dev.bat
 scripts\start-windows-prod.bat
 
 # 啟動全部服務 (股票 + 期貨)
+docker-compose --profile full up -d
+
+# 僅啟動期貨監控
 docker-compose --profile futures up -d
 
 # 檢查服務健康
@@ -212,10 +218,13 @@ bag.holder.tw/
 ### 啟動期貨監控
 
 ```bash
-# 啟動期貨監控服務 (推薦)
+# 啟動全部服務 (股票 + 期貨，推薦)
+docker-compose --profile full up -d
+
+# 僅啟動期貨監控相關服務
 docker-compose --profile futures up -d
 
-# 僅啟動期貨監控
+# 最小化啟動 (手動指定服務)
 docker-compose up postgres redis futures-monitor -d
 
 # 開發模式
