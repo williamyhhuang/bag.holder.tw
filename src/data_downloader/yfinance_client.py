@@ -189,21 +189,84 @@ class YFinanceClient:
             self.logger.error(f"Error saving data for {symbol}: {e}")
             return False
 
+    def _download_batch(
+        self,
+        symbols: List[str],
+        start_date: datetime,
+        end_date: datetime,
+    ) -> Dict[str, 'pd.DataFrame']:
+        """
+        Download OHLCV data for up to ~100 symbols in a single yfinance call.
+
+        Returns a dict mapping symbol → DataFrame (columns: date, open, high,
+        low, close, volume, symbol).  Symbols with no data are omitted.
+        """
+        if not symbols:
+            return {}
+
+        raw = yf.download(
+            symbols,
+            start=start_date,
+            end=end_date,
+            auto_adjust=True,
+            group_by='ticker',
+            threads=True,
+            progress=False,
+        )
+
+        results: Dict[str, pd.DataFrame] = {}
+
+        if len(symbols) == 1:
+            # Single-ticker download returns a flat DataFrame
+            sym = symbols[0]
+            if raw is not None and not raw.empty:
+                df = raw.reset_index().copy()
+                df.columns = [str(c).lower() for c in df.columns]
+                df['symbol'] = sym
+                results[sym] = df
+            return results
+
+        # Multi-ticker: columns are MultiIndex (field, ticker) by default
+        # Normalise to (ticker, field) if needed
+        if isinstance(raw.columns, pd.MultiIndex):
+            if raw.columns.names[0] != 'Ticker':
+                # swap so level-0 = ticker
+                raw = raw.swaplevel(axis=1).sort_index(axis=1)
+
+        for sym in symbols:
+            try:
+                df = raw[sym].dropna(how='all').reset_index().copy()
+                if df.empty:
+                    continue
+                df.columns = [str(c).lower() for c in df.columns]
+                # Drop rows where close is NaN (delisted / no data days)
+                df = df[df['close'].notna()]
+                if df.empty:
+                    continue
+                df['symbol'] = sym
+                results[sym] = df
+            except KeyError:
+                continue
+
+        return results
+
     def download_all_stocks(
         self,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         markets: List[str] = None,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        batch_size: int = 100,
     ) -> int:
         """
-        Download data for all listed stocks
+        Download data for all listed stocks using batch requests.
 
         Args:
             start_date: Start date for data download
             end_date: End date for data download
             markets: List of markets to download ("TSE", "OTC")
             limit: Maximum number of stocks to download (for testing)
+            batch_size: Number of symbols per yfinance request (default 100)
 
         Returns:
             Number of stocks successfully downloaded
@@ -227,51 +290,59 @@ class YFinanceClient:
             self.logger.error("No stock symbols to download")
             return 0
 
-        self.logger.info(f"Starting download for {len(all_symbols)} stocks")
+        if start_date is None:
+            start_date = self.get_last_trading_date()
+        if end_date is None:
+            end_date = datetime.now()
+
+        total = len(all_symbols)
+        self.logger.info(f"Starting batch download for {total} stocks (batch_size={batch_size})")
+
+        # Split into batches
+        batches = [all_symbols[i:i + batch_size] for i in range(0, total, batch_size)]
 
         successful_downloads = 0
         failed_downloads = 0
 
-        # 使用 tqdm 進度條
         progress_bar = tqdm(
-            all_symbols,
-            desc="下載股票資料",
-            unit="股票",
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
+            batches,
+            desc="批次下載",
+            unit="批",
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} 批 [{elapsed}<{remaining}]',
         )
 
-        for symbol in progress_bar:
+        for batch in progress_bar:
+            progress_bar.set_description(f"批次下載 ({batch[0]} … {batch[-1]})")
             try:
-                # 更新進度條描述
-                progress_bar.set_description(f"下載中: {symbol}")
+                batch_data = self._download_batch(batch, start_date, end_date)
 
-                data = self.get_stock_data(symbol, start_date, end_date)
-                if data is not None and not data.empty:
-                    if self.save_stock_data(symbol, data):
+                for symbol, df in batch_data.items():
+                    if self.save_stock_data(symbol, df):
                         successful_downloads += 1
-                        progress_bar.write(f"✅ {symbol} - 下載成功")
                     else:
                         failed_downloads += 1
-                        progress_bar.write(f"❌ {symbol} - 儲存失敗")
-                else:
-                    failed_downloads += 1
-                    progress_bar.write(f"⚠️ {symbol} - 無資料 (可能已下市)")
 
-                # Add small delay to avoid hitting rate limits
-                time.sleep(0.2)
+                missing = set(batch) - set(batch_data.keys())
+                failed_downloads += len(missing)
+                if missing:
+                    progress_bar.write(f"⚠️ 無資料: {', '.join(list(missing)[:5])}{'…' if len(missing) > 5 else ''}")
+
+                progress_bar.write(
+                    f"✅ 批次完成: {len(batch_data)}/{len(batch)} 支成功"
+                )
+
+                # Brief pause between batches to be polite to yfinance
+                time.sleep(0.5)
 
             except Exception as e:
-                failed_downloads += 1
-                progress_bar.write(f"⚠️ {symbol} - 錯誤: {e}")
+                failed_downloads += len(batch)
+                progress_bar.write(f"❌ 批次失敗: {e}")
                 continue
 
         progress_bar.close()
 
-        # 完成摘要
-        total_processed = len(all_symbols)
-        success_rate = (successful_downloads / total_processed * 100) if total_processed > 0 else 0
-
-        self.logger.info(f"下載完成: {successful_downloads}/{total_processed} 支股票成功 ({success_rate:.1f}%)")
+        success_rate = (successful_downloads / total * 100) if total > 0 else 0
+        self.logger.info(f"下載完成: {successful_downloads}/{total} 支股票成功 ({success_rate:.1f}%)")
         if failed_downloads > 0:
             self.logger.info(f"失敗: {failed_downloads} 支股票")
 

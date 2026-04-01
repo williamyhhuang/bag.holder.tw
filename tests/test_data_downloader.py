@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import tempfile
 import os
+from unittest.mock import patch, MagicMock
 
 from src.data_downloader.yfinance_client import YFinanceClient
 
@@ -74,6 +75,96 @@ class TestYFinanceClient:
 
             # For this test, we'll just check if the method runs without error
             assert isinstance(result, bool)
+
+class TestBatchDownload:
+    """Unit tests for _download_batch"""
+
+    def setup_method(self):
+        self.client = YFinanceClient()
+        self.start = datetime(2026, 3, 28)
+        self.end = datetime(2026, 4, 1)
+
+    def _make_multi_df(self, symbols):
+        """Build a minimal MultiIndex DataFrame that mimics yf.download output."""
+        dates = pd.to_datetime(['2026-03-28', '2026-03-31'])
+        arrays = [
+            [sym for sym in symbols for _ in ('Close', 'High', 'Low', 'Open', 'Volume')],
+            ['Close', 'High', 'Low', 'Open', 'Volume'] * len(symbols),
+        ]
+        cols = pd.MultiIndex.from_arrays(arrays, names=['Ticker', 'Price'])
+        data = {}
+        for sym in symbols:
+            for col in ('Close', 'High', 'Low', 'Open'):
+                data[(sym, col)] = [100.0, 101.0]
+            data[(sym, 'Volume')] = [1_000_000, 1_200_000]
+        return pd.DataFrame(data, index=dates, columns=cols)
+
+    @patch('yfinance.download')
+    def test_batch_single_symbol(self, mock_dl):
+        """Single-symbol path returns a dict with one entry."""
+        mock_df = pd.DataFrame({
+            'Date': pd.to_datetime(['2026-03-28', '2026-03-31']),
+            'Open': [99.0, 100.0], 'High': [102.0, 103.0],
+            'Low': [98.0, 99.0], 'Close': [101.0, 102.0],
+            'Volume': [1_000_000, 1_100_000],
+        }).set_index('Date')
+        mock_dl.return_value = mock_df
+
+        result = self.client._download_batch(['2330.TW'], self.start, self.end)
+
+        assert '2330.TW' in result
+        assert not result['2330.TW'].empty
+        assert 'symbol' in result['2330.TW'].columns
+
+    @patch('yfinance.download')
+    def test_batch_multiple_symbols(self, mock_dl):
+        """Multi-symbol path splits the MultiIndex DataFrame per ticker."""
+        symbols = ['2330.TW', '2317.TW']
+        mock_dl.return_value = self._make_multi_df(symbols)
+
+        result = self.client._download_batch(symbols, self.start, self.end)
+
+        assert '2330.TW' in result
+        assert '2317.TW' in result
+        assert result['2330.TW']['symbol'].iloc[0] == '2330.TW'
+
+    @patch('yfinance.download')
+    def test_batch_empty_symbol_excluded(self, mock_dl):
+        """Symbol with all-NaN data should be absent from result."""
+        symbols = ['2330.TW', 'INVALID.TW']
+        base = self._make_multi_df(symbols)
+        # Wipe out INVALID.TW with NaN
+        for col in ('Close', 'High', 'Low', 'Open', 'Volume'):
+            base[('INVALID.TW', col)] = float('nan')
+        mock_dl.return_value = base
+
+        result = self.client._download_batch(symbols, self.start, self.end)
+
+        assert '2330.TW' in result
+        assert 'INVALID.TW' not in result
+
+    @patch('yfinance.download')
+    def test_download_all_stocks_uses_batches(self, mock_dl):
+        """download_all_stocks should call yf.download once per batch, not per symbol."""
+        symbols = [f'{i:04d}.TW' for i in range(1, 11)]  # 10 symbols
+
+        # Fake stock list fetch
+        with patch.object(self.client, 'get_tse_listed_stocks', return_value=symbols), \
+             patch.object(self.client, 'get_otc_listed_stocks', return_value=[]), \
+             patch.object(self.client, 'save_stock_data', return_value=True):
+
+            mock_dl.return_value = self._make_multi_df(symbols)
+
+            count = self.client.download_all_stocks(
+                start_date=self.start,
+                end_date=self.end,
+                batch_size=10,  # all in one batch
+            )
+
+        # yf.download called exactly once (one batch of 10)
+        assert mock_dl.call_count == 1
+        assert count == 10
+
 
 class TestDataDownloaderIntegration:
     """Integration tests for data downloader"""
