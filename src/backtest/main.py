@@ -17,6 +17,7 @@ from src.backtest import (
     PerformanceAnalyzer,
     BacktestReporter
 )
+from src.data_downloader.yfinance_client import YFinanceClient
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -28,10 +29,36 @@ class BacktestRunner:
     def __init__(self):
         self.logger = get_logger(self.__class__.__name__)
         self.data_source = YFinanceDataSource()
+        self.yf_client = YFinanceClient()
         self.strategy = TechnicalStrategy()
         self.engine = BacktestEngine()
         self.analyzer = PerformanceAnalyzer()
         self.reporter = BacktestReporter()
+
+    def _coverage_ratio(self, stock_data: dict, required_start: date, required_end: date) -> float:
+        """
+        Return the fraction of loaded symbols that have enough records to cover
+        [required_start, required_end].  A symbol is considered covered when its
+        earliest record is on or before required_start.
+        """
+        if not stock_data:
+            return 0.0
+        covered = sum(
+            1 for records in stock_data.values()
+            if records and records[0].date <= required_start
+        )
+        return covered / len(stock_data)
+
+    def _download_history(self, stocks_dir: str, needed_start: date, needed_end: date):
+        """Download historical data for all stocks and save to stocks_dir."""
+        self.logger.info(
+            f"Local data does not cover {needed_start} – {needed_end}. "
+            "Downloading historical data via yfinance…"
+        )
+        self.yf_client.download_all_stocks(
+            start_date=datetime.combine(needed_start, datetime.min.time()),
+            end_date=datetime.combine(needed_end, datetime.min.time()),
+        )
 
     async def run_full_backtest(
         self,
@@ -60,14 +87,28 @@ class BacktestRunner:
 
             if os.path.isdir(stocks_dir) and os.listdir(stocks_dir):
                 self.logger.info(f"Loading local data from {stocks_dir} ...")
+                needed_start = start_date - timedelta(days=100)
                 # Load extra history for indicator warm-up
                 stock_data = self.data_source.load_from_stocks_dir(
                     stocks_dir=stocks_dir,
-                    start_date=start_date - timedelta(days=100),
+                    start_date=needed_start,
                     end_date=end_date
                 )
                 if not stock_data:
                     raise Exception(f"No stock data found in {stocks_dir}")
+
+                # If local data doesn't cover the required period, download history
+                coverage = self._coverage_ratio(stock_data, needed_start, end_date)
+                if coverage < 0.1:  # < 10 % of symbols have enough history
+                    self._download_history(stocks_dir, needed_start, end_date)
+                    # Reload after download
+                    stock_data = self.data_source.load_from_stocks_dir(
+                        stocks_dir=stocks_dir,
+                        start_date=needed_start,
+                        end_date=end_date
+                    )
+                    if not stock_data:
+                        raise Exception("No stock data after historical download")
             else:
                 self.logger.info("Local data not found – fetching from yfinance...")
                 stock_symbols = self.data_source.get_taiwan_stock_list()
@@ -160,11 +201,19 @@ class BacktestRunner:
 
             if os.path.isdir(stocks_dir) and os.listdir(stocks_dir):
                 self.logger.info(f"Loading local data from {stocks_dir} ...")
+                needed_start = start_date - timedelta(days=50)
                 all_stock_data = self.data_source.load_from_stocks_dir(
                     stocks_dir=stocks_dir,
-                    start_date=start_date - timedelta(days=50),
+                    start_date=needed_start,
                     end_date=end_date
                 )
+                if self._coverage_ratio(all_stock_data, needed_start, end_date) < 0.1:
+                    self._download_history(stocks_dir, needed_start, end_date)
+                    all_stock_data = self.data_source.load_from_stocks_dir(
+                        stocks_dir=stocks_dir,
+                        start_date=needed_start,
+                        end_date=end_date
+                    )
                 # Optionally filter to requested symbols
                 if symbols:
                     symbol_set = {s[0] if isinstance(s, tuple) else s for s in symbols}

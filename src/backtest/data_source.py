@@ -295,33 +295,42 @@ class YFinanceDataSource:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        raw_symbol = row.get('symbol', '')
-                        # Normalise "2330.TW" / "2330.TWO" → "2330"
-                        symbol = raw_symbol.replace('.TW', '').replace('.TWO', '').replace('.', '')
+                        try:
+                            raw_symbol = row.get('symbol', '')
+                            # Normalise "2330.TW" / "2330.TWO" → "2330"
+                            symbol = raw_symbol.replace('.TW', '').replace('.TWO', '').replace('.', '')
+                            if not symbol:
+                                continue
 
-                        # Parse date – handles "2026-03-30 00:00:00+08:00" and "2026-03-30"
-                        raw_date = row['date'].split(' ')[0].split('+')[0].strip()
-                        record_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+                            # Skip rows with empty numeric fields
+                            if not all(row.get(col, '').strip() for col in ('open', 'high', 'low', 'close', 'volume')):
+                                continue
 
-                        if start_date and record_date < start_date:
+                            # Parse date – handles "2026-03-30 00:00:00+08:00" and "2026-03-30"
+                            raw_date = row['date'].split(' ')[0].split('+')[0].strip()
+                            record_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+
+                            if start_date and record_date < start_date:
+                                continue
+                            if end_date and record_date > end_date:
+                                continue
+
+                            if symbol not in data:
+                                data[symbol] = []
+
+                            close = Decimal(str(round(float(row['close']), 2)))
+                            data[symbol].append(StockData(
+                                symbol=symbol,
+                                date=record_date,
+                                open_price=Decimal(str(round(float(row['open']), 2))),
+                                high_price=Decimal(str(round(float(row['high']), 2))),
+                                low_price=Decimal(str(round(float(row['low']), 2))),
+                                close_price=close,
+                                volume=int(float(row['volume'])),
+                                adj_close=close
+                            ))
+                        except (ValueError, KeyError):
                             continue
-                        if end_date and record_date > end_date:
-                            continue
-
-                        if symbol not in data:
-                            data[symbol] = []
-
-                        close = Decimal(str(round(float(row['close']), 2)))
-                        data[symbol].append(StockData(
-                            symbol=symbol,
-                            date=record_date,
-                            open_price=Decimal(str(round(float(row['open']), 2))),
-                            high_price=Decimal(str(round(float(row['high']), 2))),
-                            low_price=Decimal(str(round(float(row['low']), 2))),
-                            close_price=close,
-                            volume=int(float(row['volume'])),
-                            adj_close=close
-                        ))
             except Exception as e:
                 self.logger.warning(f"Error loading {filepath}: {e}")
                 continue
