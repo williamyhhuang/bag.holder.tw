@@ -295,6 +295,12 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v2.1.0 - 2026-04-01
+- 🔧 回測系統優先載入 `data/stocks/` 本地 CSV，不再重複從 yfinance 抓取
+- 🆕 `YFinanceDataSource.load_from_stocks_dir()` — 批次讀取每檔獨立 CSV
+- 🐛 修正 `calculate_position_size` 最小張數判斷未含手續費的問題
+- ✅ 新增 `load_from_stocks_dir` 相關單元測試（3 個測試案例）
+
 ### v2.0.0 - 2024-03-15
 - 🆕 全面重構為 CLI 架構
 - 🆕 新增 YFinance 資料下載功能
