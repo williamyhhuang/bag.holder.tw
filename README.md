@@ -295,6 +295,10 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v2.1.2 - 2026-04-02
+- ⚡ `download_all_stocks` 改用批次模式（`batch_size=100`），透過 `yf.download()` 一次抓 100 支，速度大幅提升
+- 🆕 新增 `_download_batch()` 方法，處理 yfinance MultiIndex 回傳格式
+
 ### v2.1.1 - 2026-04-01
 - 🐛 修正 `load_from_stocks_dir` 空值欄位造成整檔載入失敗的問題（改為逐行跳過）
 - 🤖 `BacktestRunner` 新增資料覆蓋率檢查：當本地 CSV 只有少數幾天時，自動觸發歷史資料下載
