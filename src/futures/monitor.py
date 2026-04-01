@@ -29,15 +29,19 @@ class FuturesContract:
 class FuturesQuote:
     """Futures real-time quote"""
     symbol: str
-    current_price: Decimal
-    change_amount: Decimal
-    change_percent: Decimal
+    price: Decimal
     volume: int
-    open_interest: int
-    high_price: Decimal
-    low_price: Decimal
-    settlement_price: Decimal
     timestamp: datetime
+    bid_price: Optional[Decimal] = None
+    ask_price: Optional[Decimal] = None
+    bid_volume: Optional[int] = None
+    ask_volume: Optional[int] = None
+    change_amount: Optional[Decimal] = None
+    change_percent: Optional[Decimal] = None
+    open_interest: Optional[int] = None
+    high_price: Optional[Decimal] = None
+    low_price: Optional[Decimal] = None
+    settlement_price: Optional[Decimal] = None
 
 @dataclass
 class FuturesSignal:
@@ -291,7 +295,7 @@ class TaiwanFuturesMonitor:
                     contract_symbol=contract.symbol,
                     signal_type='LONG' if quote.change_amount > 0 else 'SHORT',
                     signal_name='大台成交量暴增',
-                    current_price=quote.current_price,
+                    current_price=quote.price,
                     target_price=None,
                     stop_loss=None,
                     confidence=0.7,
@@ -305,7 +309,7 @@ class TaiwanFuturesMonitor:
                     contract_symbol=contract.symbol,
                     signal_type='LONG' if quote.change_amount > 0 else 'SHORT',
                     signal_name='小台成交量暴增',
-                    current_price=quote.current_price,
+                    current_price=quote.price,
                     target_price=None,
                     stop_loss=None,
                     confidence=0.6,
@@ -319,7 +323,7 @@ class TaiwanFuturesMonitor:
                     contract_symbol=contract.symbol,
                     signal_type='LONG' if quote.change_amount > 0 else 'SHORT',
                     signal_name='微台成交量暴增',
-                    current_price=quote.current_price,
+                    current_price=quote.price,
                     target_price=None,
                     stop_loss=None,
                     confidence=0.5,
@@ -336,11 +340,11 @@ class TaiwanFuturesMonitor:
                     contract_symbol=contract.symbol,
                     signal_type=signal_type,
                     signal_name='台指期貨價格突破',
-                    current_price=quote.current_price,
+                    current_price=quote.price,
                     target_price=None,
                     stop_loss=None,
                     confidence=confidence,
-                    description=f'{contract.name} 價格突破: {quote.change_percent:+.2f}% (當前: {quote.current_price})',
+                    description=f'{contract.name} 價格突破: {quote.change_percent:+.2f}% (當前: {quote.price})',
                     triggered_at=datetime.now()
                 ))
 
@@ -352,7 +356,7 @@ class TaiwanFuturesMonitor:
                         contract_symbol=contract.symbol,
                         signal_type='NEUTRAL',
                         signal_name='台指期貨高波動',
-                        current_price=quote.current_price,
+                        current_price=quote.price,
                         target_price=None,
                         stop_loss=None,
                         confidence=0.8,

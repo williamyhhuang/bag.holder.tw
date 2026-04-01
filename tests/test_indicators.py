@@ -242,7 +242,7 @@ class TestSignalDetector:
         }
 
         previous = {
-            'ma5': Decimal('100.0'),
+            'ma5': Decimal('101.0'),  # MA5 already above MA20, no cross
             'ma20': Decimal('100.0'),
             'rsi14': Decimal('50.0'),
             'macd': Decimal('0.1'),

@@ -3,6 +3,7 @@ Centralized error handling utilities and decorators
 """
 import asyncio
 import functools
+import logging
 import traceback
 from typing import Any, Callable, Dict, Optional, Type, Union
 from datetime import datetime
@@ -96,7 +97,7 @@ def retry_on_failure(
                         # Log final failure
                         log_with_context(
                             logger,
-                            logger.ERROR,
+                            logging.ERROR,
                             f"Function {func.__name__} failed after {max_retries} retries",
                             function=func.__name__,
                             attempt=attempt + 1,
@@ -107,7 +108,7 @@ def retry_on_failure(
                     # Log retry attempt
                     log_with_context(
                         logger,
-                        logger.WARNING,
+                        logging.WARNING,
                         f"Function {func.__name__} failed, retrying in {current_delay}s",
                         function=func.__name__,
                         attempt=attempt + 1,
@@ -143,7 +144,7 @@ def retry_on_failure(
                         # Log final failure
                         log_with_context(
                             logger,
-                            logger.ERROR,
+                            logging.ERROR,
                             f"Function {func.__name__} failed after {max_retries} retries",
                             function=func.__name__,
                             attempt=attempt + 1,
@@ -154,7 +155,7 @@ def retry_on_failure(
                     # Log retry attempt
                     log_with_context(
                         logger,
-                        logger.WARNING,
+                        logging.WARNING,
                         f"Function {func.__name__} failed, retrying in {current_delay}s",
                         function=func.__name__,
                         attempt=attempt + 1,
@@ -218,7 +219,7 @@ def handle_errors(
                 error_tracker.track_error(e, context)
 
                 # Log error
-                level = log_level if log_level is not None else logger.ERROR
+                level = log_level if log_level is not None else logging.ERROR
                 log_with_context(
                     logger,
                     level,
@@ -245,7 +246,7 @@ def handle_errors(
                 error_tracker.track_error(e, context)
 
                 # Log error
-                level = log_level if log_level is not None else logger.ERROR
+                level = log_level if log_level is not None else logging.ERROR
                 log_with_context(
                     logger,
                     level,
@@ -303,7 +304,7 @@ def safe_execute(
 
             log_with_context(
                 logger,
-                logger.ERROR,
+                logging.ERROR,
                 f"Safe execution failed for {func.__name__}: {str(e)}",
                 **context
             )
@@ -436,7 +437,7 @@ class ErrorContext:
     ):
         self.operation = operation
         self.reraise = reraise
-        self.log_level = log_level or logger.ERROR
+        self.log_level = log_level or logging.ERROR
         self.context = context or {}
 
     def __enter__(self):

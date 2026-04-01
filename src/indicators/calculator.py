@@ -70,22 +70,22 @@ class IndicatorCalculator:
             volume_ma = self._calculate_volume_ma(df, 20)
 
             # Combine all indicators by date
-            for i, row in df.iterrows():
-                trade_date = row['date']
+            for idx, (i, row) in enumerate(df.iterrows()):
+                trade_date = i  # 'date' is the DataFrame index
 
                 indicators = {
-                    'ma5': ma_data.get('ma5', {}).get(i),
-                    'ma10': ma_data.get('ma10', {}).get(i),
-                    'ma20': ma_data.get('ma20', {}).get(i),
-                    'ma60': ma_data.get('ma60', {}).get(i),
-                    'rsi14': rsi_data.get(i),
-                    'macd': macd_data.get('macd', {}).get(i),
-                    'macd_signal': macd_data.get('signal', {}).get(i),
-                    'macd_histogram': macd_data.get('histogram', {}).get(i),
-                    'bb_upper': bb_data.get('upper', {}).get(i),
-                    'bb_middle': bb_data.get('middle', {}).get(i),
-                    'bb_lower': bb_data.get('lower', {}).get(i),
-                    'volume_ma20': volume_ma.get(i)
+                    'ma5': ma_data.get('ma5', {}).get(idx),
+                    'ma10': ma_data.get('ma10', {}).get(idx),
+                    'ma20': ma_data.get('ma20', {}).get(idx),
+                    'ma60': ma_data.get('ma60', {}).get(idx),
+                    'rsi14': rsi_data.get(idx),
+                    'macd': macd_data.get('macd', {}).get(idx),
+                    'macd_signal': macd_data.get('signal', {}).get(idx),
+                    'macd_histogram': macd_data.get('histogram', {}).get(idx),
+                    'bb_upper': bb_data.get('upper', {}).get(idx),
+                    'bb_middle': bb_data.get('middle', {}).get(idx),
+                    'bb_lower': bb_data.get('lower', {}).get(idx),
+                    'volume_ma20': volume_ma.get(idx)
                 }
 
                 # Convert to Decimal and filter None values
