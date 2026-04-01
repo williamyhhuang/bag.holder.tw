@@ -1,0 +1,54 @@
+# Multi-stage build for smaller final image
+FROM python:3.11-slim as builder
+
+# Install build dependencies in builder stage
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install TA-Lib C library in builder stage
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --build=aarch64-unknown-linux-gnu --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib*
+
+# Copy and install Python dependencies
+COPY requirements-prod.txt .
+RUN pip install --no-cache-dir --prefix=/usr/local -r requirements-prod.txt
+
+# Final stage - runtime only
+FROM python:3.11-slim
+
+# Copy only the installed packages and TA-Lib from builder
+COPY --from=builder /usr/local /usr/local
+COPY --from=builder /usr/lib/libta_lib* /usr/lib/
+COPY --from=builder /usr/include/ta-lib /usr/include/ta-lib
+
+# Set working directory
+WORKDIR /app
+
+# Copy only necessary source code (no tests, no dev files)
+COPY src/ ./src/
+COPY main.py ./
+COPY run_backtest.py ./
+COPY config/ ./config/
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/logs /app/reports /app/data/stocks
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Expose port
+EXPOSE 8000
+
+# Default command
+CMD ["python", "main.py", "--help"]

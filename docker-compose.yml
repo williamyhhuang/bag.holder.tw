@@ -20,7 +20,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile.optimized
     container_name: tw-stock-app
     environment:
       - REDIS_URL=redis://redis:6379
@@ -43,7 +43,7 @@ services:
   downloader:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile.optimized
     container_name: tw-stock-downloader
     environment:
       - REDIS_URL=redis://redis:6379
@@ -69,7 +69,7 @@ services:
   scanner:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile.optimized
     container_name: tw-stock-scanner
     environment:
       - REDIS_URL=redis://redis:6379
@@ -97,7 +97,7 @@ services:
   telegram-bot:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile.optimized
     container_name: tw-stock-telegram
     environment:
       - REDIS_URL=redis://redis:6379
@@ -116,7 +116,7 @@ services:
   futures-monitor:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile.optimized
     container_name: tw-stock-futures
     environment:
       - REDIS_URL=redis://redis:6379
@@ -147,7 +147,7 @@ services:
   backtest:
     build:
       context: .
-      dockerfile: ./docker/Dockerfile
+      dockerfile: ./docker/Dockerfile.optimized
     container_name: tw-stock-backtest
     environment:
       - REDIS_URL=redis://redis:6379

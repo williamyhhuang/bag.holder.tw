@@ -1,0 +1,43 @@
+# Core dependencies for production
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Database dependencies removed - now using CSV storage
+
+# Redis and caching
+redis==5.0.1
+
+# HTTP client
+aiohttp==3.9.1
+httpx==0.25.2
+
+# Data processing
+pandas==2.1.4
+numpy==1.25.2
+yfinance==0.2.28
+
+# Technical indicators
+TA-Lib==0.6.8
+
+# Telegram bot
+python-telegram-bot==20.7
+
+# Configuration
+python-dotenv==1.0.0
+
+# System monitoring
+psutil==5.9.6
+
+# Utilities
+click==8.1.7
+rich==13.7.0
+typer==0.9.0
+
+# Security
+cryptography>=42.0.0
+
+# Date and time
+python-dateutil==2.8.2
+pytz==2023.3

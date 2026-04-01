@@ -10,10 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from contextvars import ContextVar
 
-from sqlalchemy.orm import Session
-
-from ..database.models import SystemLog
-from ..database.connection import db_manager
+# Database logging removed - now using file-based logging only
 
 # Context variable for request ID tracking
 request_id_context: ContextVar[str] = ContextVar('request_id', default='')

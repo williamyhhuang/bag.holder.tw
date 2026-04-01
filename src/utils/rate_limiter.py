@@ -8,10 +8,7 @@ from typing import Dict, Optional, Any
 import json
 
 import redis.asyncio as aioredis
-from sqlalchemy.orm import Session
 
-from ..database.models import APIRateLimit
-from ..database.connection import db_manager
 from .logger import get_logger
 
 logger = get_logger(__name__)
