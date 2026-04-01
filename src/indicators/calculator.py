@@ -71,7 +71,7 @@ class IndicatorCalculator:
 
             # Combine all indicators by date
             for idx, (i, row) in enumerate(df.iterrows()):
-                trade_date = i  # 'date' is the DataFrame index
+                trade_date = i.date() if hasattr(i, 'date') else i  # convert Timestamp to date
 
                 indicators = {
                     'ma5': ma_data.get('ma5', {}).get(idx),
