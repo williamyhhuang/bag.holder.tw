@@ -17,6 +17,9 @@ from ..api.fubon_client import FubonClient, FubonAPIError
 from ..indicators.calculator import IndicatorCalculator, SignalDetector
 from ..utils.logger import get_logger
 from ..utils.error_handler import handle_errors, retry_on_failure, CircuitBreaker
+
+# Create circuit breaker instance
+circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=300)
 from ..utils.rate_limiter import rate_limit_manager
 
 logger = get_logger(__name__)

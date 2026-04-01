@@ -1,34 +1,35 @@
-# 台股監控機器人 (Taiwan Stock Monitoring Robot)
+# 台股分析系統 (Taiwan Stock Analysis System)
 
-基於富邦證券官方 SDK 的台股監控機器人，能夠全市場掃描 1,800+ 檔股票，進行即時技術指標分析，並支援台指期貨監控，透過 Telegram 發送買賣信號通知。
+全新的台股分析系統，整合資料下載、股票掃描、策略回測與期貨分析功能。採用 CSV 檔案儲存，簡化部署並提供統一 CLI 介面。
 
-🆕 **新增回測系統**: 完整的策略回測功能，使用 YFinance 資料源驗證交易策略績效！
+🆕 **全面重構**: CLI 統一介面、CSV 資料儲存、完整回測系統、定時任務支援！
 
 ## 🎯 專案特色
 
-- **全市場掃描**: 監控 TSE/OTC 市場 1,800+ 檔股票
-- **期貨監控**: 專注台指期貨三大合約 (TXF大台/MXF小台/MTX微台)
-- **即時技術分析**: 支援多種技術指標 (MA, RSI, MACD, 布林通道)
-- **智能通知系統**: Telegram Bot 推送買賣信號
-- **投資組合追蹤**: 個人投資組合管理與績效追蹤
-- **🆕 策略回測**: 完整的回測系統，驗證策略勝率與績效
-- **容器化部署**: Docker + Docker Compose 一鍵部署
-- **跨平台支援**: macOS、Windows 11、Linux 全平台最佳化
-- **官方 SDK 整合**: 使用富邦證券 fubon_neo 官方 SDK
+- **📥 股票資料下載**: YFinance 整合下載台股歷史資料
+- **🔍 智能股票掃描**: 多策略選股 (動能、超跌、突破)
+- **📈 策略回測系統**: 完整回測引擎驗證交易策略績效
+- **📊 期貨分析**: 台指期貨技術分析與交易建議
+- **💼 交易記錄管理**: CSV 檔案記錄個人交易與績效
+- **🤖 Telegram 整合**: 分析結果即時推送與交易記錄
+- **⏰ 定時任務支援**: 自動化資料下載與定期掃描
+- **🐳 容器化部署**: Docker Compose 一鍵部署多服務
+- **🖥️ 統一 CLI 介面**: 簡潔明瞭的命令列操作介面
+- **📁 CSV 資料儲存**: 無需資料庫，簡單透明的檔案儲存
 
 ## 🏗️ 系統架構
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                   Taiwan Stock Monitor                         │
+│                   Taiwan Stock Analysis CLI                   │
 ├─────────────────────────────────────────────────────────────────┤
-│  📱 Telegram Bot  │  🔍 Scanner  │  🎯 Futures  │  📊 API Server │
+│  📥 Downloader │  🔍 Scanner │  📈 Backtest │  📊 Futures      │
 ├─────────────────────────────────────────────────────────────────┤
 │                        🧠 Core Services                        │
-│  • Rate Limiter   • Logger      • Error Handler              │
-│  • Config Mgr     • DB Models   • Tech Indicators            │
+│  • CSV Storage   • YFinance   • Tech Analysis               │
+│  • Telegram Bot  • User Trades • Performance Reporter        │
 ├─────────────────────────────────────────────────────────────────┤
-│  💾 PostgreSQL  │  🚀 Redis Cache  │  📊 Fubon Neo SDK        │
+│  🚀 Redis Cache  │  📁 CSV Files  │  🤖 Telegram Bot         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -42,17 +43,12 @@
 
 ### 1. 環境需求
 
-#### macOS / Linux
-- Docker & Docker Compose
-- Python 3.11+ (開發用)
-- PostgreSQL 15+ (可用 Docker)
-- Redis 7+ (可用 Docker)
-
-#### Windows 11
-- Docker Desktop for Windows
+#### 本地開發
 - Python 3.11+
-- Windows Terminal (建議)
-- WSL 2 (建議)
+- pip & venv
+
+#### Docker 部署
+- Docker & Docker Compose
 
 ### 2. 設定配置
 
@@ -60,49 +56,216 @@
 # 複製配置檔案
 cp .env.example .env
 
-# 編輯配置檔案，填入真實的 API 金鑰
+# 編輯配置檔案
 nano .env
 ```
 
 必要配置項目：
 ```env
-# 富邦證券 API 認證 (二選一)
-# 方式 1: API Key (推薦)
-FUBON_API_KEY=your_fubon_api_key_here
-FUBON_API_SECRET=your_fubon_api_secret_here
-
-# 方式 2: 憑證檔案
-FUBON_USER_ID=your_fubon_user_id_here
-FUBON_PASSWORD=your_fubon_password_here
-FUBON_CERT_PATH=/path/to/your/certificate.pfx
-FUBON_CERT_PASSWORD=your_certificate_password_here
-
-# 環境設定
-FUBON_IS_SIMULATION=true
-
-# Telegram Bot
+# Telegram 設定
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
 
-# 資料庫
-POSTGRES_PASSWORD=your_secure_password
+# Redis 設定
+REDIS_URL=redis://localhost:6379
 
-# 期貨監控設定
-FUTURES_ENABLED_CONTRACTS=TXF,MXF,MTX
-FUTURES_MONITOR_INTERVAL=30
+# 策略參數
+STRATEGY_RSI_OVERSOLD_THRESHOLD=30
+STRATEGY_RSI_OVERBOUGHT_THRESHOLD=70
+STRATEGY_MIN_VOLUME_MOMENTUM=500000
 ```
 
-### 3. 啟動服務
+### 3. 本地開發
 
-#### macOS / Linux
 ```bash
-# 開發環境 (僅股票監控)
-make dev
+# 建立虛擬環境
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# 或 venv\Scripts\activate  # Windows
 
-# 生產環境 (僅股票監控)
-make prod
+# 安裝套件
+pip install -r requirements.txt
 
-# 啟動全部服務 (股票 + 期貨)
-docker-compose --profile full up -d
+# 查看可用指令
+python main.py --help
+
+# 下載股票資料
+python main.py download
+
+# 執行股票掃描
+python main.py scan
+
+# 運行回測
+python main.py backtest
+
+# 期貨分析
+python main.py futures
+```
+
+### 4. Docker 部署
+
+#### 基本部署
+```bash
+# 啟動核心服務
+docker compose up -d redis app downloader scanner
+
+# 查看服務狀態
+docker compose ps
+
+# 查看日誌
+docker compose logs -f scanner
+```
+
+#### 完整部署
+```bash
+# 啟動所有服務（包含期貨監控）
+docker compose --profile full up -d
+
+# 僅啟動期貨服務
+docker compose --profile futures up -d
+
+# 手動執行回測
+docker compose --profile backtest run --rm backtest
+```
+
+## 📋 功能說明
+
+### 資料下載 (download)
+使用 YFinance 下載台股歷史資料，支援 TSE 與 OTC 市場。
+
+```bash
+# 下載最近的股票資料
+python main.py download
+
+# 指定日期區間
+python main.py download --start-date 2024-01-01 --end-date 2024-01-31
+
+# 指定市場
+python main.py download --markets TSE OTC
+```
+
+### 股票掃描 (scan)
+基於技術指標進行股票選股，支援多種策略。
+
+```bash
+# 執行所有策略掃描
+python main.py scan
+
+# 執行特定策略
+python main.py scan --strategy momentum
+
+# 掃描並發送 Telegram 通知
+python main.py scan --send-telegram
+```
+
+**支援策略:**
+- **momentum**: 動能股選股（RSI、價格變化、成交量）
+- **oversold**: 超跌股選股（RSI 過低、價格下跌）
+- **breakout**: 突破股選股（價格突破、高成交量）
+
+### 回測分析 (backtest)
+完整的策略回測系統，驗證交易策略績效。
+
+```bash
+# 執行回測
+python main.py backtest
+```
+
+**回測功能:**
+- 技術指標策略回測
+- 完整交易成本計算
+- 風險控制（停損/停利）
+- 績效分析報告
+- 基準比較（TAIEX）
+
+### 期貨分析 (futures)
+台指期貨技術分析與交易建議。
+
+```bash
+# 期貨分析
+python main.py futures
+
+# 分析並發送 Telegram 通知
+python main.py futures --send-telegram
+```
+
+## 📊 資料結構
+
+### CSV 檔案位置
+```
+data/
+├── stocks/              # 股票歷史資料
+│   ├── 2330.csv        # 台積電
+│   ├── 2454.csv        # 聯發科
+│   └── ...
+├── user_trades.csv      # 使用者交易記錄
+└── ...
+reports/
+├── backtest_report_*.md # 回測報告
+└── ...
+```
+
+### 交易記錄格式
+```csv
+trade_id,timestamp,symbol,action,quantity,price,status,notes
+1,2024-03-15 09:30:00,2330,buy,1000,580.0,open,動能股買入
+2,2024-03-20 14:30:00,2330,sell,1000,590.0,closed,停利出場
+```
+
+## 🤖 Telegram 整合
+
+### 設定 Telegram Bot
+1. 與 @BotFather 對話建立 Bot
+2. 取得 Bot Token
+3. 取得 Chat ID
+4. 設定到 `.env` 檔案
+
+### 支援的通知
+- 股票掃描結果
+- 期貨分析建議
+- 系統運行狀態
+- 錯誤警告
+
+## ⏰ 定時任務
+
+Docker 部署支援自動定時執行：
+
+- **downloader**: 每日下載股票資料 (24小時)
+- **scanner**: 每小時掃描分析 (1小時)
+- **futures-monitor**: 每30分鐘期貨分析 (30分鐘)
+
+詳細設定請參考 [DOCKER.md](DOCKER.md)
+
+## 📝 更新日誌
+
+### v2.0.0 - 2024-03-15
+- 🆕 全面重構為 CLI 架構
+- 🆕 新增 YFinance 資料下載功能
+- 🆕 CSV 檔案儲存替代 PostgreSQL
+- 🆕 完整策略回測系統
+- 🆕 統一 CLI 介面操作
+- 🆕 Docker 定時任務支援
+- 🆕 簡化 Telegram 整合
+- 🆕 交易記錄管理系統
+- 🔧 優化期貨分析模組
+- 🔧 改進錯誤處理機制
+
+### v1.x.x - 2024-02-XX
+- 🆕 富邦證券 API 整合
+- 🆕 股票掃描引擎
+- 🆕 期貨監控系統
+- 🆕 Telegram Bot 整合
+
+## 🔗 相關連結
+
+- [Docker 部署指南](DOCKER.md)
+- [開發環境設定](CLAUDE.md)
+- [API 文件](docs/api.md)
+- [問題回報](https://github.com/your-repo/issues)
+
+## 📄 授權
+
+MIT License
 
 # 僅啟動期貨監控
 docker-compose --profile futures up -d

@@ -1,26 +1,6 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: tw-stock-db
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-tw_stock}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./data/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   # Redis for caching and rate limiting
   redis:
     image: redis:7-alpine
@@ -36,58 +16,82 @@ services:
       timeout: 10s
       retries: 3
 
-  # Main application
+  # Main CLI application
   app:
     build:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: tw-stock-app
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-tw_stock}
       - REDIS_URL=redis://redis:6379
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - FUBON_API_KEY=${FUBON_API_KEY}
-      - FUBON_SECRET=${FUBON_SECRET}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config:ro
+      - ./reports:/app/reports
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
+    command: ["python", "main.py", "--help"]
 
-  # Scanner service (separate for better resource management)
+  # Data downloader service (定時下載股票資料)
+  downloader:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: tw-stock-downloader
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # 每日早上 9:00 下載資料
+    command: >
+      sh -c "
+      while true; do
+        echo 'Starting daily stock data download...'
+        python main.py download
+        echo 'Download completed. Waiting for next run...'
+        sleep 86400
+      done
+      "
+
+  # Stock scanner service (定時執行選股掃描)
   scanner:
     build:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: tw-stock-scanner
-    command: ["python", "-m", "src.scanner.main"]
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-tw_stock}
       - REDIS_URL=redis://redis:6379
-      - FUBON_API_KEY=${FUBON_API_KEY}
-      - FUBON_SECRET=${FUBON_SECRET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config:/app/config:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # 每小時執行一次掃描並發送 Telegram 通知
+    command: >
+      sh -c "
+      while true; do
+        echo 'Starting stock scan...'
+        python main.py scan --send-telegram
+        echo 'Scan completed. Waiting for next run...'
+        sleep 3600
+      done
+      "
 
   # Telegram bot service
   telegram-bot:
@@ -95,58 +99,71 @@ services:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: tw-stock-telegram
-    command: ["python", "-m", "src.telegram.main"]
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-tw_stock}
       - REDIS_URL=redis://redis:6379
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config:/app/config:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    command: ["python", "-m", "src.telegram.simple_notifier"]
 
-  # Taiwan Index Futures monitor (TXF, MXF, MTX only)
+  # Taiwan Index Futures monitor service
   futures-monitor:
     build:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: tw-stock-futures
-    command: ["python", "-m", "src.futures.main"]
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-tw_stock}
       - REDIS_URL=redis://redis:6379
-      - FUBON_API_KEY=${FUBON_API_KEY}
-      - FUBON_API_SECRET=${FUBON_API_SECRET}
-      - FUBON_USER_ID=${FUBON_USER_ID}
-      - FUBON_PASSWORD=${FUBON_PASSWORD}
-      - FUBON_CERT_PATH=${FUBON_CERT_PATH}
-      - FUBON_CERT_PASSWORD=${FUBON_CERT_PASSWORD}
-      - FUBON_IS_SIMULATION=${FUBON_IS_SIMULATION:-true}
-      - FUTURES_ENABLED_CONTRACTS=${FUTURES_ENABLED_CONTRACTS:-TXF,MXF,MTX}
-      - FUTURES_MONITOR_INTERVAL=${FUTURES_MONITOR_INTERVAL:-30}
-      - FUTURES_MAX_POSITION_SIZE=${FUTURES_MAX_POSITION_SIZE:-10}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./config:/app/config:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # 每 30 分鐘執行一次期貨分析
+    command: >
+      sh -c "
+      while true; do
+        echo 'Starting futures analysis...'
+        python main.py futures --send-telegram
+        echo 'Futures analysis completed. Waiting for next run...'
+        sleep 1800
+      done
+      "
     profiles:
       - full     # Enable with --profile full for complete monitoring
       - futures  # Enable with --profile futures for futures-only
 
+  # Backtest runner (手動執行或定期執行)
+  backtest:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: tw-stock-backtest
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: "no"  # 不自動重啟，僅手動執行
+    command: ["python", "main.py", "backtest"]
+    profiles:
+      - backtest  # Enable with --profile backtest
+
 volumes:
-  postgres_data:
   redis_data:
 
 networks:
