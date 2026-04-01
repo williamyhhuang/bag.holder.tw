@@ -295,6 +295,11 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v2.1.1 - 2026-04-01
+- 🐛 修正 `load_from_stocks_dir` 空值欄位造成整檔載入失敗的問題（改為逐行跳過）
+- 🤖 `BacktestRunner` 新增資料覆蓋率檢查：當本地 CSV 只有少數幾天時，自動觸發歷史資料下載
+- 🗑️ 清除測試遺留的 `data/stocks/TEST_TW.csv`
+
 ### v2.1.0 - 2026-04-01
 - 🔧 回測系統優先載入 `data/stocks/` 本地 CSV，不再重複從 yfinance 抓取
 - 🆕 `YFinanceDataSource.load_from_stocks_dir()` — 批次讀取每檔獨立 CSV
