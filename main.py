@@ -24,6 +24,8 @@ def run_download(args):
         cmd.extend(['--end-date', args.end_date])
     if args.markets:
         cmd.extend(['--markets'] + args.markets)
+    if hasattr(args, 'limit') and args.limit:
+        cmd.extend(['--limit', str(args.limit)])
 
     try:
         result = subprocess.run(cmd, cwd=project_root, check=True)
@@ -121,6 +123,11 @@ def create_parser():
         nargs='+',
         choices=['TSE', 'OTC'],
         help='市場選擇 (預設: TSE OTC)'
+    )
+    download_parser.add_argument(
+        '--limit',
+        type=int,
+        help='限制下載股票數量 (測試用)'
     )
 
     # Scan command

@@ -55,7 +55,8 @@ class DataDownloaderCLI:
                     start_date = self.yf_client.get_last_trading_date()
 
                 markets = args.markets if args.markets else ["TSE", "OTC"]
-                count = self.yf_client.download_all_stocks(start_date, end_date, markets)
+                limit = args.limit if hasattr(args, 'limit') and args.limit else None
+                count = self.yf_client.download_all_stocks(start_date, end_date, markets, limit)
 
             self.logger.info(f"Download completed: {count} stocks processed")
             return count
@@ -96,6 +97,11 @@ Examples:
         nargs='+',
         choices=['TSE', 'OTC'],
         help='Markets to download (default: TSE OTC)'
+    )
+    download_parser.add_argument(
+        '--limit',
+        type=int,
+        help='Limit number of stocks to download (for testing)'
     )
 
     return parser

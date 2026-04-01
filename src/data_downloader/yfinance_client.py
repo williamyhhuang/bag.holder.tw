@@ -3,10 +3,13 @@ YFinance client for downloading Taiwan stock data
 """
 import yfinance as yf
 import pandas as pd
+import requests
+import json
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
 from pathlib import Path
+import time
 
 import sys
 from pathlib import Path
@@ -26,11 +29,50 @@ class YFinanceClient:
     def __init__(self):
         self.logger = get_logger(self.__class__.__name__)
 
-    def get_tse_listed_stocks(self) -> List[str]:
-        """Get list of TSE listed stock symbols"""
-        # Taiwan large cap and frequently traded stocks (verified active)
-        tse_stocks = [
-            # Top market cap stocks
+    def fetch_tse_stock_list(self) -> List[str]:
+        """
+        Fetch complete TSE (上市) stock list from Taiwan Stock Exchange API
+
+        Returns:
+            List of TSE stock symbols with .TW suffix
+        """
+        try:
+            # 使用證交所 API 獲取上市股票清單
+            url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+
+            self.logger.info("Fetching TSE stock list from Taiwan Stock Exchange API...")
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            }
+
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # 從 API 回應中提取股票代號
+            stock_codes = []
+            for item in data:
+                if 'Code' in item:
+                    code = item['Code'].strip()
+                    # 只取數字股票代號，排除指數和其他非股票項目
+                    if code.isdigit() and len(code) == 4:
+                        stock_codes.append(f"{code}.TW")
+
+            self.logger.info(f"Successfully fetched {len(stock_codes)} TSE stocks")
+            return stock_codes
+
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch TSE stock list from API: {e}")
+            # 如果 API 失敗，回退到預設清單
+            return self.get_tse_fallback_list()
+
+    def get_tse_fallback_list(self) -> List[str]:
+        """Fallback TSE stock list when API fails"""
+        self.logger.info("Using fallback TSE stock list")
+        return [
+            # 主要大型股
             "2330.TW", "2454.TW", "2317.TW", "1303.TW", "1301.TW",
             "2308.TW", "2412.TW", "2881.TW", "2882.TW", "2886.TW",
             "2002.TW", "1216.TW", "3008.TW", "2207.TW", "1101.TW",
@@ -38,39 +80,65 @@ class YFinanceClient:
             "2884.TW", "2885.TW", "2887.TW", "2890.TW", "1102.TW",
             "3711.TW", "2395.TW", "2357.TW", "2303.TW", "2327.TW",
             "2379.TW", "2382.TW", "2408.TW", "2615.TW", "2376.TW",
-            "2377.TW", "2324.TW", "2337.TW", "2301.TW", "2383.TW",
-
-            # Additional active stocks
-            "1326.TW", "2603.TW", "2609.TW", "1590.TW", "2618.TW",
-            "2345.TW", "2912.TW", "6505.TW", "3034.TW",
-            "2344.TW", "2347.TW", "2356.TW", "2385.TW", "3045.TW",
-            "2449.TW", "4904.TW", "5880.TW", "6415.TW", "8454.TW",
-
-            # Technology stocks
-            "3481.TW", "2382.TW", "6669.TW", "3037.TW", "2458.TW",
-            "2312.TW", "2313.TW", "2388.TW", "3443.TW", "6176.TW"
+            "2377.TW", "2324.TW", "2337.TW", "2301.TW", "2383.TW"
         ]
-        return tse_stocks
+
+    def get_tse_listed_stocks(self) -> List[str]:
+        """Get list of TSE listed stock symbols (dynamic fetch with fallback)"""
+        return self.fetch_tse_stock_list()
+
+    def fetch_otc_stock_list(self) -> List[str]:
+        """
+        Fetch complete OTC (上櫃) stock list from Taipei Exchange API
+
+        Returns:
+            List of OTC stock symbols with .TWO suffix
+        """
+        try:
+            # 使用櫃買中心 API 獲取上櫃股票清單
+            url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
+
+            self.logger.info("Fetching OTC stock list from Taipei Exchange API...")
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            }
+
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # 從 API 回應中提取股票代號
+            stock_codes = []
+            for item in data:
+                if 'SecuritiesCompanyCode' in item:
+                    code = item['SecuritiesCompanyCode'].strip()
+                    # 只取數字股票代號，排除指數和其他非股票項目
+                    if code.isdigit() and len(code) == 4:
+                        stock_codes.append(f"{code}.TWO")
+
+            self.logger.info(f"Successfully fetched {len(stock_codes)} OTC stocks")
+            return stock_codes
+
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch OTC stock list from API: {e}")
+            # 如果 API 失敗，回退到預設清單
+            return self.get_otc_fallback_list()
+
+    def get_otc_fallback_list(self) -> List[str]:
+        """Fallback OTC stock list when API fails"""
+        self.logger.info("Using fallback OTC stock list")
+        return [
+            # 主要上櫃股票
+            "8401.TWO", "3529.TWO", "5274.TWO", "3707.TWO", "5478.TWO",
+            "4966.TWO", "6509.TWO", "3260.TWO", "6182.TWO", "6214.TWO",
+            "3293.TWO", "6180.TWO", "3455.TWO", "6506.TWO", "6462.TWO"
+        ]
 
     def get_otc_listed_stocks(self) -> List[str]:
-        """Get list of OTC listed stock symbols"""
-        # Active Taiwan OTC stocks (verified symbols)
-        otc_stocks = [
-            # Popular OTC stocks
-            "8401.TWO", "3529.TWO", "5274.TWO", "3707.TWO", "5478.TWO",
-            "6669.TWO", "3711.TWO", "4966.TWO", "6509.TWO", "3005.TWO",
-            "4968.TWO", "3702.TWO", "8070.TWO", "4904.TWO", "3036.TWO",
-            "6412.TWO", "4943.TWO", "6279.TWO", "6488.TWO", "8028.TWO",
-
-            # Technology OTC
-            "3260.TWO", "6182.TWO", "6214.TWO", "3293.TWO",
-            "6491.TWO", "8110.TWO", "6213.TWO", "3257.TWO", "6271.TWO",
-
-            # Other active OTC stocks
-            "4763.TWO", "8016.TWO", "3511.TWO", "6116.TWO", "4721.TWO",
-            "6180.TWO", "3455.TWO", "6506.TWO", "3452.TWO", "6462.TWO"
-        ]
-        return otc_stocks
+        """Get list of OTC listed stock symbols (dynamic fetch with fallback)"""
+        return self.fetch_otc_stock_list()
 
     def get_stock_data(
         self,
@@ -154,7 +222,8 @@ class YFinanceClient:
         self,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        markets: List[str] = None
+        markets: List[str] = None,
+        limit: Optional[int] = None
     ) -> int:
         """
         Download data for all listed stocks
@@ -163,6 +232,7 @@ class YFinanceClient:
             start_date: Start date for data download
             end_date: End date for data download
             markets: List of markets to download ("TSE", "OTC")
+            limit: Maximum number of stocks to download (for testing)
 
         Returns:
             Number of stocks successfully downloaded
@@ -176,6 +246,11 @@ class YFinanceClient:
             all_symbols.extend(self.get_tse_listed_stocks())
         if "OTC" in markets:
             all_symbols.extend(self.get_otc_listed_stocks())
+
+        # Apply limit if specified
+        if limit and limit > 0:
+            all_symbols = all_symbols[:limit]
+            self.logger.info(f"Limited to first {limit} stocks for testing")
 
         self.logger.info(f"Starting download for {len(all_symbols)} stocks")
 
