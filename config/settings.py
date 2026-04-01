@@ -64,6 +64,7 @@ class FubonAPISettings(BaseSettings):
 class TelegramSettings(BaseSettings):
     """Telegram bot configuration"""
     bot_token: str = Field(default="dummy_token", env="TELEGRAM_BOT_TOKEN")
+    chat_id: str = Field(default="dummy_chat_id", env="TELEGRAM_CHAT_ID")
     webhook_url: Optional[str] = Field(default=None, env="TELEGRAM_WEBHOOK_URL")
     webhook_secret: Optional[str] = Field(default=None, env="TELEGRAM_WEBHOOK_SECRET")
 
@@ -183,6 +184,53 @@ class PerformanceSettings(BaseSettings):
     cpu_limit: float = Field(default=2.0, env="CPU_LIMIT")
     batch_processing_delay: float = Field(default=1.0, env="BATCH_PROCESSING_DELAY")
 
+class DataSettings(BaseSettings):
+    """Data storage configuration"""
+    stocks_path: str = Field(default="data/stocks", env="DATA_STOCKS_PATH")
+    user_trades_path: str = Field(default="data/user_trades.csv", env="DATA_USER_TRADES_PATH")
+
+    class Config:
+        env_prefix = "DATA_"
+
+class StrategySettings(BaseSettings):
+    """Strategy configuration for stock filtering"""
+    # RSI Settings
+    rsi_oversold_threshold: float = Field(default=30.0, env="STRATEGY_RSI_OVERSOLD_THRESHOLD")
+    rsi_overbought_threshold: float = Field(default=70.0, env="STRATEGY_RSI_OVERBOUGHT_THRESHOLD")
+    rsi_period: int = Field(default=14, env="STRATEGY_RSI_PERIOD")
+
+    # Volume Settings
+    min_volume_momentum: int = Field(default=500000, env="STRATEGY_MIN_VOLUME_MOMENTUM")
+    min_volume_oversold: int = Field(default=300000, env="STRATEGY_MIN_VOLUME_OVERSOLD")
+    min_volume_breakout: int = Field(default=1000000, env="STRATEGY_MIN_VOLUME_BREAKOUT")
+    min_volume_value: int = Field(default=200000, env="STRATEGY_MIN_VOLUME_VALUE")
+    min_volume_high: int = Field(default=2000000, env="STRATEGY_MIN_VOLUME_HIGH")
+
+    # Price Settings
+    min_price: float = Field(default=10.0, env="STRATEGY_MIN_PRICE")
+    momentum_price_change: float = Field(default=3.0, env="STRATEGY_MOMENTUM_PRICE_CHANGE")
+    oversold_price_change: float = Field(default=-2.0, env="STRATEGY_OVERSOLD_PRICE_CHANGE")
+    value_price_change_min: float = Field(default=-5.0, env="STRATEGY_VALUE_PRICE_CHANGE_MIN")
+    value_price_change_max: float = Field(default=5.0, env="STRATEGY_VALUE_PRICE_CHANGE_MAX")
+
+    # MA Settings
+    ma_periods: List[int] = Field(default=[5, 10, 20, 60], env="STRATEGY_MA_PERIODS")
+
+    # Score Settings
+    rsi_extreme_score: float = Field(default=10.0, env="STRATEGY_RSI_EXTREME_SCORE")
+    high_volume_score: float = Field(default=5.0, env="STRATEGY_HIGH_VOLUME_SCORE")
+    price_change_high_score: float = Field(default=8.0, env="STRATEGY_PRICE_CHANGE_HIGH_SCORE")
+    price_change_mid_score: float = Field(default=5.0, env="STRATEGY_PRICE_CHANGE_MID_SCORE")
+
+    @validator('ma_periods', pre=True)
+    def split_ma_periods(cls, v):
+        if isinstance(v, str):
+            return [int(period.strip()) for period in v.split(',')]
+        return v
+
+    class Config:
+        env_prefix = "STRATEGY_"
+
 class Settings(BaseSettings):
     """Main application settings"""
     # Sub-settings
@@ -199,6 +247,8 @@ class Settings(BaseSettings):
     security: SecuritySettings = SecuritySettings()
     futures: FuturesSettings = FuturesSettings()
     performance: PerformanceSettings = PerformanceSettings()
+    data: DataSettings = DataSettings()
+    strategy: StrategySettings = StrategySettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

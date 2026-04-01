@@ -269,7 +269,7 @@ pip install yfinance numpy
 
 #### 運行回測
 ```bash
-# 完整回測 (2024-09-01 至今)
+# 完整回測 (2025-09-01 至今)
 python run_backtest.py
 
 # 快速測試 (最近 30 天)

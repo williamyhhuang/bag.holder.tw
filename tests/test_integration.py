@@ -69,8 +69,8 @@ class TestSystemIntegration:
         # Test historical data retrieval
         historical = await fubon_client.get_historical_data(
             symbol="2330",
-            start_date="2024-01-01",
-            end_date="2024-01-31"
+            start_date="2025-01-01",
+            end_date="2025-01-31"
         )
         assert isinstance(historical, list)
 
@@ -295,7 +295,7 @@ class TestSystemPerformance:
                 from src.database.models import StockPrice
                 price = StockPrice(
                     stock_id=f"test-{i}-{j}",
-                    date=date(2024, 1, 1),
+                    date=date(2025, 1, 1),
                     open_price=Decimal('100'),
                     high_price=Decimal('105'),
                     low_price=Decimal('95'),

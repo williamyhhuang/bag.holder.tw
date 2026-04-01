@@ -11,9 +11,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
 from src.database.models import Base, Stock, StockPrice, TechnicalIndicator
 from src.database.connection import DatabaseManager
-from src.config.settings import settings
+from config.settings import settings
 
 # Test database URL
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -99,7 +106,7 @@ def sample_price_data():
 
         price = StockPrice(
             stock_id="test-stock-id",
-            date=date(2024, 1, 1) + timedelta(days=i),
+            date=date(2025, 1, 1) + timedelta(days=i),
             open_price=close_price - Decimal('5'),
             high_price=close_price + Decimal('10'),
             low_price=close_price - Decimal('10'),
@@ -160,7 +167,7 @@ def mock_fubon_client():
         async def get_historical_data(self, symbol, start_date, end_date):
             return [
                 {
-                    'date': date(2024, 1, 1),
+                    'date': date(2025, 1, 1),
                     'open_price': Decimal('495.0'),
                     'high_price': Decimal('510.0'),
                     'low_price': Decimal('490.0'),

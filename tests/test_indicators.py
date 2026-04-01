@@ -31,7 +31,7 @@ class TestIndicatorCalculator:
 
             price = StockPrice(
                 stock_id="test-stock",
-                date=date(2024, 1, 1) + timedelta(days=i),
+                date=date(2025, 1, 1) + timedelta(days=i),
                 open_price=close_price - Decimal('1'),
                 high_price=close_price + Decimal('2'),
                 low_price=close_price - Decimal('2'),
@@ -72,7 +72,7 @@ class TestIndicatorCalculator:
         for i in range(5):
             price = StockPrice(
                 stock_id="test-stock",
-                date=date(2024, 1, 1) + timedelta(days=i),
+                date=date(2025, 1, 1) + timedelta(days=i),
                 open_price=Decimal('100'),
                 high_price=Decimal('102'),
                 low_price=Decimal('98'),

@@ -13,6 +13,14 @@ from sqlalchemy import and_, or_, desc
 from ..database.connection import db_manager
 from ..database.models import Stock, StockPrice, StockRealtime, TechnicalIndicator
 from ..utils.logger import get_logger
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+sys.path.append(str(project_root))
+
+from config.settings import settings
 
 logger = get_logger(__name__)
 
@@ -257,22 +265,22 @@ class StockFilter:
                 if field == 'rsi14':
                     # Prefer extreme RSI values
                     rsi_val = float(value)
-                    if rsi_val < 30:
-                        score += 10  # Oversold
-                    elif rsi_val > 70:
-                        score += 10  # Overbought
+                    if rsi_val < settings.strategy.rsi_oversold_threshold:
+                        score += settings.strategy.rsi_extreme_score  # Oversold
+                    elif rsi_val > settings.strategy.rsi_overbought_threshold:
+                        score += settings.strategy.rsi_extreme_score  # Overbought
                 elif field == 'volume':
                     # Higher volume gets more points
                     volume_val = int(value)
-                    if volume_val > 1000000:
-                        score += 5
+                    if volume_val > settings.strategy.min_volume_breakout:
+                        score += settings.strategy.high_volume_score
                 elif field.startswith('price_change_pct'):
                     # Significant price changes
                     change = abs(float(value))
                     if change > 5:
-                        score += 8
+                        score += settings.strategy.price_change_high_score
                     elif change > 3:
-                        score += 5
+                        score += settings.strategy.price_change_mid_score
 
             return score
 
@@ -287,8 +295,8 @@ class PresetFilters:
     def momentum_stocks() -> List[FilterCriteria]:
         """Momentum stocks filter"""
         return [
-            FilterCriteria('price_change_pct', FilterOperator.GREATER_THAN, Decimal('3.0')),
-            FilterCriteria('volume', FilterOperator.GREATER_THAN, 500000),
+            FilterCriteria('price_change_pct', FilterOperator.GREATER_THAN, Decimal(str(settings.strategy.momentum_price_change))),
+            FilterCriteria('volume', FilterOperator.GREATER_THAN, settings.strategy.min_volume_momentum),
             FilterCriteria('rsi14', FilterOperator.GREATER_THAN, Decimal('50.0')),
             FilterCriteria('ma5', FilterOperator.GREATER_THAN, Decimal('0')),  # MA5 > 0 (valid data)
         ]
@@ -297,9 +305,9 @@ class PresetFilters:
     def oversold_stocks() -> List[FilterCriteria]:
         """Oversold stocks filter"""
         return [
-            FilterCriteria('rsi14', FilterOperator.LESS_THAN, Decimal('30.0')),
-            FilterCriteria('price_change_pct', FilterOperator.LESS_THAN, Decimal('-2.0')),
-            FilterCriteria('volume', FilterOperator.GREATER_THAN, 300000),
+            FilterCriteria('rsi14', FilterOperator.LESS_THAN, Decimal(str(settings.strategy.rsi_oversold_threshold))),
+            FilterCriteria('price_change_pct', FilterOperator.LESS_THAN, Decimal(str(settings.strategy.oversold_price_change))),
+            FilterCriteria('volume', FilterOperator.GREATER_THAN, settings.strategy.min_volume_oversold),
         ]
 
     @staticmethod
@@ -307,7 +315,7 @@ class PresetFilters:
         """Breakout stocks filter"""
         return [
             FilterCriteria('price_current', FilterOperator.GREATER_THAN, Decimal('0')),  # Valid price
-            FilterCriteria('volume', FilterOperator.GREATER_THAN, 1000000),  # High volume
+            FilterCriteria('volume', FilterOperator.GREATER_THAN, settings.strategy.min_volume_breakout),  # High volume
             FilterCriteria('ma5', FilterOperator.GREATER_THAN, Decimal('0')),  # Valid MA5
         ]
 
@@ -315,8 +323,10 @@ class PresetFilters:
     def value_stocks() -> List[FilterCriteria]:
         """Value stocks filter (simplified)"""
         return [
-            FilterCriteria('price_change_pct', FilterOperator.BETWEEN, Decimal('-5.0'), Decimal('5.0')),
-            FilterCriteria('volume', FilterOperator.GREATER_THAN, 200000),
+            FilterCriteria('price_change_pct', FilterOperator.BETWEEN,
+                         Decimal(str(settings.strategy.value_price_change_min)),
+                         Decimal(str(settings.strategy.value_price_change_max))),
+            FilterCriteria('volume', FilterOperator.GREATER_THAN, settings.strategy.min_volume_value),
             FilterCriteria('rsi14', FilterOperator.BETWEEN, Decimal('40.0'), Decimal('60.0')),
         ]
 
@@ -324,8 +334,8 @@ class PresetFilters:
     def high_volume_stocks() -> List[FilterCriteria]:
         """High volume stocks filter"""
         return [
-            FilterCriteria('volume', FilterOperator.GREATER_THAN, 2000000),
-            FilterCriteria('price_current', FilterOperator.GREATER_THAN, Decimal('10.0')),
+            FilterCriteria('volume', FilterOperator.GREATER_THAN, settings.strategy.min_volume_high),
+            FilterCriteria('price_current', FilterOperator.GREATER_THAN, Decimal(str(settings.strategy.min_price))),
         ]
 
     @staticmethod

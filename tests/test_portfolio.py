@@ -219,7 +219,7 @@ class TestTransactionRecorder:
                 'type': 'BUY',
                 'quantity': '1000',
                 'price': '100.0',
-                'date': '2024-01-01',
+                'date': '2025-01-01',
                 'fee': '10.0',
                 'tax': '5.0',
                 'notes': 'Test transaction'
@@ -229,7 +229,7 @@ class TestTransactionRecorder:
                 'type': 'SELL',
                 'quantity': '500',
                 'price': '110.0',
-                'date': '2024-01-15',
+                'date': '2025-01-15',
                 'fee': '10.0',
                 'tax': '0.0',
                 'notes': 'Test sale'
