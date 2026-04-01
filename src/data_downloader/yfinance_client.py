@@ -10,6 +10,7 @@ from typing import List, Optional, Dict
 import os
 from pathlib import Path
 import time
+from tqdm import tqdm
 
 import sys
 from pathlib import Path
@@ -64,24 +65,9 @@ class YFinanceClient:
             return stock_codes
 
         except Exception as e:
-            self.logger.warning(f"Failed to fetch TSE stock list from API: {e}")
-            # 如果 API 失敗，回退到預設清單
-            return self.get_tse_fallback_list()
-
-    def get_tse_fallback_list(self) -> List[str]:
-        """Fallback TSE stock list when API fails"""
-        self.logger.info("Using fallback TSE stock list")
-        return [
-            # 主要大型股
-            "2330.TW", "2454.TW", "2317.TW", "1303.TW", "1301.TW",
-            "2308.TW", "2412.TW", "2881.TW", "2882.TW", "2886.TW",
-            "2002.TW", "1216.TW", "3008.TW", "2207.TW", "1101.TW",
-            "2105.TW", "2474.TW", "2409.TW", "2891.TW", "2892.TW",
-            "2884.TW", "2885.TW", "2887.TW", "2890.TW", "1102.TW",
-            "3711.TW", "2395.TW", "2357.TW", "2303.TW", "2327.TW",
-            "2379.TW", "2382.TW", "2408.TW", "2615.TW", "2376.TW",
-            "2377.TW", "2324.TW", "2337.TW", "2301.TW", "2383.TW"
-        ]
+            self.logger.error(f"Failed to fetch TSE stock list from API: {e}")
+            self.logger.error("Cannot proceed without TSE stock list")
+            return []
 
     def get_tse_listed_stocks(self) -> List[str]:
         """Get list of TSE listed stock symbols (dynamic fetch with fallback)"""
@@ -122,19 +108,9 @@ class YFinanceClient:
             return stock_codes
 
         except Exception as e:
-            self.logger.warning(f"Failed to fetch OTC stock list from API: {e}")
-            # 如果 API 失敗，回退到預設清單
-            return self.get_otc_fallback_list()
-
-    def get_otc_fallback_list(self) -> List[str]:
-        """Fallback OTC stock list when API fails"""
-        self.logger.info("Using fallback OTC stock list")
-        return [
-            # 主要上櫃股票
-            "8401.TWO", "3529.TWO", "5274.TWO", "3707.TWO", "5478.TWO",
-            "4966.TWO", "6509.TWO", "3260.TWO", "6182.TWO", "6214.TWO",
-            "3293.TWO", "6180.TWO", "3455.TWO", "6506.TWO", "6462.TWO"
-        ]
+            self.logger.error(f"Failed to fetch OTC stock list from API: {e}")
+            self.logger.error("Cannot proceed without OTC stock list")
+            return []
 
     def get_otc_listed_stocks(self) -> List[str]:
         """Get list of OTC listed stock symbols (dynamic fetch with fallback)"""
@@ -163,13 +139,10 @@ class YFinanceClient:
             if end_date is None:
                 end_date = datetime.now()
 
-            self.logger.info(f"Downloading data for {symbol} from {start_date} to {end_date}")
-
             stock = yf.Ticker(symbol)
             data = stock.history(start=start_date, end=end_date)
 
             if data.empty:
-                self.logger.warning(f"No data found for {symbol}")
                 return None
 
             # Add symbol column
@@ -210,8 +183,6 @@ class YFinanceClient:
 
             # Save to CSV
             data.to_csv(filepath, index=False)
-            self.logger.info(f"Saved {len(data)} rows of data to {filepath}")
-
             return True
 
         except Exception as e:
@@ -252,33 +223,58 @@ class YFinanceClient:
             all_symbols = all_symbols[:limit]
             self.logger.info(f"Limited to first {limit} stocks for testing")
 
+        if not all_symbols:
+            self.logger.error("No stock symbols to download")
+            return 0
+
         self.logger.info(f"Starting download for {len(all_symbols)} stocks")
 
         successful_downloads = 0
+        failed_downloads = 0
 
-        for i, symbol in enumerate(all_symbols):
+        # 使用 tqdm 進度條
+        progress_bar = tqdm(
+            all_symbols,
+            desc="下載股票資料",
+            unit="股票",
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
+        )
+
+        for symbol in progress_bar:
             try:
-                self.logger.info(f"Processing {symbol} ({i+1}/{len(all_symbols)})")
+                # 更新進度條描述
+                progress_bar.set_description(f"下載中: {symbol}")
 
                 data = self.get_stock_data(symbol, start_date, end_date)
                 if data is not None and not data.empty:
                     if self.save_stock_data(symbol, data):
                         successful_downloads += 1
-                        self.logger.info(f"✅ Successfully downloaded {symbol}")
+                        progress_bar.write(f"✅ {symbol} - 下載成功")
                     else:
-                        self.logger.warning(f"❌ Failed to save data for {symbol}")
+                        failed_downloads += 1
+                        progress_bar.write(f"❌ {symbol} - 儲存失敗")
                 else:
-                    self.logger.warning(f"⚠️ No data available for {symbol} (possibly delisted)")
+                    failed_downloads += 1
+                    progress_bar.write(f"⚠️ {symbol} - 無資料 (可能已下市)")
 
                 # Add small delay to avoid hitting rate limits
-                import time
                 time.sleep(0.2)
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Skipping {symbol}: {e}")
+                failed_downloads += 1
+                progress_bar.write(f"⚠️ {symbol} - 錯誤: {e}")
                 continue
 
-        self.logger.info(f"Download completed: {successful_downloads}/{len(all_symbols)} stocks")
+        progress_bar.close()
+
+        # 完成摘要
+        total_processed = len(all_symbols)
+        success_rate = (successful_downloads / total_processed * 100) if total_processed > 0 else 0
+
+        self.logger.info(f"下載完成: {successful_downloads}/{total_processed} 支股票成功 ({success_rate:.1f}%)")
+        if failed_downloads > 0:
+            self.logger.info(f"失敗: {failed_downloads} 支股票")
+
         return successful_downloads
 
     def get_last_trading_date(self) -> datetime:

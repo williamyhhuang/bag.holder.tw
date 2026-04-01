@@ -64,3 +64,6 @@ python-jose==3.3.0
 # Date and time
 python-dateutil==2.8.2
 pytz==2023.3
+
+# Progress bars
+tqdm==4.67.3
