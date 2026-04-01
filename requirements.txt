@@ -58,7 +58,7 @@ rich==13.7.0
 typer==0.9.0
 
 # Security
-cryptography==41.0.8
+cryptography>=42.0.0
 python-jose==3.3.0
 
 # Date and time
