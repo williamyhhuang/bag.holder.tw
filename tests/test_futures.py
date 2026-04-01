@@ -10,8 +10,7 @@ from src.futures.monitor import (
     TaiwanFuturesMonitor,
     FuturesContract,
     FuturesQuote,
-    FuturesSignal,
-    FuturesSignalType
+    FuturesSignal
 )
 from src.api.fubon_client import FubonClient
 
