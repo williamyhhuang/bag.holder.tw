@@ -53,23 +53,34 @@ class BacktestRunner:
         self.logger.info(f"Starting full backtest from {start_date} to {end_date}")
 
         try:
-            # Step 1: Fetch historical data
-            self.logger.info("Step 1: Fetching historical data...")
-            stock_symbols = self.data_source.get_taiwan_stock_list()
+            # Step 1: Load historical data (prefer local files, fall back to yfinance)
+            self.logger.info("Step 1: Loading historical data...")
+            stocks_dir = os.path.join(os.path.dirname(__file__), '../../data/stocks')
+            stocks_dir = os.path.normpath(stocks_dir)
 
-            stock_data = self.data_source.fetch_multiple_stocks(
-                symbols=stock_symbols,
-                start_date=start_date - timedelta(days=100),  # Extra data for indicators
-                end_date=end_date,
-                delay=1.0
-            )
-
-            if not stock_data:
-                raise Exception("No stock data fetched")
-
-            # Save historical data
-            data_file = self.data_source.save_to_csv(stock_data)
-            self.logger.info(f"Historical data saved to: {data_file}")
+            if os.path.isdir(stocks_dir) and os.listdir(stocks_dir):
+                self.logger.info(f"Loading local data from {stocks_dir} ...")
+                # Load extra history for indicator warm-up
+                stock_data = self.data_source.load_from_stocks_dir(
+                    stocks_dir=stocks_dir,
+                    start_date=start_date - timedelta(days=100),
+                    end_date=end_date
+                )
+                if not stock_data:
+                    raise Exception(f"No stock data found in {stocks_dir}")
+            else:
+                self.logger.info("Local data not found – fetching from yfinance...")
+                stock_symbols = self.data_source.get_taiwan_stock_list()
+                stock_data = self.data_source.fetch_multiple_stocks(
+                    symbols=stock_symbols,
+                    start_date=start_date - timedelta(days=100),
+                    end_date=end_date,
+                    delay=1.0
+                )
+                if not stock_data:
+                    raise Exception("No stock data fetched")
+                data_file = self.data_source.save_to_csv(stock_data)
+                self.logger.info(f"Historical data saved to: {data_file}")
 
             # Step 2: Generate trading signals
             self.logger.info("Step 2: Generating trading signals...")
@@ -141,21 +152,37 @@ class BacktestRunner:
         self.logger.info(f"Running quick test for {days} days")
 
         try:
-            # Use subset of symbols for quick testing
-            if symbols is None:
-                all_symbols = self.data_source.get_taiwan_stock_list()
-                symbols = all_symbols[:5]  # Top 5 stocks only
-
             end_date = date.today()
             start_date = end_date - timedelta(days=days)
 
-            # Fetch data
-            stock_data = self.data_source.fetch_multiple_stocks(
-                symbols=symbols,
-                start_date=start_date - timedelta(days=50),  # Extra for indicators
-                end_date=end_date,
-                delay=0.5  # Faster for testing
-            )
+            stocks_dir = os.path.join(os.path.dirname(__file__), '../../data/stocks')
+            stocks_dir = os.path.normpath(stocks_dir)
+
+            if os.path.isdir(stocks_dir) and os.listdir(stocks_dir):
+                self.logger.info(f"Loading local data from {stocks_dir} ...")
+                all_stock_data = self.data_source.load_from_stocks_dir(
+                    stocks_dir=stocks_dir,
+                    start_date=start_date - timedelta(days=50),
+                    end_date=end_date
+                )
+                # Optionally filter to requested symbols
+                if symbols:
+                    symbol_set = {s[0] if isinstance(s, tuple) else s for s in symbols}
+                    stock_data = {k: v for k, v in all_stock_data.items() if k in symbol_set}
+                else:
+                    # Quick test: use first 5 available symbols
+                    keys = list(all_stock_data.keys())[:5]
+                    stock_data = {k: all_stock_data[k] for k in keys}
+            else:
+                if symbols is None:
+                    all_symbols = self.data_source.get_taiwan_stock_list()
+                    symbols = all_symbols[:5]  # Top 5 stocks only
+                stock_data = self.data_source.fetch_multiple_stocks(
+                    symbols=symbols,
+                    start_date=start_date - timedelta(days=50),
+                    end_date=end_date,
+                    delay=0.5
+                )
 
             # Generate signals
             signals = self.strategy.generate_signals_for_multiple_stocks(

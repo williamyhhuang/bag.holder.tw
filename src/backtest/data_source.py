@@ -261,6 +261,78 @@ class YFinanceDataSource:
             self.logger.error(f"Error loading data from CSV: {e}")
             raise
 
+    def load_from_stocks_dir(
+        self,
+        stocks_dir: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> Dict[str, List[StockData]]:
+        """
+        Load stock data from per-file CSVs in data/stocks/ directory.
+
+        Expects files named like ``XXXX_TW.csv`` with columns:
+        date, open, high, low, close, volume, ..., symbol
+
+        Args:
+            stocks_dir: Path to the directory containing per-stock CSV files
+            start_date: Optional filter – only include records on or after this date
+            end_date: Optional filter – only include records on or before this date
+
+        Returns:
+            Dictionary mapping symbol (e.g. "2330") to list of StockData
+        """
+        import glob as _glob
+
+        data: Dict[str, List[StockData]] = {}
+        csv_files = _glob.glob(os.path.join(stocks_dir, "*.csv"))
+
+        if not csv_files:
+            self.logger.warning(f"No CSV files found in {stocks_dir}")
+            return data
+
+        for filepath in csv_files:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        raw_symbol = row.get('symbol', '')
+                        # Normalise "2330.TW" / "2330.TWO" → "2330"
+                        symbol = raw_symbol.replace('.TW', '').replace('.TWO', '').replace('.', '')
+
+                        # Parse date – handles "2026-03-30 00:00:00+08:00" and "2026-03-30"
+                        raw_date = row['date'].split(' ')[0].split('+')[0].strip()
+                        record_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+
+                        if start_date and record_date < start_date:
+                            continue
+                        if end_date and record_date > end_date:
+                            continue
+
+                        if symbol not in data:
+                            data[symbol] = []
+
+                        close = Decimal(str(round(float(row['close']), 2)))
+                        data[symbol].append(StockData(
+                            symbol=symbol,
+                            date=record_date,
+                            open_price=Decimal(str(round(float(row['open']), 2))),
+                            high_price=Decimal(str(round(float(row['high']), 2))),
+                            low_price=Decimal(str(round(float(row['low']), 2))),
+                            close_price=close,
+                            volume=int(float(row['volume'])),
+                            adj_close=close
+                        ))
+            except Exception as e:
+                self.logger.warning(f"Error loading {filepath}: {e}")
+                continue
+
+        # Sort each symbol's data by date
+        for symbol in data:
+            data[symbol].sort(key=lambda x: x.date)
+
+        self.logger.info(f"Loaded local data for {len(data)} stocks from {stocks_dir}")
+        return data
+
     def get_market_index_data(self, start_date: date, end_date: date) -> List[StockData]:
         """
         Get Taiwan market index data for benchmark comparison

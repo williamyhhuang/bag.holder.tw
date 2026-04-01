@@ -69,7 +69,9 @@ class BacktestEngine:
         """Calculate position size based on available cash and position sizing rule"""
         available_cash = self.cash * self.position_sizing
         shares = int(available_cash / price / 1000) * 1000  # Round to 1000 shares (1張)
-        return max(shares, 1000) if available_cash >= price * 1000 else 0
+        # Ensure at least the minimum lot (1張) when total cash covers cost + commission
+        min_cost = price * 1000 * (Decimal('1') + self.commission_rate)
+        return max(shares, 1000) if self.cash >= min_cost else 0
 
     def calculate_trading_costs(self, price: Decimal, quantity: int, is_buy: bool) -> Tuple[Decimal, Decimal]:
         """

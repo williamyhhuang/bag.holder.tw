@@ -97,6 +97,50 @@ class TestYFinanceDataSource:
 
         assert len(result) == 0
 
+    def test_load_from_stocks_dir(self, tmp_path):
+        """load_from_stocks_dir should parse per-stock CSVs from data/stocks/"""
+        csv_content = (
+            "date,open,high,low,close,volume,dividends,stock_splits,capital_gains,symbol\n"
+            "2026-03-30 00:00:00+08:00,500.0,510.0,495.0,505.0,1000000,0.0,0.0,0.0,2330.TW\n"
+            "2026-03-31 00:00:00+08:00,505.0,515.0,500.0,510.0,1200000,0.0,0.0,0.0,2330.TW\n"
+        )
+        csv_file = tmp_path / "2330_TW.csv"
+        csv_file.write_text(csv_content)
+
+        result = self.data_source.load_from_stocks_dir(str(tmp_path))
+
+        assert "2330" in result
+        assert len(result["2330"]) == 2
+        assert result["2330"][0].date == date(2026, 3, 30)
+        assert result["2330"][0].close_price == Decimal("505.0")
+        assert result["2330"][1].date == date(2026, 3, 31)
+
+    def test_load_from_stocks_dir_date_filter(self, tmp_path):
+        """load_from_stocks_dir should honour start_date/end_date filters"""
+        csv_content = (
+            "date,open,high,low,close,volume,dividends,stock_splits,capital_gains,symbol\n"
+            "2026-03-28 00:00:00+08:00,490.0,495.0,485.0,492.0,900000,0.0,0.0,0.0,2330.TW\n"
+            "2026-03-30 00:00:00+08:00,500.0,510.0,495.0,505.0,1000000,0.0,0.0,0.0,2330.TW\n"
+            "2026-03-31 00:00:00+08:00,505.0,515.0,500.0,510.0,1200000,0.0,0.0,0.0,2330.TW\n"
+        )
+        csv_file = tmp_path / "2330_TW.csv"
+        csv_file.write_text(csv_content)
+
+        result = self.data_source.load_from_stocks_dir(
+            str(tmp_path),
+            start_date=date(2026, 3, 30),
+            end_date=date(2026, 3, 30)
+        )
+
+        assert "2330" in result
+        assert len(result["2330"]) == 1
+        assert result["2330"][0].date == date(2026, 3, 30)
+
+    def test_load_from_stocks_dir_empty(self, tmp_path):
+        """load_from_stocks_dir should return empty dict when directory has no CSVs"""
+        result = self.data_source.load_from_stocks_dir(str(tmp_path))
+        assert result == {}
+
     def teardown_method(self):
         # Clean up test cache
         import shutil
@@ -109,13 +153,13 @@ class TestBacktestEngine:
 
     def setup_method(self):
         self.engine = BacktestEngine(
-            initial_capital=Decimal('100000'),
+            initial_capital=Decimal('200000'),
             position_sizing=Decimal('0.2')  # 20% per position
         )
 
     def test_initialization(self):
-        assert self.engine.initial_capital == Decimal('100000')
-        assert self.engine.cash == Decimal('100000')
+        assert self.engine.initial_capital == Decimal('200000')
+        assert self.engine.cash == Decimal('200000')
         assert len(self.engine.positions) == 0
 
     def test_add_price_data(self):
