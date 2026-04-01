@@ -99,6 +99,7 @@ htmlcov/
 data/*.csv
 data/*.json
 data/backups/
+data/stocks/*
 !data/init.sql
 !data/sample/
 
