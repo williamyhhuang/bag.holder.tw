@@ -105,6 +105,7 @@ class Position:
     pnl: Optional[Decimal] = None
     pnl_percent: Optional[Decimal] = None
     holding_days: Optional[int] = None
+    entry_signal_name: Optional[str] = None
 
 
 @dataclass

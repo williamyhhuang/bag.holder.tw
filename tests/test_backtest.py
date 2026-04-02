@@ -199,12 +199,17 @@ class TestBacktestEngine:
         assert price == Decimal('102')
 
     def test_calculate_position_size(self):
-        price = Decimal('100')
+        # Engine: initial_capital=200,000, position_sizing=0.2 → target=40,000
+        # price=10: target/price=4000 shares → 4 lots of 1000 → 4000
+        price = Decimal('10')
         size = self.engine.calculate_position_size(price)
+        assert size == 4000
 
-        # 20% of 100,000 = 20,000, divided by 100 = 200 shares, rounded to 1000
-        expected_size = 1000  # Minimum 1張 (1000 shares)
-        assert size == expected_size
+    def test_calculate_position_size_too_expensive(self):
+        # price=50: target=40,000 / 50 = 800 shares → 0 lots → skip
+        price = Decimal('50')
+        size = self.engine.calculate_position_size(price)
+        assert size == 0  # 1 lot (50,000) exceeds 40,000 position limit
 
     def test_calculate_trading_costs(self):
         price = Decimal('100')
@@ -224,27 +229,27 @@ class TestBacktestEngine:
         assert tax == expected_tax.quantize(Decimal('0.01'))
 
     def test_execute_buy_order(self):
-        # Add test data
+        # Engine: initial_capital=200,000, position_sizing=0.2 → target=40,000
+        # Use price=10: 1 lot=10,000 which fits within 40,000 target
         stock_data = [
             StockData(
                 symbol="TEST",
                 date=date(2025, 9, 1),
-                open_price=Decimal('100'),
-                high_price=Decimal('105'),
-                low_price=Decimal('95'),
-                close_price=Decimal('102'),
+                open_price=Decimal('10'),
+                high_price=Decimal('10.5'),
+                low_price=Decimal('9.5'),
+                close_price=Decimal('10.2'),
                 volume=10000
             )
         ]
         self.engine.add_price_data("TEST", stock_data)
 
-        # Create buy signal
         signal = TradingSignal(
             symbol="TEST",
             date=date(2025, 9, 1),
             signal_type=SignalType.BUY,
             signal_name="Test Buy",
-            price=Decimal('100'),
+            price=Decimal('10'),
             description="Test signal",
             strength="MEDIUM",
             indicators=TechnicalIndicators(date=date(2025, 9, 1))
@@ -402,11 +407,149 @@ class TestBacktestReporter:
         assert result['sell_count'] == 1
         assert result['buy_percentage'] == 50.0
 
+    def test_analyze_signals_real_success_rate(self):
+        """Success rate should reflect actual trade win/loss, not a fixed 50%."""
+        from src.backtest.models import Position, PositionStatus
+        signals = [
+            TradingSignal(
+                symbol="A",
+                date=date(2025, 9, 1),
+                signal_type=SignalType.BUY,
+                signal_name="MACD Golden Cross",
+                price=Decimal('100'),
+                description="",
+                strength="MEDIUM",
+                indicators=TechnicalIndicators(date=date(2025, 9, 1))
+            ),
+            TradingSignal(
+                symbol="B",
+                date=date(2025, 9, 2),
+                signal_type=SignalType.BUY,
+                signal_name="MACD Golden Cross",
+                price=Decimal('50'),
+                description="",
+                strength="MEDIUM",
+                indicators=TechnicalIndicators(date=date(2025, 9, 2))
+            ),
+        ]
+        closed = [
+            Position(
+                symbol="A", quantity=1000,
+                entry_price=Decimal('100'), entry_date=date(2025, 9, 1),
+                current_price=Decimal('110'), current_date=date(2025, 9, 5),
+                status=PositionStatus.CLOSED,
+                pnl=Decimal('10000'), entry_signal_name="MACD Golden Cross",
+            ),
+            Position(
+                symbol="B", quantity=1000,
+                entry_price=Decimal('50'), entry_date=date(2025, 9, 2),
+                current_price=Decimal('45'), current_date=date(2025, 9, 6),
+                status=PositionStatus.CLOSED,
+                pnl=Decimal('-5000'), entry_signal_name="MACD Golden Cross",
+            ),
+        ]
+
+        result = self.reporter.analyze_signals(signals, closed_positions=closed)
+        perf = result['signal_performance']['MACD Golden Cross']
+        assert perf['traded'] == 2
+        assert perf['success_rate'] == 50.0  # 1 win / 2 trades
+
     def teardown_method(self):
         # Clean up test reports
         import shutil
         if os.path.exists("test_reports"):
             shutil.rmtree("test_reports")
+
+
+class TestBacktestEngineNew:
+    """Tests for new engine features: trailing stop and market filter."""
+
+    def _make_stock_data(self, symbol, prices):
+        """Helper: list of StockData from a price sequence starting 2025-09-01."""
+        result = []
+        for i, p in enumerate(prices):
+            d = date(2025, 9, 1) + __import__('datetime').timedelta(days=i)
+            result.append(StockData(
+                symbol=symbol, date=d,
+                open_price=Decimal(str(p)), high_price=Decimal(str(p)),
+                low_price=Decimal(str(p)), close_price=Decimal(str(p)),
+                volume=100000
+            ))
+        return result
+
+    def test_trailing_stop_ratchets_up(self):
+        """When price rises, trailing stop should move up and protect profits."""
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.05'),
+            take_profit_pct=Decimal('0.5'),  # High take_profit so trailing stop fires first
+            trailing_stop_pct=Decimal('0.05'),
+        )
+        # Day1: entry 10, stop=9.50
+        # Day2: price=12 → trailing stop ratchets to 12*0.95=11.40
+        # Day3: price=11 → 11 < 11.40 → trailing stop fires
+        stock_data = self._make_stock_data("TEST", [10, 12, 11])
+        engine.add_price_data("TEST", stock_data)
+
+        signal = TradingSignal(
+            symbol="TEST", date=date(2025, 9, 1),
+            signal_type=SignalType.BUY, signal_name="Test",
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=date(2025, 9, 1))
+        )
+        result = engine.run_backtest([signal], date(2025, 9, 1), date(2025, 9, 3))
+        assert result.total_trades == 1
+        closed = result.trades[0]
+        # Trailing stop from peak 12 → 12*0.95=11.40 → exit at 11 (below stop)
+        assert closed.exit_price <= Decimal('11.40')
+
+    def test_market_filter_blocks_buy_when_bearish(self):
+        """BUY signals should be suppressed when TAIEX is below its MA20."""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'))
+
+        stock_data = self._make_stock_data("TEST", [100, 105, 110])
+        engine.add_price_data("TEST", stock_data)
+
+        # Benchmark: 25 days of data, last day price drops well below MA20
+        benchmark_prices = [100] * 20 + [70, 70, 70, 70, 70]  # sharp drop at end
+        benchmark_data = self._make_stock_data("^TWII", benchmark_prices)
+        # Shift benchmark dates to align with signal date 2025-09-01
+        from datetime import timedelta
+        for i, bd in enumerate(benchmark_data):
+            bd.date = date(2025, 8, 1) + timedelta(days=i)
+
+        engine.build_benchmark_filter(benchmark_data)
+        # The signal date 2025-09-01 is after the drop → market should be bearish
+        assert not engine.is_market_bullish(date(2025, 9, 1))
+
+        signal = TradingSignal(
+            symbol="TEST", date=date(2025, 9, 1),
+            signal_type=SignalType.BUY, signal_name="Test",
+            price=Decimal('100'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=date(2025, 9, 1))
+        )
+        result = engine.run_backtest(
+            [signal], date(2025, 9, 1), date(2025, 9, 3),
+            benchmark_data=benchmark_data
+        )
+        # Signal should be blocked → no trades executed
+        assert result.total_trades == 0
+
+    def test_entry_signal_name_stored_on_position(self):
+        """Position should record which signal triggered the entry."""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'))
+        stock_data = self._make_stock_data("TEST", [10, 11, 12])
+        engine.add_price_data("TEST", stock_data)
+
+        signal = TradingSignal(
+            symbol="TEST", date=date(2025, 9, 1),
+            signal_type=SignalType.BUY, signal_name="Golden Cross",
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=date(2025, 9, 1))
+        )
+        engine.run_backtest([signal], date(2025, 9, 1), date(2025, 9, 3))
+        assert len(engine.closed_positions) == 1
+        assert engine.closed_positions[0].entry_signal_name == "Golden Cross"
 
 
 class TestIntegration:

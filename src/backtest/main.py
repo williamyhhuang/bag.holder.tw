@@ -145,16 +145,17 @@ class BacktestRunner:
             for symbol, data in stock_data.items():
                 self.engine.add_price_data(symbol, data)
 
-            # Step 4: Run backtest
-            self.logger.info("Step 4: Running backtest...")
-            result = self.engine.run_backtest(signals, start_date, end_date)
-
-            # Step 5: Fetch benchmark data
-            self.logger.info("Step 5: Fetching benchmark data...")
+            # Step 4: Fetch benchmark data (needed before backtest for MA20 market filter)
+            self.logger.info("Step 4: Fetching benchmark data for market filter...")
             benchmark_data = self.data_source.get_market_index_data(start_date, end_date)
+
+            # Step 5: Run backtest (pass benchmark for TAIEX MA20 buy filter)
+            self.logger.info("Step 5: Running backtest...")
+            result = self.engine.run_backtest(signals, start_date, end_date, benchmark_data=benchmark_data)
 
             # Step 6: Generate reports
             self.logger.info("Step 6: Generating reports...")
+            # benchmark_data already fetched in Step 4
             exported_files = self.reporter.export_all_results(
                 result=result,
                 signals=signals,

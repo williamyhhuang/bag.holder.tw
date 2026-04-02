@@ -23,10 +23,11 @@ class BacktestEngine:
         initial_capital: Decimal = Decimal('1000000'),
         commission_rate: Decimal = Decimal('0.001425'),  # 0.1425%
         tax_rate: Decimal = Decimal('0.003'),  # 0.3% for selling only
-        position_sizing: Decimal = Decimal('0.1'),  # 10% per position
-        stop_loss_pct: Decimal = Decimal('0.1'),  # 10% stop loss
+        position_sizing: Decimal = Decimal('0.1'),  # 10% of initial capital per position
+        stop_loss_pct: Decimal = Decimal('0.05'),  # 5% stop loss (tightened from 10%)
         take_profit_pct: Decimal = Decimal('0.2'),  # 20% take profit
-        max_holding_days: int = 30
+        max_holding_days: int = 30,
+        trailing_stop_pct: Optional[Decimal] = Decimal('0.05'),  # 5% trailing stop from peak
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -35,6 +36,8 @@ class BacktestEngine:
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
         self.max_holding_days = max_holding_days
+        self.trailing_stop_pct = trailing_stop_pct
+        self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if TAIEX >= MA20
 
         self.logger = get_logger(self.__class__.__name__)
 
@@ -66,12 +69,18 @@ class BacktestEngine:
         return None
 
     def calculate_position_size(self, price: Decimal) -> int:
-        """Calculate position size based on available cash and position sizing rule"""
-        available_cash = self.cash * self.position_sizing
-        shares = int(available_cash / price / 1000) * 1000  # Round to 1000 shares (1張)
-        # Ensure at least the minimum lot (1張) when total cash covers cost + commission
-        min_cost = price * 1000 * (Decimal('1') + self.commission_rate)
-        return max(shares, 1000) if self.cash >= min_cost else 0
+        """Calculate position size based on fixed % of initial capital (not current cash).
+
+        Using initial_capital as the basis ensures every position targets the same
+        dollar exposure regardless of running P&L.  If 1 lot (1,000 shares) exceeds
+        the target amount the stock is too expensive to fit the sizing rule → skip it.
+        """
+        target_amount = self.initial_capital * self.position_sizing
+        shares = int(target_amount / price / 1000) * 1000  # Round down to whole lots (1張)
+        if shares < 1000:
+            return 0  # 1 lot alone exceeds position limit; skip this stock
+        total_cost = price * shares * (Decimal('1') + self.commission_rate)
+        return shares if self.cash >= total_cost else 0
 
     def calculate_trading_costs(self, price: Decimal, quantity: int, is_buy: bool) -> Tuple[Decimal, Decimal]:
         """
@@ -155,7 +164,8 @@ class BacktestEngine:
                 current_date=signal.date,
                 status=PositionStatus.OPEN,
                 stop_loss=signal.price * (Decimal('1') - self.stop_loss_pct),
-                take_profit=signal.price * (Decimal('1') + self.take_profit_pct)
+                take_profit=signal.price * (Decimal('1') + self.take_profit_pct),
+                entry_signal_name=signal.signal_name,
             )
 
             self.positions[signal.symbol] = position
@@ -243,6 +253,14 @@ class BacktestEngine:
             position.current_price = current_price
             position.current_date = self.current_date
 
+            # Update trailing stop: ratchet up as price rises above entry
+            if self.trailing_stop_pct and current_price > position.entry_price:
+                new_trailing_stop = (
+                    current_price * (Decimal('1') - self.trailing_stop_pct)
+                ).quantize(Decimal('0.01'))
+                if new_trailing_stop > (position.stop_loss or Decimal('0')):
+                    position.stop_loss = new_trailing_stop
+
             # Check stop loss
             if current_price <= position.stop_loss:
                 positions_to_close.append((symbol, current_price, "Stop Loss"))
@@ -289,20 +307,61 @@ class BacktestEngine:
 
         self.portfolio_history.append(portfolio)
 
-    def process_signals(self, signals: List[TradingSignal]):
-        """Process a list of trading signals for the current date"""
+    def build_benchmark_filter(self, benchmark_data: List[StockData], ma_period: int = 20):
+        """Pre-compute whether each benchmark date is bullish (close >= MA).
+
+        Result stored in self.benchmark_bullish so run_backtest can do O(1) lookups.
+        """
+        if not benchmark_data:
+            return
+        prices = sorted(benchmark_data, key=lambda x: x.date)
+        for i in range(len(prices)):
+            if i < ma_period - 1:
+                continue
+            window = [prices[j].close_price for j in range(i - ma_period + 1, i + 1)]
+            ma = sum(window) / Decimal(str(ma_period))
+            self.benchmark_bullish[prices[i].date] = prices[i].close_price >= ma
+
+    def is_market_bullish(self, target_date: date) -> bool:
+        """Return True if TAIEX is above its 20-day MA on or before target_date.
+
+        Falls back to True (no filter) when benchmark data is unavailable.
+        """
+        if not self.benchmark_bullish:
+            return True
+        available = [d for d in self.benchmark_bullish if d <= target_date]
+        if not available:
+            return True
+        return self.benchmark_bullish[max(available)]
+
+    def process_signals(self, signals: List[TradingSignal], market_bullish: bool = True):
+        """Process a list of trading signals for the current date.
+
+        BUY signals are suppressed when market_bullish is False (TAIEX below MA20).
+        """
         for signal in signals:
             if signal.date != self.current_date:
                 continue
 
             if signal.signal_type == SignalType.BUY:
+                if not market_bullish:
+                    self.logger.debug(
+                        f"Skipping BUY {signal.symbol}: market below MA20"
+                    )
+                    continue
                 self.execute_buy_order(signal)
             elif signal.signal_type == SignalType.SELL and signal.symbol in self.positions:
                 current_price = self.get_current_price(signal.symbol, self.current_date)
                 if current_price:
                     self.execute_sell_order(signal.symbol, current_price, "Sell Signal")
 
-    def run_backtest(self, signals: List[TradingSignal], start_date: date, end_date: date) -> BacktestResult:
+    def run_backtest(
+        self,
+        signals: List[TradingSignal],
+        start_date: date,
+        end_date: date,
+        benchmark_data: Optional[List[StockData]] = None,
+    ) -> BacktestResult:
         """
         Run complete backtest
 
@@ -310,11 +369,17 @@ class BacktestEngine:
             signals: List of trading signals
             start_date: Backtest start date
             end_date: Backtest end date
+            benchmark_data: Optional TAIEX data for market MA20 filter
 
         Returns:
             BacktestResult object with performance metrics
         """
         self.logger.info(f"Starting backtest from {start_date} to {end_date}")
+
+        # Build benchmark MA20 filter if data provided
+        if benchmark_data:
+            self.build_benchmark_filter(benchmark_data)
+            self.logger.info("Benchmark MA20 filter enabled")
 
         # Group signals by date
         signals_by_date: Dict[date, List[TradingSignal]] = {}
@@ -331,9 +396,10 @@ class BacktestEngine:
             # Check position exits first
             self.check_position_exits()
 
-            # Process new signals
+            # Process new signals (suppress BUY when TAIEX below MA20)
             if current in signals_by_date:
-                self.process_signals(signals_by_date[current])
+                market_bullish = self.is_market_bullish(current)
+                self.process_signals(signals_by_date[current], market_bullish)
 
             # Update portfolio
             self.update_portfolio()
@@ -363,7 +429,7 @@ class BacktestEngine:
         # Annualized return
         days = (end_date - start_date).days
         years = Decimal(days) / Decimal('365')
-        annualized_return = ((final_capital / self.initial_capital) ** (Decimal('1') / years) - Decimal('1') * Decimal('100')).quantize(Decimal('0.01')) if years > 0 else Decimal('0')
+        annualized_return = (((final_capital / self.initial_capital) ** (Decimal('1') / years) - Decimal('1')) * Decimal('100')).quantize(Decimal('0.01')) if years > 0 else Decimal('0')
 
         # Trade statistics
         total_trades = len(self.closed_positions)

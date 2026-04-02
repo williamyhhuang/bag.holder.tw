@@ -60,8 +60,8 @@ class BacktestReporter:
                     result.portfolio_history, benchmark_data
                 )
 
-            # Generate signal analysis
-            signal_analysis = self.analyze_signals(signals)
+            # Generate signal analysis with actual trade outcomes
+            signal_analysis = self.analyze_signals(signals, result.trades)
 
             # Create markdown content
             content = self._create_markdown_content(
@@ -192,7 +192,16 @@ class BacktestReporter:
 
         if 'signal_performance' in signal_analysis:
             for signal_name, performance in signal_analysis['signal_performance'].items():
-                content += f"- **{signal_name}**: {performance['count']} 次，成功率 {performance['success_rate']:.1f}%\n"
+                traded = performance.get('traded', 0)
+                rate = performance.get('success_rate')
+                if rate is not None:
+                    rate_str = f"{rate:.1f}%"
+                else:
+                    rate_str = "無交易資料"
+                content += (
+                    f"- **{signal_name}**: 產生訊號 {performance['count']} 次，"
+                    f"觸發交易 {traded} 次，實際勝率 {rate_str}\n"
+                )
 
         # Add risk analysis
         if 'detailed_risk_analysis' in summary:
@@ -216,77 +225,97 @@ class BacktestReporter:
 | Calmar比率 | {risk_analysis.get('calmar_ratio', 0)} |
 """
 
-        content += f"""
+        # --- Data-driven optimization section ---
+        win_rate = result.win_rate
+        profit_factor = result.profit_factor
+        sharpe = result.sharpe_ratio
+        avg_win = result.avg_win
+        avg_loss = result.avg_loss
+
+        content += """
 ---
 
 ## 📋 策略優化建議
 
-### 🎯 績效優化方向
+### 🎯 績效診斷
 
 #### ✅ 策略強項
 """
-        # Analyze strengths
-        if result.win_rate >= Decimal('50'):
-            content += f"- **勝率表現優秀**: 勝率達到 {result.win_rate}%，顯示策略具有良好的選股能力\n"
+        strengths = []
+        if win_rate >= Decimal('50'):
+            strengths.append(f"- **勝率 {win_rate}%**：多於一半的交易獲利，選股方向正確")
+        if profit_factor >= Decimal('1.5'):
+            strengths.append(f"- **獲利因子 {profit_factor}**：每虧 1 元可賺回 {profit_factor} 元")
+        if sharpe >= Decimal('1'):
+            strengths.append(f"- **夏普比率 {sharpe}**：風險調整後報酬良好")
+        if avg_win and avg_loss and abs(avg_win) > abs(avg_loss):
+            strengths.append(f"- **報酬風險比 > 1**：平均獲利 {avg_win} > 平均虧損絕對值 {abs(avg_loss)}")
+        if not strengths:
+            strengths.append("- 目前尚無顯著強項，策略需全面調整")
+        content += "\n".join(strengths) + "\n"
 
-        if result.profit_factor >= Decimal('1.5'):
-            content += f"- **獲利因子良好**: 獲利因子 {result.profit_factor}，顯示整體獲利能力佳\n"
+        content += "\n#### 🔧 數據驅動改進建議\n\n"
 
-        if result.sharpe_ratio >= Decimal('1'):
-            content += f"- **風險調整報酬佳**: 夏普比率 {result.sharpe_ratio}，風險控制得當\n"
+        if win_rate < Decimal('45'):
+            content += (
+                f"1. **提高進場品質（勝率 {win_rate}% 偏低）**\n"
+                f"   - 要求多個訊號同時觸發才進場（目前單一訊號即進場）\n"
+                f"   - 加入成交量確認：進場當天成交量需 > 20日均量 1.5 倍\n"
+                f"   - 排除整體趨勢向下的股票（股價在 60MA 以下不做多）\n\n"
+            )
+        else:
+            content += (
+                f"1. **維持進場品質（勝率 {win_rate}%）**\n"
+                f"   - 目前訊號過濾已具基礎，可增加訊號強度門檻\n\n"
+            )
+
+        if profit_factor < Decimal('1.0'):
+            if avg_win and avg_loss and avg_loss != 0:
+                rr_ratio = abs(avg_win / avg_loss)
+                content += (
+                    f"2. **改善損益比（獲利因子 {profit_factor} < 1，策略整體虧損）**\n"
+                    f"   - 平均獲利 {avg_win} / 平均虧損 {avg_loss} = 報酬風險比 {rr_ratio:.2f}\n"
+                    f"   - 停損已從 10% 縮至 5%，並加入追蹤停損保留上漲空間\n\n"
+                )
+        else:
+            content += (
+                f"2. **損益比良好（獲利因子 {profit_factor}）**\n"
+                f"   - 繼續維持停損紀律，避免讓虧損擴大\n\n"
+            )
+
+        if 'signal_performance' in signal_analysis:
+            best_signal = None
+            worst_signal = None
+            best_rate = -1.0
+            worst_rate = 101.0
+            for sig_name, perf in signal_analysis['signal_performance'].items():
+                rate = perf.get('success_rate')
+                traded = perf.get('traded', 0)
+                if rate is None or traded < 5:
+                    continue
+                if rate > best_rate:
+                    best_rate = rate
+                    best_signal = (sig_name, traded, rate)
+                if rate < worst_rate:
+                    worst_rate = rate
+                    worst_signal = (sig_name, traded, rate)
+
+            content += "3. **訊號優先順序（基於實際交易勝率）**\n"
+            if best_signal:
+                content += (
+                    f"   - ✅ 優先使用：**{best_signal[0]}**"
+                    f"（{best_signal[1]} 次交易，勝率 {best_signal[2]:.1f}%）\n"
+                )
+            if worst_signal and worst_signal != best_signal:
+                content += (
+                    f"   - ⚠️ 考慮停用：**{worst_signal[0]}**"
+                    f"（{worst_signal[1]} 次交易，勝率 {worst_signal[2]:.1f}%）\n"
+                )
+            if not best_signal:
+                content += "   - 訊號交易次數不足，需更多樣本才能判斷\n"
+            content += "\n"
 
         content += """
-#### 🔧 改進建議
-
-1. **訊號過濾優化**
-   - 考慮加入市場環境過濾條件
-   - 結合市場情緒指標
-   - 避免震盪市場中的假突破
-
-2. **風險管理強化**
-   - 動態調整停損停利點位
-   - 根據波動度調整部位大小
-   - 實施分批進出場機制
-
-3. **參數優化**
-   - 針對不同市場環境調整技術指標參數
-   - 測試不同時間週期的組合
-   - 優化進出場時機
-
-### 📊 具體改進方案
-
-#### 方案一：多時框分析
-- 結合日線、週線、月線訊號
-- 只在多時框訊號一致時進場
-- 預期效果：提高勝率，降低交易頻率
-
-#### 方案二：市場環境過濾
-- 加入大盤趨勢判斷
-- 在多頭市場偏重買進訊號
-- 在空頭市場提高現金比例
-
-#### 方案三：動態風險控制
-- 根據VIX指數調整部位大小
-- 在高波動期間縮減曝險
-- 實施追蹤停損機制
-
-### 📈 下一步行動
-
-1. **短期（1個月內）**
-   - 實施動態停損停利
-   - 加入成交量確認機制
-   - 測試不同資金配置比例
-
-2. **中期（3個月內）**
-   - 開發多時框訊號系統
-   - 建立市場環境評估模組
-   - 實施機器學習訊號過濾
-
-3. **長期（6個月內）**
-   - 開發自適應參數系統
-   - 整合更多技術指標
-   - 建立完整的投資組合管理系統
-
 ---
 
 ## 📝 免責聲明
@@ -303,12 +332,14 @@ class BacktestReporter:
 
         return content
 
-    def analyze_signals(self, signals: List[TradingSignal]) -> Dict:
+    def analyze_signals(self, signals: List[TradingSignal], closed_positions: List = None) -> Dict:
         """
-        Analyze trading signals performance
+        Analyze trading signals performance.
 
         Args:
             signals: List of trading signals
+            closed_positions: Closed Position objects used to compute actual win rates
+                              per signal type (requires Position.entry_signal_name).
 
         Returns:
             Dictionary with signal analysis
@@ -334,25 +365,40 @@ class BacktestReporter:
         sell_percentage = (sell_count / total_signals * 100) if total_signals > 0 else 0
         watch_percentage = (watch_count / total_signals * 100) if total_signals > 0 else 0
 
-        # Analyze signal performance by name
-        signal_performance = {}
+        # Count signals by name
         signal_counts = {}
-
         for signal in signals:
             name = signal.signal_name
             if name not in signal_counts:
                 signal_counts[name] = {'total': 0, 'buy': 0, 'sell': 0}
-
             signal_counts[name]['total'] += 1
             if signal.signal_type.value == 'BUY':
                 signal_counts[name]['buy'] += 1
             elif signal.signal_type.value == 'SELL':
                 signal_counts[name]['sell'] += 1
 
+        # Build actual win rates from real trade outcomes
+        from decimal import Decimal
+        signal_traded: Dict[str, int] = {}
+        signal_wins: Dict[str, int] = {}
+        if closed_positions:
+            for pos in closed_positions:
+                name = getattr(pos, 'entry_signal_name', None)
+                if not name:
+                    continue
+                signal_traded[name] = signal_traded.get(name, 0) + 1
+                if (pos.pnl or Decimal('0')) > 0:
+                    signal_wins[name] = signal_wins.get(name, 0) + 1
+
+        signal_performance = {}
         for name, counts in signal_counts.items():
+            traded = signal_traded.get(name, 0)
+            wins = signal_wins.get(name, 0)
+            success_rate = (wins / traded * 100) if traded > 0 else None
             signal_performance[name] = {
                 'count': counts['total'],
-                'success_rate': 50.0  # Simplified - would need actual trade outcomes to calculate
+                'traded': traded,
+                'success_rate': success_rate,
             }
 
         return {
