@@ -15,8 +15,10 @@ logger = get_logger(__name__)
 class TechnicalStrategy:
     """Technical analysis strategy using existing indicator logic"""
 
-    # Signals disabled based on backtest results (win rate < 20% across multiple runs)
-    DEFAULT_DISABLED_SIGNALS = ['MACD Golden Cross']
+    # Signals disabled based on backtest results:
+    #   - MACD Golden Cross: 13-17% win rate across multiple runs
+    #   - Golden Cross (MA5 > MA20): 0% in Q4-2025, 45.5% in Q1-2026 — consistently < 50%
+    DEFAULT_DISABLED_SIGNALS = ['MACD Golden Cross', 'Golden Cross']
 
     def __init__(
         self,
@@ -32,6 +34,7 @@ class TechnicalStrategy:
         require_volume_confirmation: bool = True,
         volume_confirmation_multiplier: float = 1.5,
         rsi_overbought_threshold: float = 70.0,
+        rsi_min_entry: float = 50.0,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -50,6 +53,7 @@ class TechnicalStrategy:
         self.require_volume_confirmation = require_volume_confirmation
         self.volume_confirmation_multiplier = Decimal(str(volume_confirmation_multiplier))
         self.rsi_overbought_threshold = Decimal(str(rsi_overbought_threshold))
+        self.rsi_min_entry = Decimal(str(rsi_min_entry))
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -283,10 +287,13 @@ class TechnicalStrategy:
         triggering actual trades.
 
         Filters (all evidence-based from backtests):
-        1. Disabled signals list  — MACD Golden Cross: 13-17% win rate
+        1. Disabled signals list  — MACD Golden Cross / Golden Cross: win rate < 50%
         2. MA60 uptrend check     — price must be above MA60 (long-term trend)
         3. Volume confirmation     — today's volume > 1.5× MA20 volume
         4. MA alignment check     — MA5 > MA10 > MA20 (short/mid trend must be bullish)
+        5. RSI momentum check     — RSI >= rsi_min_entry (avoid entering on false breakouts
+                                    when momentum is weak; BB Squeeze Break had 44.8% win
+                                    rate in Q4-2025 without this filter)
         """
         # Filter 1: disabled signals (poor historical win rate)
         if signal_name in self.disabled_signals:
@@ -323,6 +330,20 @@ class TechnicalStrategy:
                 self.logger.debug(
                     f"Signal '{signal_name}' blocked: MA alignment failed "
                     f"(MA5={ma5}, MA10={ma10}, MA20={ma20}) → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 5: RSI momentum confirmation.
+        # Require RSI >= rsi_min_entry (default 50) to ensure the stock has upward momentum.
+        # A BB breakout with weak RSI (< 50) is typically a false breakout or dead-cat bounce.
+        # Evidence: BB Squeeze Break win rate dropped from 54.1% (Q1-2026) to 44.8% (Q4-2025);
+        # adding this filter aims to reject low-momentum breakouts that quickly reverse.
+        if self.rsi_min_entry > 0:
+            rsi = indicators.rsi14
+            if rsi is not None and rsi < self.rsi_min_entry:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: RSI {rsi} < min entry "
+                    f"{self.rsi_min_entry} → WATCH"
                 )
                 return SignalType.WATCH
 

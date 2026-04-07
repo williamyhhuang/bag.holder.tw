@@ -32,8 +32,17 @@ class BacktestRunner:
         self.logger = get_logger(self.__class__.__name__)
         self.data_source = YFinanceDataSource()
         self.yf_client = YFinanceClient()
-        self.strategy = TechnicalStrategy()
-        self.engine = BacktestEngine()
+        # 從 BacktestSettings 讀取策略參數（停損/停利/RSI 等皆可透過 .env 調整）
+        cfg = settings.backtest
+        self.strategy = TechnicalStrategy(
+            rsi_min_entry=cfg.rsi_min_entry,
+        )
+        self.engine = BacktestEngine(
+            stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
+            take_profit_pct=Decimal(str(cfg.take_profit_pct)),
+            trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
+            max_holding_days=cfg.max_holding_days,
+        )
         self.analyzer = PerformanceAnalyzer()
         self.reporter = BacktestReporter()
 
@@ -160,7 +169,14 @@ class BacktestRunner:
 
             # Step 4: Prepare backtest engine
             self.logger.info("Step 4: Setting up backtest engine...")
-            self.engine = BacktestEngine(initial_capital=initial_capital)
+            cfg = settings.backtest
+            self.engine = BacktestEngine(
+                initial_capital=initial_capital,
+                stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
+                take_profit_pct=Decimal(str(cfg.take_profit_pct)),
+                trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
+                max_holding_days=cfg.max_holding_days,
+            )
 
             # Add price data to engine
             for symbol, data in stock_data.items():

@@ -249,6 +249,41 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_INDUSTRY_CODE_MAP_PATH",
     )
 
+    # ── 停損 / 停利設定 ─────────────────────────────────────────────
+    # 停利從 20% 降至 10%：Q4 2025 最高獲利僅 9.96%，20% 目標從未觸發
+    take_profit_pct: float = Field(
+        default=0.10,
+        env="BACKTEST_TAKE_PROFIT_PCT",
+        description="停利百分比（0.10 = 10%）",
+    )
+    # 停損維持 5%
+    stop_loss_pct: float = Field(
+        default=0.05,
+        env="BACKTEST_STOP_LOSS_PCT",
+        description="停損百分比（0.05 = 5%）",
+    )
+    # 追蹤停損從 5% 縮至 3%：更早鎖住已實現的利潤
+    trailing_stop_pct: float = Field(
+        default=0.03,
+        env="BACKTEST_TRAILING_STOP_PCT",
+        description="追蹤停損百分比（0.03 = 3%）",
+    )
+    # 最長持倉從 30 天縮至 15 天：減少持有不動的死掌
+    max_holding_days: int = Field(
+        default=15,
+        env="BACKTEST_MAX_HOLDING_DAYS",
+        description="最長持倉天數",
+    )
+
+    # ── 進場品質過濾 ────────────────────────────────────────────────
+    # RSI 最低進場門檻：確認股票具備上漲動能，避免 BB 假突破
+    # BB Squeeze Break 在 Q4 2025 勝率僅 44.8%，加入 RSI ≥ 50 過濾
+    rsi_min_entry: float = Field(
+        default=50.0,
+        env="BACKTEST_RSI_MIN_ENTRY",
+        description="RSI 進場最低門檻（50 = 股票需具備上漲動能）",
+    )
+
     @validator("exclude_industry_codes", pre=True)
     def split_codes(cls, v):
         if isinstance(v, str):

@@ -357,7 +357,7 @@ class TestTechnicalStrategy:
         assert result == SignalType.WATCH
 
     def test_valid_buy_passes_all_filters(self):
-        """BUY signal that passes all checks (including MA alignment) should remain BUY."""
+        """BUY signal that passes all checks (MA alignment + RSI >= 50) should remain BUY."""
         from src.backtest.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
@@ -366,11 +366,82 @@ class TestTechnicalStrategy:
             ma20=Decimal('90'),
             ma60=Decimal('80'),
             volume_ma20=100000,
+            rsi14=Decimal('58'),  # RSI >= 50 → momentum confirmed
         )
         result = self.strategy._apply_buy_filters(
             signal_name='BB Squeeze Break',
             price=Decimal('110'),
             volume=200000,                                  # 2× MA20 = threshold
+            indicators=indicators,
+        )
+        assert result == SignalType.BUY
+
+    def test_golden_cross_disabled_by_default(self):
+        """Golden Cross should be demoted to WATCH by default (win rate < 50%)."""
+        result = self.strategy._apply_buy_filters(
+            signal_name='Golden Cross',
+            price=Decimal('100'),
+            volume=200000,
+            indicators=self._make_indicators(ma60=80, volume_ma20=100000, rsi14=60),
+        )
+        assert result == SignalType.WATCH
+
+    def test_rsi_below_min_entry_becomes_watch(self):
+        """BUY signal should be blocked when RSI < rsi_min_entry (weak momentum)."""
+        from src.backtest.models import TechnicalIndicators as TI
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'),
+            ma10=Decimal('100'),
+            ma20=Decimal('90'),
+            ma60=Decimal('80'),
+            volume_ma20=100000,
+            rsi14=Decimal('42'),  # RSI < 50 → no momentum
+        )
+        result = self.strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=200000,
+            indicators=indicators,
+        )
+        assert result == SignalType.WATCH
+
+    def test_rsi_exactly_at_min_entry_passes(self):
+        """BUY signal should pass when RSI exactly equals rsi_min_entry."""
+        from src.backtest.models import TechnicalIndicators as TI
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'),
+            ma10=Decimal('100'),
+            ma20=Decimal('90'),
+            ma60=Decimal('80'),
+            volume_ma20=100000,
+            rsi14=Decimal('50'),  # RSI == 50 → exactly at threshold, should pass
+        )
+        result = self.strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=200000,
+            indicators=indicators,
+        )
+        assert result == SignalType.BUY
+
+    def test_rsi_none_does_not_block(self):
+        """When RSI data is unavailable (None), the filter should not block the signal."""
+        from src.backtest.models import TechnicalIndicators as TI
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'),
+            ma10=Decimal('100'),
+            ma20=Decimal('90'),
+            ma60=Decimal('80'),
+            volume_ma20=100000,
+            rsi14=None,  # No RSI data → filter skipped
+        )
+        result = self.strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=200000,
             indicators=indicators,
         )
         assert result == SignalType.BUY
