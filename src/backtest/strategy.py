@@ -15,6 +15,9 @@ logger = get_logger(__name__)
 class TechnicalStrategy:
     """Technical analysis strategy using existing indicator logic"""
 
+    # Signals disabled based on backtest results (win rate < 20% across multiple runs)
+    DEFAULT_DISABLED_SIGNALS = ['MACD Golden Cross']
+
     def __init__(
         self,
         ma_periods: List[int] = [5, 10, 20, 60],
@@ -23,7 +26,11 @@ class TechnicalStrategy:
         macd_slow: int = 26,
         macd_signal: int = 9,
         bb_period: int = 20,
-        bb_std_dev: float = 2.0
+        bb_std_dev: float = 2.0,
+        disabled_signals: Optional[List[str]] = None,
+        require_ma60_uptrend: bool = True,
+        require_volume_confirmation: bool = True,
+        volume_confirmation_multiplier: float = 1.5,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -32,6 +39,15 @@ class TechnicalStrategy:
         self.macd_signal = macd_signal
         self.bb_period = bb_period
         self.bb_std_dev = bb_std_dev
+
+        # Buy-signal quality filters (evidence-based from backtests)
+        self.disabled_signals: List[str] = (
+            disabled_signals if disabled_signals is not None
+            else self.DEFAULT_DISABLED_SIGNALS
+        )
+        self.require_ma60_uptrend = require_ma60_uptrend
+        self.require_volume_confirmation = require_volume_confirmation
+        self.volume_confirmation_multiplier = Decimal(str(volume_confirmation_multiplier))
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -218,9 +234,18 @@ class TechnicalStrategy:
                     volume=current_price_data.volume
                 )
 
-                # Convert to TradingSignal objects
+                # Convert to TradingSignal objects, applying buy-quality filters
                 for signal_data in detected_signals:
                     signal_type = self.map_signal_type(signal_data['type'])
+
+                    # Apply filters only to BUY signals
+                    if signal_type == SignalType.BUY:
+                        signal_type = self._apply_buy_filters(
+                            signal_name=signal_data['name'],
+                            price=current_price_data.close_price,
+                            volume=current_price_data.volume,
+                            indicators=current_indicators,
+                        )
 
                     trading_signal = TradingSignal(
                         symbol=symbol,
@@ -241,6 +266,51 @@ class TechnicalStrategy:
         except Exception as e:
             self.logger.error(f"Error generating signals for {symbol}: {e}")
             return []
+
+    def _apply_buy_filters(
+        self,
+        signal_name: str,
+        price: Decimal,
+        volume: int,
+        indicators: TechnicalIndicators,
+    ) -> SignalType:
+        """Apply quality filters to a BUY signal.
+
+        Returns SignalType.BUY if all checks pass, SignalType.WATCH otherwise.
+        Degrading to WATCH keeps the signal in reports for analysis without
+        triggering actual trades.
+
+        Filters (all evidence-based from backtests):
+        1. Disabled signals list  — MACD Golden Cross: 13-17% win rate
+        2. MA60 uptrend check     — price must be above MA60 (long-term trend)
+        3. Volume confirmation     — today's volume > 1.5× MA20 volume
+        """
+        # Filter 1: disabled signals (poor historical win rate)
+        if signal_name in self.disabled_signals:
+            self.logger.debug(f"Signal '{signal_name}' is disabled → WATCH")
+            return SignalType.WATCH
+
+        # Filter 2: price above MA60 (stock in long-term uptrend)
+        if self.require_ma60_uptrend:
+            ma60 = indicators.ma60
+            if ma60 is not None and price < ma60:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: price {price} < MA60 {ma60} → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 3: volume confirmation (avoid low-liquidity breakouts)
+        if self.require_volume_confirmation:
+            volume_ma20 = indicators.volume_ma20
+            if volume_ma20 is not None and volume_ma20 > 0:
+                if Decimal(str(volume)) < Decimal(str(volume_ma20)) * self.volume_confirmation_multiplier:
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: volume {volume} < "
+                        f"{self.volume_confirmation_multiplier}× MA20 {volume_ma20} → WATCH"
+                    )
+                    return SignalType.WATCH
+
+        return SignalType.BUY
 
     def map_signal_type(self, signal_type_str: str) -> SignalType:
         """Map string signal type to SignalType enum"""

@@ -299,6 +299,53 @@ class TestTechnicalStrategy:
         assert self.strategy.map_signal_type('WATCH') == SignalType.WATCH
         assert self.strategy.map_signal_type('INVALID') == SignalType.WATCH
 
+    def _make_indicators(self, ma60=None, volume_ma20=None):
+        return TechnicalIndicators(
+            date=date(2025, 9, 1),
+            ma60=Decimal(str(ma60)) if ma60 is not None else None,
+            volume_ma20=volume_ma20,
+        )
+
+    def test_disabled_signal_becomes_watch(self):
+        """MACD Golden Cross should be demoted to WATCH (disabled by default)."""
+        result = self.strategy._apply_buy_filters(
+            signal_name='MACD Golden Cross',
+            price=Decimal('100'),
+            volume=200000,
+            indicators=self._make_indicators(ma60=80, volume_ma20=100000),
+        )
+        assert result == SignalType.WATCH
+
+    def test_price_below_ma60_becomes_watch(self):
+        """BUY signal should be blocked when price is below MA60."""
+        result = self.strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('50'),
+            volume=200000,
+            indicators=self._make_indicators(ma60=60, volume_ma20=100000),
+        )
+        assert result == SignalType.WATCH
+
+    def test_low_volume_becomes_watch(self):
+        """BUY signal should be blocked when volume < 1.5× MA20 volume."""
+        result = self.strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('100'),
+            volume=100000,                                  # only 1× MA20
+            indicators=self._make_indicators(ma60=80, volume_ma20=100000),
+        )
+        assert result == SignalType.WATCH
+
+    def test_valid_buy_passes_all_filters(self):
+        """BUY signal that passes all checks should remain BUY."""
+        result = self.strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('100'),
+            volume=200000,                                  # 2× MA20 > 1.5×
+            indicators=self._make_indicators(ma60=80, volume_ma20=100000),
+        )
+        assert result == SignalType.BUY
+
 
 class TestPerformanceAnalyzer:
     """Test PerformanceAnalyzer"""
