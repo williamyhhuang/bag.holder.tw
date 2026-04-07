@@ -24,8 +24,8 @@ class BacktestEngine:
         commission_rate: Decimal = Decimal('0.001425'),  # 0.1425%
         tax_rate: Decimal = Decimal('0.003'),  # 0.3% for selling only
         position_sizing: Decimal = Decimal('0.1'),  # 10% of initial capital per position
-        stop_loss_pct: Decimal = Decimal('0.05'),  # 5% stop loss (tightened from 10%)
-        take_profit_pct: Decimal = Decimal('0.2'),  # 20% take profit
+        stop_loss_pct: Decimal = Decimal('0.05'),  # 5% stop loss
+        take_profit_pct: Decimal = Decimal('0.20'),  # 20% take profit
         max_holding_days: int = 30,
         trailing_stop_pct: Optional[Decimal] = Decimal('0.05'),  # 5% trailing stop from peak
     ):

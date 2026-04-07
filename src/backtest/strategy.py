@@ -31,6 +31,7 @@ class TechnicalStrategy:
         require_ma60_uptrend: bool = True,
         require_volume_confirmation: bool = True,
         volume_confirmation_multiplier: float = 1.5,
+        rsi_overbought_threshold: float = 70.0,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -48,6 +49,7 @@ class TechnicalStrategy:
         self.require_ma60_uptrend = require_ma60_uptrend
         self.require_volume_confirmation = require_volume_confirmation
         self.volume_confirmation_multiplier = Decimal(str(volume_confirmation_multiplier))
+        self.rsi_overbought_threshold = Decimal(str(rsi_overbought_threshold))
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -284,6 +286,7 @@ class TechnicalStrategy:
         1. Disabled signals list  — MACD Golden Cross: 13-17% win rate
         2. MA60 uptrend check     — price must be above MA60 (long-term trend)
         3. Volume confirmation     — today's volume > 1.5× MA20 volume
+        4. MA alignment check     — MA5 > MA10 > MA20 (short/mid trend must be bullish)
         """
         # Filter 1: disabled signals (poor historical win rate)
         if signal_name in self.disabled_signals:
@@ -309,6 +312,19 @@ class TechnicalStrategy:
                         f"{self.volume_confirmation_multiplier}× MA20 {volume_ma20} → WATCH"
                     )
                     return SignalType.WATCH
+
+        # Filter 4: MA alignment — MA5 > MA10 > MA20 ensures short AND mid-term trend is bullish.
+        # Prevents entering on a single-day spike above upper BB when the underlying trend is weak.
+        ma5 = indicators.ma5
+        ma10 = indicators.ma10
+        ma20 = indicators.ma20
+        if ma5 is not None and ma10 is not None and ma20 is not None:
+            if not (ma5 > ma10 > ma20):
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: MA alignment failed "
+                    f"(MA5={ma5}, MA10={ma10}, MA20={ma20}) → WATCH"
+                )
+                return SignalType.WATCH
 
         return SignalType.BUY
 
