@@ -691,5 +691,130 @@ class TestIntegration:
         assert result.end_date == date(2025, 9, 2)
 
 
+class TestBacktestIndustryFilter:
+    """Tests for TWSE industry exclusion filter (BacktestSettings)"""
+
+    def test_load_excluded_symbols_returns_industry_31_stocks(self, tmp_path):
+        """BacktestSettings.load_excluded_symbols() should return stocks from industry 31."""
+        import json
+        from pathlib import Path
+        from config.settings import BacktestSettings
+
+        industry_map = {
+            "industry_31": {
+                "name": "生技醫療業",
+                "code": 31,
+                "stocks": ["4102", "4107", "4128"]
+            },
+            "industry_99": {
+                "name": "其他業",
+                "code": 99,
+                "stocks": ["9999"]
+            }
+        }
+        map_file = tmp_path / "config" / "industry_codes.json"
+        map_file.parent.mkdir()
+        map_file.write_text(json.dumps(industry_map), encoding="utf-8")
+
+        settings = BacktestSettings(exclude_industry_codes=[31])
+        excluded = settings.load_excluded_symbols(project_root=tmp_path)
+
+        assert excluded == {"4102", "4107", "4128"}
+
+    def test_load_excluded_symbols_multiple_industries(self, tmp_path):
+        """Excluding multiple industry codes collects stocks from all specified codes."""
+        import json
+        from config.settings import BacktestSettings
+
+        industry_map = {
+            "industry_31": {"code": 31, "stocks": ["4102"]},
+            "industry_99": {"code": 99, "stocks": ["9901", "9902"]},
+        }
+        map_file = tmp_path / "config" / "industry_codes.json"
+        map_file.parent.mkdir()
+        map_file.write_text(json.dumps(industry_map), encoding="utf-8")
+
+        settings = BacktestSettings(exclude_industry_codes=[31, 99])
+        excluded = settings.load_excluded_symbols(project_root=tmp_path)
+
+        assert excluded == {"4102", "9901", "9902"}
+
+    def test_load_excluded_symbols_missing_file_returns_empty(self, tmp_path):
+        """Missing industry_codes.json should return empty set without error."""
+        from config.settings import BacktestSettings
+
+        settings = BacktestSettings(exclude_industry_codes=[31])
+        excluded = settings.load_excluded_symbols(project_root=tmp_path)
+
+        assert excluded == set()
+
+    def test_load_excluded_symbols_empty_exclude_list(self, tmp_path):
+        """Empty exclude list should result in no stocks excluded."""
+        import json
+        from config.settings import BacktestSettings
+
+        industry_map = {
+            "industry_31": {"code": 31, "stocks": ["4102", "4107"]},
+        }
+        map_file = tmp_path / "config" / "industry_codes.json"
+        map_file.parent.mkdir()
+        map_file.write_text(json.dumps(industry_map), encoding="utf-8")
+
+        settings = BacktestSettings(exclude_industry_codes=[])
+        excluded = settings.load_excluded_symbols(project_root=tmp_path)
+
+        assert excluded == set()
+
+    def test_load_excluded_symbols_ignores_comment_keys(self, tmp_path):
+        """Keys starting with '_' (comments) should be ignored."""
+        import json
+        from config.settings import BacktestSettings
+
+        industry_map = {
+            "_comment": "this is a comment",
+            "_source": "TWSE",
+            "industry_31": {"code": 31, "stocks": ["4102"]},
+        }
+        map_file = tmp_path / "config" / "industry_codes.json"
+        map_file.parent.mkdir()
+        map_file.write_text(json.dumps(industry_map), encoding="utf-8")
+
+        settings = BacktestSettings(exclude_industry_codes=[31])
+        excluded = settings.load_excluded_symbols(project_root=tmp_path)
+
+        assert excluded == {"4102"}
+
+    def test_default_exclude_industry_31(self):
+        """Default BacktestSettings should exclude industry code 31 (生技醫療業)."""
+        from config.settings import BacktestSettings
+
+        settings = BacktestSettings()
+        assert 31 in settings.exclude_industry_codes
+
+    def test_industry_filter_removes_biotech_from_stock_data(self, tmp_path):
+        """Biotech stocks should be removed from stock_data dict when filter is applied."""
+        import json
+        from config.settings import BacktestSettings
+
+        industry_map = {
+            "industry_31": {"code": 31, "stocks": ["4102", "4108"]}
+        }
+        map_file = tmp_path / "config" / "industry_codes.json"
+        map_file.parent.mkdir()
+        map_file.write_text(json.dumps(industry_map), encoding="utf-8")
+
+        settings = BacktestSettings(exclude_industry_codes=[31])
+        excluded = settings.load_excluded_symbols(project_root=tmp_path)
+
+        stock_data = {"2330": [], "4102": [], "4108": [], "6505": []}
+        filtered = {sym: data for sym, data in stock_data.items() if sym not in excluded}
+
+        assert "2330" in filtered
+        assert "6505" in filtered
+        assert "4102" not in filtered
+        assert "4108" not in filtered
+        assert len(filtered) == 2
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

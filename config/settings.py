@@ -1,8 +1,9 @@
 """
 Application configuration settings
 """
+import json
 import os
-from typing import List, Optional
+from typing import List, Optional, Set
 from pathlib import Path
 
 from pydantic import Field, validator
@@ -231,6 +232,56 @@ class StrategySettings(BaseSettings):
     class Config:
         env_prefix = "STRATEGY_"
 
+class BacktestSettings(BaseSettings):
+    """Backtest execution configuration"""
+
+    # 排除特定 TWSE 產業類別代碼的股票
+    # 31 = 生技醫療業（證交所官方產業別代碼）
+    exclude_industry_codes: List[int] = Field(
+        default=[31],
+        env="BACKTEST_EXCLUDE_INDUSTRY_CODES",
+        description="TWSE 產業類別代碼排除清單，預設排除生技醫療業 (31)",
+    )
+
+    # 產業代碼對應表路徑（相對於專案根目錄）
+    industry_code_map_path: str = Field(
+        default="config/industry_codes.json",
+        env="BACKTEST_INDUSTRY_CODE_MAP_PATH",
+    )
+
+    @validator("exclude_industry_codes", pre=True)
+    def split_codes(cls, v):
+        if isinstance(v, str):
+            return [int(c.strip()) for c in v.split(",") if c.strip()]
+        return v
+
+    def load_excluded_symbols(self, project_root: Path) -> Set[str]:
+        """回傳應排除的股票代碼集合（依 exclude_industry_codes 設定）。
+
+        讀取 industry_code_map_path 指定的 JSON，收集所有
+        exclude_industry_codes 內產業別的股票代碼。
+        """
+        map_path = project_root / self.industry_code_map_path
+        if not map_path.exists():
+            return set()
+
+        with open(map_path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        excluded: Set[str] = set()
+        for key, entry in data.items():
+            if key.startswith("_"):
+                continue
+            if isinstance(entry, dict):
+                code = entry.get("code")
+                if code in self.exclude_industry_codes:
+                    excluded.update(entry.get("stocks", []))
+        return excluded
+
+    class Config:
+        env_prefix = "BACKTEST_"
+
+
 class Settings(BaseSettings):
     """Main application settings"""
     # Sub-settings
@@ -249,6 +300,7 @@ class Settings(BaseSettings):
     performance: PerformanceSettings = PerformanceSettings()
     data: DataSettings = DataSettings()
     strategy: StrategySettings = StrategySettings()
+    backtest: BacktestSettings = BacktestSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

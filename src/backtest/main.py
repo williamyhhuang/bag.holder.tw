@@ -4,6 +4,7 @@ Main backtesting execution script
 import asyncio
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 import sys
 import os
 
@@ -19,6 +20,7 @@ from src.backtest import (
 )
 from src.data_downloader.yfinance_client import YFinanceClient
 from src.utils.logger import get_logger
+from config.settings import settings
 
 logger = get_logger(__name__)
 
@@ -123,8 +125,27 @@ class BacktestRunner:
                 data_file = self.data_source.save_to_csv(stock_data)
                 self.logger.info(f"Historical data saved to: {data_file}")
 
-            # Step 2: Generate trading signals
-            self.logger.info("Step 2: Generating trading signals...")
+            # Step 2: Apply industry exclusion filter (依 config/settings.py backtest 設定)
+            excluded_symbols = settings.backtest.load_excluded_symbols(
+                project_root=Path(os.path.normpath(os.path.join(os.path.dirname(__file__), '../..')))
+            )
+            if excluded_symbols:
+                before = len(stock_data)
+                stock_data = {
+                    sym: data for sym, data in stock_data.items()
+                    if sym not in excluded_symbols
+                }
+                removed = before - len(stock_data)
+                self.logger.info(
+                    f"Industry filter: removed {removed} stocks "
+                    f"(excluded industry codes: {settings.backtest.exclude_industry_codes}). "
+                    f"Remaining: {len(stock_data)} stocks."
+                )
+            else:
+                self.logger.info("No industry exclusion configured.")
+
+            # Step 3: Generate trading signals
+            self.logger.info("Step 3: Generating trading signals...")
             signals = self.strategy.generate_signals_for_multiple_stocks(
                 stock_data_dict=stock_data,
                 start_date=start_date,
@@ -137,24 +158,24 @@ class BacktestRunner:
             signal_summary = self.strategy.get_signal_summary(signals)
             self.logger.info(f"Signal summary: {signal_summary}")
 
-            # Step 3: Prepare backtest engine
-            self.logger.info("Step 3: Setting up backtest engine...")
+            # Step 4: Prepare backtest engine
+            self.logger.info("Step 4: Setting up backtest engine...")
             self.engine = BacktestEngine(initial_capital=initial_capital)
 
             # Add price data to engine
             for symbol, data in stock_data.items():
                 self.engine.add_price_data(symbol, data)
 
-            # Step 4: Fetch benchmark data (needed before backtest for MA20 market filter)
-            self.logger.info("Step 4: Fetching benchmark data for market filter...")
+            # Step 5: Fetch benchmark data (needed before backtest for MA20 market filter)
+            self.logger.info("Step 5: Fetching benchmark data for market filter...")
             benchmark_data = self.data_source.get_market_index_data(start_date, end_date)
 
-            # Step 5: Run backtest (pass benchmark for TAIEX MA20 buy filter)
-            self.logger.info("Step 5: Running backtest...")
+            # Step 6: Run backtest (pass benchmark for TAIEX MA20 buy filter)
+            self.logger.info("Step 6: Running backtest...")
             result = self.engine.run_backtest(signals, start_date, end_date, benchmark_data=benchmark_data)
 
-            # Step 6: Generate reports
-            self.logger.info("Step 6: Generating reports...")
+            # Step 7: Generate reports
+            self.logger.info("Step 7: Generating reports...")
             # benchmark_data already fetched in Step 4
             exported_files = self.reporter.export_all_results(
                 result=result,

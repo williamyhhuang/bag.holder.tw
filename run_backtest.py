@@ -30,9 +30,9 @@ async def run_demo_backtest():
     try:
         runner = BacktestRunner()
 
-        # Use shorter period for demo (last 3 months)
-        end_date = date.today()
-        start_date = end_date - timedelta(days=90)
+        # Backtest period: 2025-10-01 to 2026-01-01
+        start_date = date(2025, 10, 1)
+        end_date = date(2026, 1, 1)
 
         print(f"📅 Backtest Period: {start_date} to {end_date}")
         print(f"💰 Initial Capital: NT$1,000,000")
