@@ -133,8 +133,7 @@ class TechnicalStrategy:
                     bb_upper=indicators.get('bb_upper'),
                     bb_middle=indicators.get('bb_middle'),
                     bb_lower=indicators.get('bb_lower'),
-                    volume_ma20=indicators.get('volume_ma20'),
-                    high_20=indicators.get('high_20'),
+                    volume_ma20=indicators.get('volume_ma20')
                 )
 
             self.indicators_cache[symbol] = result
@@ -173,8 +172,6 @@ class TechnicalStrategy:
             result['bb_lower'] = indicators.bb_lower
         if indicators.volume_ma20 is not None:
             result['volume_ma20'] = indicators.volume_ma20
-        if indicators.high_20 is not None:
-            result['high_20'] = indicators.high_20
 
         return result
 
@@ -289,16 +286,14 @@ class TechnicalStrategy:
         Degrading to WATCH keeps the signal in reports for analysis without
         triggering actual trades.
 
-        Filters (evidence-based from backtests):
-        1. Disabled signals list  — configurable; poor historical win-rate signals
+        Filters (all evidence-based from backtests):
+        1. Disabled signals list  — MACD Golden Cross / Golden Cross: win rate < 50%
         2. MA60 uptrend check     — price must be above MA60 (long-term trend)
-        3. Volume confirmation     — today's volume > multiplier × MA20 volume
-        4. RSI momentum check     — RSI >= rsi_min_entry (avoid weak-momentum breakouts)
-
-        Note: F4 (MA5>MA10>MA20 alignment) was removed after filter diagnosis showed it
-        was completely redundant (zero marginal effect on trades or return) and actively
-        blocked new trend-following signals (MA Trend Breakout, MACD Zero Cross) that
-        embed stricter alignment requirements in their own trigger conditions.
+        3. Volume confirmation     — today's volume > 1.5× MA20 volume
+        4. MA alignment check     — MA5 > MA10 > MA20 (short/mid trend must be bullish)
+        5. RSI momentum check     — RSI >= rsi_min_entry (avoid entering on false breakouts
+                                    when momentum is weak; BB Squeeze Break had 44.8% win
+                                    rate in Q4-2025 without this filter)
         """
         # Filter 1: disabled signals (poor historical win rate)
         if signal_name in self.disabled_signals:
@@ -325,10 +320,24 @@ class TechnicalStrategy:
                     )
                     return SignalType.WATCH
 
-        # Filter 4: RSI momentum confirmation.
+        # Filter 4: MA alignment — MA5 > MA10 > MA20 ensures short AND mid-term trend is bullish.
+        # Prevents entering on a single-day spike above upper BB when the underlying trend is weak.
+        ma5 = indicators.ma5
+        ma10 = indicators.ma10
+        ma20 = indicators.ma20
+        if ma5 is not None and ma10 is not None and ma20 is not None:
+            if not (ma5 > ma10 > ma20):
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: MA alignment failed "
+                    f"(MA5={ma5}, MA10={ma10}, MA20={ma20}) → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 5: RSI momentum confirmation.
         # Require RSI >= rsi_min_entry (default 50) to ensure the stock has upward momentum.
         # A BB breakout with weak RSI (< 50) is typically a false breakout or dead-cat bounce.
-        # Evidence: BB Squeeze Break win rate dropped from 54.1% (Q1-2026) to 44.8% (Q4-2025).
+        # Evidence: BB Squeeze Break win rate dropped from 54.1% (Q1-2026) to 44.8% (Q4-2025);
+        # adding this filter aims to reject low-momentum breakouts that quickly reverse.
         if self.rsi_min_entry > 0:
             rsi = indicators.rsi14
             if rsi is not None and rsi < self.rsi_min_entry:

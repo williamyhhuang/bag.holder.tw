@@ -337,29 +337,24 @@ class TestTechnicalStrategy:
         )
         assert result == SignalType.WATCH
 
-    def test_ma_alignment_no_longer_blocks_signal(self):
-        """F4 (MA5>MA10>MA20 alignment) was removed as dead code (zero marginal effect
-        confirmed by filter diagnosis 2026-Q2). A misaligned MA should NOT block a signal
-        — other active filters (MA60, volume, RSI) still apply.
-        """
+    def test_ma_alignment_fails_blocks_signal(self):
+        """BUY signal should be blocked when MA5 <= MA10 (trend not fully aligned)."""
         from src.backtest.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
-            ma5=Decimal('95'),    # MA5 < MA10 → misaligned (was blocked by F4, no longer)
+            ma5=Decimal('95'),    # MA5 < MA10 → misaligned
             ma10=Decimal('100'),
             ma20=Decimal('90'),
-            ma60=Decimal('80'),   # price (100) > MA60 (80) → F2 passes
+            ma60=Decimal('80'),
             volume_ma20=100000,
-            rsi14=Decimal('55'),  # RSI >= 50 → F4 passes
         )
         result = self.strategy._apply_buy_filters(
             signal_name='BB Squeeze Break',
             price=Decimal('100'),
-            volume=200000,        # 2× MA20 volume → F3 passes
+            volume=200000,
             indicators=indicators,
         )
-        # F4 removed: misaligned MAs no longer veto the signal
-        assert result == SignalType.BUY
+        assert result == SignalType.WATCH
 
     def test_valid_buy_passes_all_filters(self):
         """BUY signal that passes all checks (MA alignment + RSI >= 50) should remain BUY."""
@@ -450,125 +445,6 @@ class TestTechnicalStrategy:
             indicators=indicators,
         )
         assert result == SignalType.BUY
-
-
-class TestNewTrendSignals:
-    """Unit tests for MA Trend Breakout and MACD Zero Cross signals."""
-
-    def setup_method(self):
-        from src.indicators.calculator import SignalDetector
-        self.detector = SignalDetector()
-
-    def _base_indicators(self, **kwargs):
-        base = {
-            'ma5': Decimal('110'),
-            'ma10': Decimal('105'),
-            'ma20': Decimal('100'),
-            'ma60': Decimal('90'),
-            'rsi14': Decimal('60'),
-            'macd': Decimal('1.0'),
-            'macd_signal': Decimal('0.5'),
-            'macd_histogram': Decimal('0.5'),
-            'high_20': Decimal('115'),
-        }
-        base.update(kwargs)
-        return base
-
-    # ── MA Trend Breakout ──
-
-    def test_ma_trend_breakout_fires_when_conditions_met(self):
-        """MA5>MA20>MA60 AND price > previous high_20 should trigger."""
-        current = self._base_indicators(
-            ma5=Decimal('110'), ma20=Decimal('100'), ma60=Decimal('90'),
-        )
-        previous = self._base_indicators(high_20=Decimal('115'))
-        price = Decimal('120')  # above previous high_20 (115)
-        assert self.detector._check_ma_trend_breakout(current, previous, price)
-
-    def test_ma_trend_breakout_no_fire_when_price_below_high20(self):
-        """Price not exceeding previous 20-day high → no signal."""
-        current = self._base_indicators(
-            ma5=Decimal('110'), ma20=Decimal('100'), ma60=Decimal('90'),
-        )
-        previous = self._base_indicators(high_20=Decimal('115'))
-        price = Decimal('114')  # below previous high_20
-        assert not self.detector._check_ma_trend_breakout(current, previous, price)
-
-    def test_ma_trend_breakout_no_fire_when_ma_not_aligned(self):
-        """MA5 < MA60 → no bullish alignment → no signal."""
-        current = self._base_indicators(
-            ma5=Decimal('85'), ma20=Decimal('100'), ma60=Decimal('90'),
-        )
-        previous = self._base_indicators(high_20=Decimal('115'))
-        price = Decimal('120')
-        assert not self.detector._check_ma_trend_breakout(current, previous, price)
-
-    def test_ma_trend_breakout_no_fire_when_high20_missing(self):
-        """Missing high_20 in previous indicators → no signal."""
-        current = self._base_indicators()
-        previous = self._base_indicators(high_20=None)
-        del previous['high_20']
-        price = Decimal('120')
-        assert not self.detector._check_ma_trend_breakout(current, previous, price)
-
-    # ── MACD Zero Cross ──
-
-    def test_macd_zero_cross_fires_when_conditions_met(self):
-        """MACD crosses above signal AND MACD > 0 → signal fires."""
-        current = {'macd': Decimal('0.5'), 'macd_signal': Decimal('0.3')}
-        previous = {'macd': Decimal('0.2'), 'macd_signal': Decimal('0.3')}  # prev MACD <= signal
-        assert self.detector._check_macd_zero_cross(current, previous)
-
-    def test_macd_zero_cross_no_fire_when_macd_below_zero(self):
-        """Golden cross below zero line (MACD < 0) should NOT fire."""
-        current = {'macd': Decimal('-0.1'), 'macd_signal': Decimal('-0.3')}
-        previous = {'macd': Decimal('-0.5'), 'macd_signal': Decimal('-0.3')}
-        assert not self.detector._check_macd_zero_cross(current, previous)
-
-    def test_macd_zero_cross_no_fire_when_no_crossover(self):
-        """MACD already above signal (no fresh cross) → no signal."""
-        current = {'macd': Decimal('1.0'), 'macd_signal': Decimal('0.5')}
-        previous = {'macd': Decimal('0.8'), 'macd_signal': Decimal('0.5')}  # already above
-        assert not self.detector._check_macd_zero_cross(current, previous)
-
-    def test_macd_zero_cross_no_fire_when_data_missing(self):
-        """Missing MACD data → no signal."""
-        assert not self.detector._check_macd_zero_cross({}, {})
-
-    # ── Integration: new signals appear in detect_signals output ──
-
-    def test_detect_signals_includes_ma_trend_breakout(self):
-        """detect_signals should emit MA Trend Breakout when conditions are met."""
-        current = self._base_indicators(
-            ma5=Decimal('110'), ma20=Decimal('100'), ma60=Decimal('90'),
-            high_20=Decimal('120'),  # current high_20 (not used for trigger)
-        )
-        previous = self._base_indicators(high_20=Decimal('115'))
-        signals = self.detector.detect_signals(
-            current_indicators=current,
-            previous_indicators=previous,
-            current_price=Decimal('120'),
-            volume=500000,
-        )
-        names = [s['name'] for s in signals]
-        assert 'MA Trend Breakout' in names
-
-    def test_detect_signals_includes_macd_zero_cross(self):
-        """detect_signals should emit MACD Zero Cross when MACD crosses above signal above zero."""
-        current = self._base_indicators(
-            macd=Decimal('0.5'), macd_signal=Decimal('0.3'),
-        )
-        previous = self._base_indicators(
-            macd=Decimal('0.2'), macd_signal=Decimal('0.3'),
-        )
-        signals = self.detector.detect_signals(
-            current_indicators=current,
-            previous_indicators=previous,
-            current_price=Decimal('100'),
-            volume=500000,
-        )
-        names = [s['name'] for s in signals]
-        assert 'MACD Zero Cross' in names
 
 
 class TestPerformanceAnalyzer:

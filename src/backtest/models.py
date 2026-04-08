@@ -56,7 +56,6 @@ class TechnicalIndicators:
     bb_middle: Optional[Decimal] = None
     bb_lower: Optional[Decimal] = None
     volume_ma20: Optional[int] = None
-    high_20: Optional[Decimal] = None  # 近 20 日收盤最高價（趨勢突破訊號使用）
 
 
 @dataclass

@@ -295,14 +295,6 @@ docker compose up -d
 
 ## 📝 更新日誌
 
-### v3.0.0 - 2026-04-08
-- 🚀 **新增兩個趨勢跟蹤型買進訊號（P0-A）**：
-  - **`MA Trend Breakout`**：MA5 > MA20 > MA60 多頭排列且收盤突破近 20 日新高，強趨勢進場訊號
-  - **`MACD Zero Cross`**：MACD 線在零軸上方發生黃金交叉，過濾零軸下方的假突破
-- 🗑️ **移除 F4（MA5>MA10>MA20 死碼）**：過濾器診斷確認零邊際效果，且會封鎖新趨勢訊號，故移除
-- 📊 **新增 `high_20` 指標**：`TechnicalIndicators` 新增近 20 日收盤最高價欄位，支援突破型訊號
-- ✅ **新增 `TestNewTrendSignals` 單元測試**（9 tests）：覆蓋新訊號的觸發條件與邊界情況
-
 ### v2.9.0 - 2026-04-08
 - 🔍 **新增過濾器診斷腳本 `scripts/diagnose_filters.py`**：逐步累加 9 個場景（baseline → +disabled_signals → +market_regime → ... → full），對每個場景輸出整體績效比較表、各 filter 對交易次數的削減量、以及各訊號勝率明細。協助定位哪個 filter 是績效劣於大盤的主因
 - ✅ **新增 `TestDiagnoseFilters` 單元測試**（6 tests）：驗證場景定義的累加邏輯、最終場景與生產設定一致性、訊號勝率統計正確性、報告輸出不崩潰
