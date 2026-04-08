@@ -68,6 +68,7 @@ class IndicatorCalculator:
             macd_data = self._calculate_macd(df, macd_fast, macd_slow, macd_signal)
             bb_data = self._calculate_bollinger_bands(df, bb_period, bb_std_dev)
             volume_ma = self._calculate_volume_ma(df, 20)
+            high_20 = self._calculate_high_n(df, 20)
 
             # Combine all indicators by date
             for idx, (i, row) in enumerate(df.iterrows()):
@@ -85,7 +86,8 @@ class IndicatorCalculator:
                     'bb_upper': bb_data.get('upper', {}).get(idx),
                     'bb_middle': bb_data.get('middle', {}).get(idx),
                     'bb_lower': bb_data.get('lower', {}).get(idx),
-                    'volume_ma20': volume_ma.get(idx)
+                    'volume_ma20': volume_ma.get(idx),
+                    'high_20': high_20.get(idx),
                 }
 
                 # Convert to Decimal and filter None values
@@ -181,6 +183,13 @@ class IndicatorCalculator:
         if len(df) >= period:
             volume_ma = talib.SMA(df['volume'].values.astype(float), timeperiod=period)
             return {i: val for i, val in enumerate(volume_ma) if not np.isnan(val)}
+        return {}
+
+    def _calculate_high_n(self, df: pd.DataFrame, period: int) -> Dict[int, float]:
+        """Calculate rolling N-period highest close price"""
+        if len(df) >= period:
+            high_n = talib.MAX(df['close'].values, timeperiod=period)
+            return {i: val for i, val in enumerate(high_n) if not np.isnan(val)}
         return {}
 
 class SignalDetector:
@@ -291,6 +300,26 @@ class SignalDetector:
                     'price': current_price
                 })
 
+            # MA Trend Breakout: 多頭排列（MA5>MA20>MA60）且突破近 20 日新高
+            if self._check_ma_trend_breakout(current_indicators, previous_indicators, current_price):
+                signals.append({
+                    'type': 'BUY',
+                    'name': 'MA Trend Breakout',
+                    'description': 'MA5>MA20>MA60 多頭排列且突破近 20 日新高',
+                    'strength': 'STRONG',
+                    'price': current_price
+                })
+
+            # MACD Zero Cross: MACD 在零軸上方發生黃金交叉（趨勢確認）
+            if self._check_macd_zero_cross(current_indicators, previous_indicators):
+                signals.append({
+                    'type': 'BUY',
+                    'name': 'MACD Zero Cross',
+                    'description': 'MACD 零軸上方黃金交叉，趨勢強勢確認',
+                    'strength': 'STRONG',
+                    'price': current_price
+                })
+
             return signals
 
         except Exception as e:
@@ -380,3 +409,56 @@ class SignalDetector:
         if volume_ma20 is not None:
             return volume > volume_ma20 * Decimal('2')  # 2x average volume
         return False
+
+    def _check_ma_trend_breakout(
+        self,
+        current: Dict[str, Decimal],
+        previous: Dict[str, Decimal],
+        price: Decimal,
+    ) -> bool:
+        """MA Trend Breakout: 多頭排列（MA5>MA20>MA60）且收盤突破昨日近 20 日收盤新高。
+
+        Logic:
+        - MA5 > MA20 > MA60 ensures all three timeframes are bullish.
+        - price > previous high_20 means today's close breaks out of the prior
+          20-day range, avoiding look-ahead bias (we use yesterday's high_20).
+        """
+        try:
+            ma5 = current.get('ma5')
+            ma20 = current.get('ma20')
+            ma60 = current.get('ma60')
+            prev_high20 = previous.get('high_20')
+
+            if any(v is None for v in [ma5, ma20, ma60, prev_high20]):
+                return False
+
+            return ma5 > ma20 > ma60 and price > prev_high20
+        except Exception:
+            return False
+
+    def _check_macd_zero_cross(
+        self,
+        current: Dict[str, Decimal],
+        previous: Dict[str, Decimal],
+    ) -> bool:
+        """MACD Zero Cross: MACD 線在零軸上方發生黃金交叉。
+
+        Standard MACD Golden Cross (MACD crosses above Signal line) filtered
+        by requiring MACD > 0, confirming the underlying trend is already bullish.
+        This eliminates crossovers that happen in negative territory (often
+        dead-cat bounces or early recovery attempts with weak momentum).
+        """
+        try:
+            curr_macd = current.get('macd')
+            curr_signal = current.get('macd_signal')
+            prev_macd = previous.get('macd')
+            prev_signal = previous.get('macd_signal')
+
+            if any(v is None for v in [curr_macd, curr_signal, prev_macd, prev_signal]):
+                return False
+
+            golden_cross = curr_macd > curr_signal and prev_macd <= prev_signal
+            above_zero = curr_macd > Decimal('0')
+            return golden_cross and above_zero
+        except Exception:
+            return False
