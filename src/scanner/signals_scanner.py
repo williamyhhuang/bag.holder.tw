@@ -241,7 +241,20 @@ class SignalsScanner:
                 )
                 watch_list.append(entry)
 
-        # 賣出：每支股票只保留一筆（訊號嚴重程度：MACD Death Cross > Death Cross > RSI Momentum Loss）
+        # 買入：每支股票合併多個訊號為一筆，訊號名稱用「+」連接
+        buy_by_symbol: Dict[str, dict] = {}
+        for entry in buy_list:
+            sym = entry["symbol"]
+            if sym not in buy_by_symbol:
+                buy_by_symbol[sym] = dict(entry, signals=[entry["signal"]])
+            else:
+                buy_by_symbol[sym]["signals"].append(entry["signal"])
+        for entry in buy_by_symbol.values():
+            entry["signal"] = " + ".join(sorted(set(entry["signals"])))
+            del entry["signals"]
+        buy_list = list(buy_by_symbol.values())
+
+        # 賣出：每支股票只保留最嚴重的訊號（MACD Death Cross > Death Cross > RSI Momentum Loss）
         SELL_PRIORITY = {"MACD Death Cross": 0, "Death Cross": 1, "RSI Momentum Loss": 2}
         sell_by_symbol: Dict[str, dict] = {}
         for entry in sell_list:
@@ -249,15 +262,14 @@ class SignalsScanner:
             if sym not in sell_by_symbol:
                 sell_by_symbol[sym] = entry
             else:
-                # 優先保留優先級更高的訊號（數字越小越嚴重）
                 existing_priority = SELL_PRIORITY.get(sell_by_symbol[sym]["signal"], 99)
                 new_priority = SELL_PRIORITY.get(entry["signal"], 99)
                 if new_priority < existing_priority:
                     sell_by_symbol[sym] = entry
         sell_list = list(sell_by_symbol.values())
 
-        # 排序：買入 by 訊號類型+RSI 降序，賣出 by RSI 升序（越低越緊急）
-        buy_list.sort(key=lambda x: (x["signal"], -(x["rsi"] or 0)))
+        # 排序：買入 by RSI 降序（動能最強優先），賣出 by RSI 升序（最緊急優先）
+        buy_list.sort(key=lambda x: -(x["rsi"] or 0))
         sell_list.sort(key=lambda x: x["rsi"] or 99)
         watch_list.sort(key=lambda x: x["signal"])
 

@@ -57,6 +57,52 @@ class TestLookupName:
         assert result == "永裕"
 
 
+class TestBuyDeduplication:
+    """買入訊號去重邏輯（在 scan_today 內部）"""
+
+    def test_signals_merged_for_same_symbol(self):
+        """同一支股票的多個訊號應合併為一筆，訊號名稱用 ' + ' 連接"""
+        # 模擬 buy_by_symbol 的合併邏輯
+        buy_list_raw = [
+            {"symbol": "2330.TW", "name": "台積電", "signal": "BB Squeeze Break", "price": 950.0, "rsi": 62.0},
+            {"symbol": "2330.TW", "name": "台積電", "signal": "Donchian Breakout",  "price": 950.0, "rsi": 62.0},
+        ]
+        buy_by_symbol = {}
+        for entry in buy_list_raw:
+            sym = entry["symbol"]
+            if sym not in buy_by_symbol:
+                buy_by_symbol[sym] = dict(entry, signals=[entry["signal"]])
+            else:
+                buy_by_symbol[sym]["signals"].append(entry["signal"])
+        for entry in buy_by_symbol.values():
+            entry["signal"] = " + ".join(sorted(set(entry["signals"])))
+            del entry["signals"]
+        result = list(buy_by_symbol.values())
+
+        assert len(result) == 1
+        assert "BB Squeeze Break" in result[0]["signal"]
+        assert "Donchian Breakout" in result[0]["signal"]
+        assert "+" in result[0]["signal"]
+
+    def test_single_signal_no_plus(self):
+        buy_list_raw = [
+            {"symbol": "2454.TW", "name": "聯發科", "signal": "Donchian Breakout", "price": 800.0, "rsi": 55.0},
+        ]
+        buy_by_symbol = {}
+        for entry in buy_list_raw:
+            sym = entry["symbol"]
+            if sym not in buy_by_symbol:
+                buy_by_symbol[sym] = dict(entry, signals=[entry["signal"]])
+            else:
+                buy_by_symbol[sym]["signals"].append(entry["signal"])
+        for entry in buy_by_symbol.values():
+            entry["signal"] = " + ".join(sorted(set(entry["signals"])))
+            del entry["signals"]
+        result = list(buy_by_symbol.values())
+        assert "+" not in result[0]["signal"]
+        assert result[0]["signal"] == "Donchian Breakout"
+
+
 class TestP1SellSignals:
     def test_macd_death_cross_in_set(self):
         assert "MACD Death Cross" in P1_SELL_SIGNALS

@@ -29,13 +29,13 @@ def display_signals(result: dict, show_watch: bool = False):
     # ── 建議買入 ──
     print(f"\n✅ 建議買入 ({len(buy_list)} 支)  [P1 策略完整過濾通過]")
     if buy_list:
-        print(f"  {'代號':<16} {'名稱':<10} {'訊號':<22} {'價格':>8} {'RSI':>6}")
-        print("  " + "-" * 66)
+        print(f"  {'代號':<16} {'名稱':<10} {'觸發訊號':<40} {'價格':>9} {'RSI':>6}")
+        print("  " + "-" * 85)
         for s in buy_list:
             name = (s["name"] or "")[:8]
-            signal = s["signal"][:20]
+            signal = s["signal"][:40]
             rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
-            print(f"  {s['symbol']:<16} {name:<10} {signal:<22} {s['price']:>8.2f} {rsi_str:>6}")
+            print(f"  {s['symbol']:<16} {name:<10} {signal:<40} {s['price']:>9.2f} {rsi_str:>6}")
     else:
         print("  （今日無 P1 買入訊號）")
 

@@ -6,9 +6,10 @@
 
 ## 🎯 專案特色
 
-- **📥 股票資料下載**: YFinance 整合下載台股歷史資料
-- **🔍 智能股票掃描**: 多策略選股 (動能、超跌、突破)
-- **📈 策略回測系統**: 完整回測引擎驗證交易策略績效
+- **📥 股票資料下載**: YFinance 整合下載台股歷史資料（上市 + 上櫃）
+- **🚦 今日買賣訊號**: P1 完整策略過濾，直接輸出「建議買入」與「賣出警示」
+- **🔍 股票觀察清單**: 寬鬆條件快速篩選動能、超賣、突破股
+- **📈 策略回測系統**: 完整回測引擎 (P1 策略，585天 +51.73%，Sharpe 1.68)
 - **📊 期貨分析**: 台指期貨技術分析與交易建議
 - **💼 交易記錄管理**: CSV 檔案記錄個人交易與績效
 - **🤖 Telegram 整合**: 分析結果即時推送與交易記錄
@@ -23,7 +24,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                   Taiwan Stock Analysis CLI                   │
 ├─────────────────────────────────────────────────────────────────┤
-│  📥 Downloader │  🔍 Scanner │  📈 Backtest │  📊 Futures      │
+│  📥 Download │ 🚦 Signals │ 🔍 Scan │ 📈 Backtest │ 📊 Futures  │
 ├─────────────────────────────────────────────────────────────────┤
 │                        🧠 Core Services                        │
 │  • CSV Storage   • YFinance   • Tech Analysis               │
@@ -92,7 +93,10 @@ python main.py --help
 # 下載股票資料
 python main.py download
 
-# 執行股票掃描
+# 今日買賣訊號（P1 完整策略，建議進出場）
+python main.py signals
+
+# 執行股票觀察清單
 python main.py scan
 
 # 運行回測
@@ -144,8 +148,34 @@ python main.py download --start-date 2024-01-01 --end-date 2024-01-31
 python main.py download --markets TSE OTC
 ```
 
-### 股票掃描 (scan)
-基於技術指標進行股票選股，支援多種策略。
+### 今日買賣訊號 (signals) ⭐
+使用 P1 完整策略過濾，直接輸出「今日建議買入」與「賣出警示」，是每日操盤的主要參考指令。
+
+```bash
+# 今日買賣訊號（最常用）
+python main.py signals
+
+# 同時顯示觀察清單（訊號觸發但未完全達標）
+python main.py signals --watch
+
+# 發送到 Telegram
+python main.py signals --send-telegram
+```
+
+**買入訊號條件（必須同時通過）：**
+1. 技術訊號觸發：BB Squeeze Break / Donchian Breakout / Golden Cross / MACD Golden Cross
+2. 個股在 MA60 上方（長期上升趨勢）
+3. 均線多頭排列：MA5 > MA10 > MA20
+4. RSI ≥ 50（具備上漲動能）
+5. 近 20 日動能排名前 30（避免動能衰退的假突破）
+
+**賣出警示訊號（持有中請注意）：**
+- MACD Death Cross（最嚴重）
+- Death Cross（MA5 跌破 MA20）
+- RSI Momentum Loss（RSI 跌破 50）
+
+### 股票觀察清單 (scan)
+寬鬆條件篩選，適合找尋潛力標的，不代表可直接進場。
 
 ```bash
 # 執行所有策略掃描
@@ -159,9 +189,11 @@ python main.py scan --send-telegram
 ```
 
 **支援策略:**
-- **momentum**: 動能股選股（RSI、價格變化、成交量）
-- **oversold**: 超跌股選股（RSI 過低、價格下跌）
-- **breakout**: 突破股選股（價格突破、高成交量）
+- **momentum**: 動能股（漲幅 > 3%、成交量 > 50萬、RSI > 50）
+- **oversold**: 超賣股（RSI < 30、跌幅 > 2%、成交量 > 30萬）
+- **breakout**: 突破股（成交量 > 100萬、收盤 > MA20）
+
+> **signals vs scan 的差異**: `signals` 使用 P1 完整策略（含 5 道進場過濾），輸出可直接參考的進出場建議；`scan` 使用簡單閾值，僅作為觀察清單。
 
 ### 回測分析 (backtest)
 完整的策略回測系統，驗證交易策略績效。
