@@ -28,6 +28,10 @@ class BacktestEngine:
         take_profit_pct: Decimal = Decimal('0.20'),  # 20% take profit
         max_holding_days: int = 30,
         trailing_stop_pct: Optional[Decimal] = Decimal('0.05'),  # 5% trailing stop from peak
+        # P3-C: market regime-based signal routing
+        market_regime_strong_rsi: float = 60.0,
+        strong_regime_signals: Optional[List[str]] = None,
+        neutral_regime_signals: Optional[List[str]] = None,
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -38,7 +42,13 @@ class BacktestEngine:
         self.max_holding_days = max_holding_days
         self.trailing_stop_pct = trailing_stop_pct
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
+        self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
+        # P3-C: regime-based signal routing
+        # None = no restriction (all signals allowed in that regime)
+        self.market_regime_strong_rsi = market_regime_strong_rsi
+        self.strong_regime_signals: Optional[List[str]] = strong_regime_signals
+        self.neutral_regime_signals: Optional[List[str]] = neutral_regime_signals
 
         self.logger = get_logger(self.__class__.__name__)
 
@@ -380,6 +390,8 @@ class BacktestEngine:
             rsi_ok = (rsi is not None and rsi >= rsi_dec)
 
             self.benchmark_bullish[prices[i].date] = above_ma20 and ma5_above_ma20 and rsi_ok
+            if rsi is not None:
+                self.benchmark_rsi[prices[i].date] = rsi
 
     def is_market_bullish(self, target_date: date) -> bool:
         """Return True if TAIEX passes all market regime checks on or before target_date.
@@ -392,6 +404,34 @@ class BacktestEngine:
         if not available:
             return True
         return self.benchmark_bullish[max(available)]
+
+    def get_market_regime(self, target_date: date) -> str:
+        """Return the market regime for a given date: 'STRONG', 'NEUTRAL', or 'WEAK'.
+
+        P3-C (2026-04-08): Three-zone regime routing.
+
+        WEAK   — market regime filter fails (is_market_bullish=False)
+                 → all BUY signals suppressed
+
+        NEUTRAL — market is bullish but TAIEX RSI < market_regime_strong_rsi (default 60)
+                  → only neutral_regime_signals allowed (e.g. BB Squeeze Break)
+
+        STRONG  — market is bullish AND TAIEX RSI >= market_regime_strong_rsi
+                  → all signals allowed (trend + mean-reversion)
+
+        Falls back to 'NEUTRAL' when benchmark RSI data is unavailable.
+        """
+        if not self.is_market_bullish(target_date):
+            return "WEAK"
+        if not self.benchmark_rsi:
+            return "NEUTRAL"
+        available = [d for d in self.benchmark_rsi if d <= target_date]
+        if not available:
+            return "NEUTRAL"
+        rsi = self.benchmark_rsi[max(available)]
+        if rsi >= Decimal(str(self.market_regime_strong_rsi)):
+            return "STRONG"
+        return "NEUTRAL"
 
     def set_momentum_whitelist(self, whitelist: Dict[date, Set[str]]):
         """Set the daily momentum whitelist for BUY signal filtering.
@@ -414,21 +454,43 @@ class BacktestEngine:
         """Process a list of trading signals for the current date.
 
         BUY signals are suppressed when:
-        - market_bullish is False (TAIEX fails regime checks), OR
+        - market_bullish is False (TAIEX fails regime checks, i.e. WEAK regime), OR
+        - P3-C: signal name is not in the allowed list for the current regime, OR
         - momentum_whitelist is set and the symbol is not in top-N momentum stocks.
+
+        P3-C regime routing (when benchmark RSI data available):
+          STRONG (RSI >= market_regime_strong_rsi): strong_regime_signals allowed (None = all)
+          NEUTRAL (RSI < market_regime_strong_rsi): neutral_regime_signals allowed (None = all)
+          WEAK (market_bullish=False): no buys
         """
         momentum_allowed = self._get_momentum_allowed(self.current_date)
+        regime = self.get_market_regime(self.current_date) if market_bullish else "WEAK"
 
         for signal in signals:
             if signal.date != self.current_date:
                 continue
 
             if signal.signal_type == SignalType.BUY:
-                if not market_bullish:
+                if regime == "WEAK":
                     self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: market regime filter"
+                        f"Skipping BUY {signal.symbol}: WEAK market regime"
                     )
                     continue
+                # P3-C: regime-based signal routing
+                if regime == "STRONG" and self.strong_regime_signals is not None:
+                    if signal.signal_name not in self.strong_regime_signals:
+                        self.logger.debug(
+                            f"Skipping BUY {signal.symbol}/{signal.signal_name}: "
+                            f"not in STRONG regime signals"
+                        )
+                        continue
+                elif regime == "NEUTRAL" and self.neutral_regime_signals is not None:
+                    if signal.signal_name not in self.neutral_regime_signals:
+                        self.logger.debug(
+                            f"Skipping BUY {signal.symbol}/{signal.signal_name}: "
+                            f"not in NEUTRAL regime signals"
+                        )
+                        continue
                 if momentum_allowed is not None and signal.symbol not in momentum_allowed:
                     self.logger.debug(
                         f"Skipping BUY {signal.symbol}: not in top-N momentum"

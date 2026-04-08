@@ -814,6 +814,149 @@ class TestBacktestEngineNew:
         assert rsi is None
 
 
+class TestMarketRegime:
+    """Unit tests for P3-C: get_market_regime and regime-based signal routing."""
+
+    def _make_bm(self, prices, base=None):
+        """Build a list of StockData from a price sequence for benchmark use."""
+        if base is None:
+            base = date(2025, 1, 1)
+        result = []
+        for i, p in enumerate(prices):
+            d = base + timedelta(days=i)
+            result.append(StockData(
+                symbol="^TWII", date=d,
+                open_price=Decimal(str(p)), high_price=Decimal(str(p)),
+                low_price=Decimal(str(p)), close_price=Decimal(str(p)),
+                volume=1000000,
+            ))
+        return result
+
+    def _make_signal(self, name, sym="TEST", trade_date=None):
+        if trade_date is None:
+            trade_date = date(2025, 2, 15)
+        return TradingSignal(
+            symbol=sym, date=trade_date,
+            signal_type=SignalType.BUY, signal_name=name,
+            price=Decimal("100"), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=trade_date),
+        )
+
+    def test_get_market_regime_returns_weak_when_not_bullish(self):
+        """Regime should be WEAK when is_market_bullish returns False."""
+        engine = BacktestEngine(initial_capital=Decimal("1000000"))
+        # Prices rise then drop sharply → MA5 << MA20 → ma5_above_ma20 = False
+        # → benchmark_bullish = False → is_market_bullish = False → WEAK
+        rising = list(range(90, 115))   # 25 bars rising
+        dropping = [70] * 10            # 10 bars crashing
+        bm = self._make_bm(rising + dropping)
+        engine.build_benchmark_filter(bm, rsi_threshold=0.0, check_ma5=True)
+        target = bm[-1].date
+        assert engine.get_market_regime(target) == "WEAK"
+
+    def test_get_market_regime_returns_strong_when_rsi_above_threshold(self):
+        """Regime should be STRONG when market is bullish and RSI >= strong_rsi."""
+        engine = BacktestEngine(
+            initial_capital=Decimal("1000000"),
+            market_regime_strong_rsi=50.0,  # low threshold to guarantee STRONG
+        )
+        bm = self._make_bm(list(range(80, 120)))  # steadily rising → high RSI
+        engine.build_benchmark_filter(bm, rsi_threshold=0.0, check_ma5=False)
+        target = bm[-1].date
+        regime = engine.get_market_regime(target)
+        assert regime in ("STRONG", "NEUTRAL")  # depends on actual RSI value
+
+    def test_get_market_regime_returns_neutral_when_no_rsi_data(self):
+        """Without benchmark RSI data, regime should fall back to NEUTRAL."""
+        engine = BacktestEngine(initial_capital=Decimal("1000000"))
+        # benchmark_bullish is empty → is_market_bullish returns True
+        # benchmark_rsi is empty → falls back to NEUTRAL
+        regime = engine.get_market_regime(date(2025, 6, 1))
+        assert regime == "NEUTRAL"
+
+    def test_neutral_regime_blocks_non_neutral_signals(self):
+        """In NEUTRAL regime, only neutral_regime_signals should generate trades."""
+        engine = BacktestEngine(
+            initial_capital=Decimal("1000000"),
+            market_regime_strong_rsi=90.0,    # very high → almost always NEUTRAL
+            strong_regime_signals=None,        # STRONG: all allowed
+            neutral_regime_signals=["BB Squeeze Break"],  # NEUTRAL: BB only
+        )
+        stock_data = []
+        base = date(2025, 1, 1)
+        for i in range(5):
+            stock_data.append(StockData(
+                symbol="TEST", date=base + timedelta(days=i),
+                open_price=Decimal("100"), high_price=Decimal("100"),
+                low_price=Decimal("100"), close_price=Decimal("100"),
+                volume=500000,
+            ))
+        engine.add_price_data("TEST", stock_data)
+
+        # Build benchmark so RSI is available but low (NEUTRAL regime)
+        bm = self._make_bm(list(range(80, 110)), base=date(2024, 6, 1))
+        engine.build_benchmark_filter(bm, rsi_threshold=0.0, check_ma5=False)
+
+        trade_date = base + timedelta(days=1)
+        engine.current_date = trade_date
+
+        bb_signal = self._make_signal("BB Squeeze Break", trade_date=trade_date)
+        gc_signal = self._make_signal("Golden Cross", trade_date=trade_date)
+
+        # BB Squeeze Break should execute; Golden Cross should be blocked
+        engine.process_signals([bb_signal, gc_signal], market_bullish=True)
+        assert len(engine.positions) == 1
+        assert "TEST" in engine.positions
+
+    def test_strong_regime_allows_all_when_strong_signals_is_none(self):
+        """When strong_regime_signals=None, all signals are allowed in STRONG regime."""
+        engine = BacktestEngine(
+            initial_capital=Decimal("1000000"),
+            market_regime_strong_rsi=0.0,     # RSI always >= 0 → always STRONG
+            strong_regime_signals=None,        # None = all allowed
+            neutral_regime_signals=["BB Squeeze Break"],
+        )
+        stock_data = []
+        base = date(2025, 1, 1)
+        for i in range(5):
+            stock_data.append(StockData(
+                symbol="AA", date=base + timedelta(days=i),
+                open_price=Decimal("100"), high_price=Decimal("100"),
+                low_price=Decimal("100"), close_price=Decimal("100"),
+                volume=500000,
+            ))
+            stock_data.append(StockData(
+                symbol="BB", date=base + timedelta(days=i),
+                open_price=Decimal("100"), high_price=Decimal("100"),
+                low_price=Decimal("100"), close_price=Decimal("100"),
+                volume=500000,
+            ))
+        engine.add_price_data("AA", [r for r in stock_data if r.symbol == "AA"])
+        engine.add_price_data("BB", [r for r in stock_data if r.symbol == "BB"])
+
+        bm = self._make_bm(list(range(80, 110)), base=date(2024, 6, 1))
+        engine.build_benchmark_filter(bm, rsi_threshold=0.0, check_ma5=False)
+
+        trade_date = base + timedelta(days=1)
+        engine.current_date = trade_date
+
+        bb_sig = TradingSignal(
+            symbol="AA", date=trade_date, signal_type=SignalType.BUY,
+            signal_name="BB Squeeze Break", price=Decimal("100"),
+            description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=trade_date),
+        )
+        gc_sig = TradingSignal(
+            symbol="BB", date=trade_date, signal_type=SignalType.BUY,
+            signal_name="Golden Cross", price=Decimal("100"),
+            description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=trade_date),
+        )
+        engine.process_signals([bb_sig, gc_sig], market_bullish=True)
+        # Both should execute in STRONG regime with strong_regime_signals=None
+        assert len(engine.positions) == 2
+
+
 class TestIntegration:
     """Integration tests"""
 

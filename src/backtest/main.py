@@ -179,12 +179,20 @@ class BacktestRunner:
             # Step 4: Prepare backtest engine
             self.logger.info("Step 4: Setting up backtest engine...")
             cfg = settings.backtest
+            # P3-C: parse regime signal lists (empty string → None = all allowed)
+            def _parse_signals(s: str):
+                items = [x.strip() for x in s.split(",") if x.strip()]
+                return items if items else None
+
             self.engine = BacktestEngine(
                 initial_capital=initial_capital,
                 stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
                 take_profit_pct=Decimal(str(cfg.take_profit_pct)),
                 trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
                 max_holding_days=cfg.max_holding_days,
+                market_regime_strong_rsi=cfg.market_regime_strong_rsi,
+                strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
+                neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),
             )
 
             # Add price data to engine

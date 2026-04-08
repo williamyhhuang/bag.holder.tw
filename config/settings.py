@@ -336,6 +336,27 @@ class BacktestSettings(BaseSettings):
         description="是否啟用 TAIEX MA5 > MA20 趨勢對齊檢查",
     )
 
+    # ── P3-C 市場環境分層訊號路由 ────────────────────────────────────
+    # STRONG (RSI >= market_regime_strong_rsi): 允許趨勢跟蹤 + 均值回歸訊號
+    # NEUTRAL (RSI < strong_rsi): 僅允許均值回歸訊號（BB Squeeze Break）
+    # WEAK (市場環境過濾觸發): 暫停所有買進
+    market_regime_strong_rsi: float = Field(
+        default=60.0,
+        env="BACKTEST_MARKET_REGIME_STRONG_RSI",
+        description="TAIEX RSI 超過此值視為強勢市場（啟用趨勢訊號）",
+    )
+    # None / 空字串 = 該 regime 允許所有訊號
+    strong_regime_signals: str = Field(
+        default="",
+        env="BACKTEST_STRONG_REGIME_SIGNALS",
+        description="強勢市場允許的訊號（空白 = 全部）",
+    )
+    neutral_regime_signals: str = Field(
+        default="BB Squeeze Break,RSI Oversold",
+        env="BACKTEST_NEUTRAL_REGIME_SIGNALS",
+        description="中性市場允許的訊號（空白 = 全部）",
+    )
+
     # ── 動能排名過濾 ─────────────────────────────────────────────────
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
     # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break

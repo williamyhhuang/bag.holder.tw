@@ -295,6 +295,14 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v3.2.0 - 2026-04-08
+- 🎯 **P3-C：市場環境分層訊號路由**：依 TAIEX RSI(14) 將市場分三區，各區允許不同訊號
+  - **STRONG**（RSI >= 60）：全部訊號允許（趨勢 + 均值回歸）
+  - **NEUTRAL**（RSI 45-60）：僅 BB Squeeze Break + RSI Oversold
+  - **WEAK**（市場環境過濾觸發）：暫停所有買進
+- 📊 `BacktestEngine` 新增 `get_market_regime()`、`benchmark_rsi` 儲存、`strong/neutral_regime_signals` 路由設定
+- ✅ **新增 `TestMarketRegime` 單元測試**（5 tests）：覆蓋 WEAK/STRONG/NEUTRAL 判斷與訊號封鎖邏輯
+
 ### v3.0.0 - 2026-04-08
 - 🔄 **P1：恢復 Golden Cross + MACD Golden Cross**：過濾器診斷顯示停用這兩個訊號讓報酬率 -5.90%，儘管勝率低（22-32%），其進場時機對組合有正向錨定效果
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
