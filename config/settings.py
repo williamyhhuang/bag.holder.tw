@@ -251,27 +251,28 @@ class BacktestSettings(BaseSettings):
     )
 
     # ── 停損 / 停利設定 ─────────────────────────────────────────────
-    # 停利從 20% 降至 10%：Q4 2025 最高獲利僅 9.96%，20% 目標從未觸發
+    # P2 (2026-04-08): 配合趨勢跟蹤型訊號（MA Trend Breakout / MACD Zero Cross）放寬出場機制
+    # 停利 10%→25%：讓趨勢部位有空間延伸
     take_profit_pct: float = Field(
-        default=0.10,
+        default=0.25,
         env="BACKTEST_TAKE_PROFIT_PCT",
-        description="停利百分比（0.10 = 10%）",
+        description="停利百分比（0.25 = 25%）",
     )
-    # 停損維持 5%
+    # 停損 5%→7%：與追蹤停損 8% 一致，略為放寬初始風險
     stop_loss_pct: float = Field(
-        default=0.05,
+        default=0.07,
         env="BACKTEST_STOP_LOSS_PCT",
-        description="停損百分比（0.05 = 5%）",
+        description="停損百分比（0.07 = 7%）",
     )
-    # 追蹤停損從 5% 縮至 3%：更早鎖住已實現的利潤
+    # 追蹤停損 3%→8%：趨勢股正常回調空間，避免過早被打出
     trailing_stop_pct: float = Field(
-        default=0.03,
+        default=0.08,
         env="BACKTEST_TRAILING_STOP_PCT",
-        description="追蹤停損百分比（0.03 = 3%）",
+        description="追蹤停損百分比（0.08 = 8%）",
     )
-    # 最長持倉從 30 天縮至 15 天：減少持有不動的死掌
+    # 最長持倉 15→30 天：趨勢需要足夠時間發展
     max_holding_days: int = Field(
-        default=15,
+        default=30,
         env="BACKTEST_MAX_HOLDING_DAYS",
         description="最長持倉天數",
     )
