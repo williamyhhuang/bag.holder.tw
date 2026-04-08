@@ -771,38 +771,6 @@ class TestBacktestEngineNew:
         # (exact outcome depends on the specific price series — just verify the filter runs)
         assert isinstance(is_bullish, bool)
 
-    def test_check_close_ma20_false_allows_more_bullish_days(self):
-        """P1-C: With check_close_ma20=False, days where close < MA20 but MA5>=MA20
-        and RSI>=threshold should still be considered bullish."""
-        engine_strict = BacktestEngine(initial_capital=Decimal('1000000'))
-        engine_relaxed = BacktestEngine(initial_capital=Decimal('1000000'))
-
-        # Benchmark: 20 bars at 100, then 5 bars slightly below MA20
-        # → close < MA20, but recent MA5 >= MA20 might still hold depending on data
-        # Use a simpler case: 25 bars ascending then 3 bars slightly pulling back
-        base = date(2025, 1, 1)
-        bm_prices = list(range(80, 105)) + [103, 102, 101]  # 25 ascending + 3 slight pullback
-        bm_data = []
-        for i, p in enumerate(bm_prices):
-            bm_data.append(StockData(
-                symbol="^TWII", date=base + timedelta(days=i),
-                open_price=Decimal(str(p)), high_price=Decimal(str(p)),
-                low_price=Decimal(str(p)), close_price=Decimal(str(p)),
-                volume=1000000
-            ))
-
-        engine_strict.build_benchmark_filter(
-            bm_data, rsi_threshold=0.0, check_ma5=True, check_close_ma20=True
-        )
-        engine_relaxed.build_benchmark_filter(
-            bm_data, rsi_threshold=0.0, check_ma5=True, check_close_ma20=False
-        )
-
-        # Count bullish days: relaxed should have >= strict
-        strict_bullish = sum(engine_strict.benchmark_bullish.values())
-        relaxed_bullish = sum(engine_relaxed.benchmark_bullish.values())
-        assert relaxed_bullish >= strict_bullish
-
     def test_momentum_whitelist_blocks_unlisted_buy(self):
         """BUY should be suppressed for symbols not in the daily momentum whitelist."""
         engine = BacktestEngine(initial_capital=Decimal('1000000'))

@@ -224,7 +224,6 @@ class BacktestRunner:
                 benchmark_data=benchmark_data,
                 market_regime_rsi_threshold=cfg.market_regime_rsi_threshold,
                 market_regime_check_ma5=cfg.market_regime_check_ma5,
-                market_regime_check_close_ma20=cfg.market_regime_check_close_ma20,
             )
 
             # Step 7: Generate reports

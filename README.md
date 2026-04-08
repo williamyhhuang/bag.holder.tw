@@ -295,10 +295,6 @@ docker compose up -d
 
 ## 📝 更新日誌
 
-### v3.1.0 - 2026-04-08
-- 🔧 **P1-C：移除大盤環境過濾的 `close >= MA20` 條件**：此條件與 `MA5 >= MA20` 高度重疊，獨立存在無額外資訊量。新增 `check_close_ma20` 參數（預設 `False`），可透過 `BACKTEST_MARKET_REGIME_CHECK_CLOSE_MA20` 控制。放寬後可覆蓋更多有效交易日，提升 Beta
-- ✅ **新增 `test_check_close_ma20_false_allows_more_bullish_days`** 單元測試
-
 ### v3.0.0 - 2026-04-08
 - 🔄 **P1：恢復 Golden Cross + MACD Golden Cross**：過濾器診斷顯示停用這兩個訊號讓報酬率 -5.90%，儘管勝率低（22-32%），其進場時機對組合有正向錨定效果
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出

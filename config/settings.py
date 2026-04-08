@@ -335,12 +335,6 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_MARKET_REGIME_CHECK_MA5",
         description="是否啟用 TAIEX MA5 > MA20 趨勢對齊檢查",
     )
-    # P1-C (2026-04-08): 移除 close >= MA20 條件（與 MA5>=MA20 高度重疊，單獨存在無額外資訊）
-    market_regime_check_close_ma20: bool = Field(
-        default=False,
-        env="BACKTEST_MARKET_REGIME_CHECK_CLOSE_MA20",
-        description="是否啟用 TAIEX close >= MA20 檢查（False = 停用，MA5>=MA20 已足夠）",
-    )
 
     # ── 動能排名過濾 ─────────────────────────────────────────────────
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
