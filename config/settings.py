@@ -387,7 +387,18 @@ class BacktestSettings(BaseSettings):
     trend_trailing_stop_pct: float = Field(
         default=0.08,
         env="BACKTEST_TREND_TRAILING_STOP_PCT",
-        description="趨勢訊號追蹤停損百分比（0.08 = 8%）",
+        description="趨勢訊號追蹤停損百分比（0.08 = 8%；trend_use_trailing_stop=False 時忽略）",
+    )
+    # P3-B: 訊號式出場 — 趨勢倉位不使用追蹤停損，改用 MACD 死叉等訊號出場
+    trend_use_trailing_stop: bool = Field(
+        default=False,
+        env="BACKTEST_TREND_USE_TRAILING_STOP",
+        description="趨勢倉位是否啟用追蹤停損（False = 改用 trend_exit_on_signals 訊號出場）",
+    )
+    trend_exit_on_signals: str = Field(
+        default="MACD Death Cross,Death Cross",
+        env="BACKTEST_TREND_EXIT_ON_SIGNALS",
+        description="趨勢倉位的訊號式出場觸發訊號（逗號分隔；trend_use_trailing_stop=False 時啟用）",
     )
     trend_take_profit_pct: float = Field(
         default=0.40,

@@ -1760,5 +1760,116 @@ class TestP6TrendFollowing:
         # Golden Cross removed (P6b): 26.1% win rate was dragging performance
         assert "Golden Cross" not in trend_list
 
+
+class TestP3BSignalBasedExit:
+    """P3-B: 趨勢倉位訊號式出場（MACD Death Cross / Death Cross）"""
+
+    def _make_price(self, sym: str, d: date, price: float) -> StockData:
+        p = Decimal(str(price))
+        return StockData(sym, d, p * Decimal('0.99'), p * Decimal('1.01'),
+                         p * Decimal('0.98'), p, 1_000_000)
+
+    def _make_signal(self, sym: str, d: date, sig_type: SignalType, name: str,
+                     price: float) -> TradingSignal:
+        return TradingSignal(sym, d, sig_type, name, Decimal(str(price)),
+                             "test", "STRONG", TechnicalIndicators(date=d))
+
+    def test_trend_position_exits_on_macd_death_cross(self):
+        """趨勢倉位在 MACD Death Cross 訊號出現時應出場"""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'),
+                                stop_loss_pct=Decimal('0.10'))
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0"),   # disabled
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+                "exit_on_signals": ["MACD Death Cross", "Death Cross"],
+            }
+        })
+        d1, d2 = date(2025, 9, 1), date(2025, 9, 5)
+        for sym in ["DB"]:
+            engine.add_price_data(sym, [self._make_price(sym, d1, 100),
+                                        self._make_price(sym, d2, 105)])
+
+        # Day 1: buy Donchian Breakout
+        engine.current_date = d1
+        engine.execute_buy_order(
+            self._make_signal("DB", d1, SignalType.BUY, "Donchian Breakout", 100))
+        assert "DB" in engine.positions
+
+        # Day 5: MACD Death Cross fires → should exit
+        engine.current_date = d2
+        sell_sig = self._make_signal("DB", d2, SignalType.SELL, "MACD Death Cross", 105)
+        engine.process_signals([sell_sig], market_bullish=True)
+        assert "DB" not in engine.positions  # should be exited
+
+    def test_trend_position_ignores_unrelated_sell_signal(self):
+        """趨勢倉位不應因非指定訊號（RSI Overbought）出場"""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'),
+                                stop_loss_pct=Decimal('0.10'))
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+                "exit_on_signals": ["MACD Death Cross", "Death Cross"],
+            }
+        })
+        d1, d2 = date(2025, 9, 1), date(2025, 9, 5)
+        engine.add_price_data("DB2", [self._make_price("DB2", d1, 100),
+                                      self._make_price("DB2", d2, 110)])
+
+        engine.current_date = d1
+        engine.execute_buy_order(
+            self._make_signal("DB2", d1, SignalType.BUY, "Donchian Breakout", 100))
+
+        # RSI Overbought is NOT in exit_on_signals → should NOT exit
+        engine.current_date = d2
+        sell_sig = self._make_signal("DB2", d2, SignalType.SELL, "RSI Overbought", 110)
+        engine.process_signals([sell_sig], market_bullish=True)
+        assert "DB2" in engine.positions  # still holding
+
+    def test_trailing_stop_disabled_when_pct_is_zero(self):
+        """trailing_stop_pct_override=Decimal('0') 時不應更新追蹤停損"""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'),
+                                stop_loss_pct=Decimal('0.10'),
+                                trailing_stop_pct=Decimal('0.03'))
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0"),  # disabled
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+                "exit_on_signals": ["MACD Death Cross"],
+            }
+        })
+        d1, d2 = date(2025, 9, 1), date(2025, 9, 2)
+        price = Decimal('100')
+        engine.add_price_data("DB3", [self._make_price("DB3", d1, 100),
+                                      self._make_price("DB3", d2, 120)])
+
+        engine.current_date = d1
+        engine.execute_buy_order(
+            self._make_signal("DB3", d1, SignalType.BUY, "Donchian Breakout", 100))
+        initial_stop = engine.positions["DB3"].stop_loss
+
+        # Price rises to 120 on day 2 → with trailing stop 3% would update to 116.4
+        # But trailing stop is disabled (0) → stop_loss should remain at initial
+        engine.current_date = d2
+        engine.check_position_exits()
+        if "DB3" in engine.positions:
+            assert engine.positions["DB3"].stop_loss == initial_stop
+
+    def test_p3b_settings_defaults(self):
+        """BacktestSettings P3-B 預設值：trend_use_trailing_stop=False，exit_on=MACD Death Cross"""
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert s.trend_use_trailing_stop is False
+        assert "MACD Death Cross" in s.trend_exit_on_signals
+        assert "Death Cross" in s.trend_exit_on_signals
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

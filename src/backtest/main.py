@@ -200,22 +200,34 @@ class BacktestRunner:
                 strong_trend_multiplier=cfg.strong_trend_multiplier,
             )
 
-            # P6: configure trend signal exit parameters
+            # P6 + P3-B: configure trend signal exit parameters
             trend_names = [s.strip() for s in cfg.trend_signal_names.split(",") if s.strip()]
             if trend_names:
+                # P3-B: signal-based exit — disable trailing stop, use MACD Death Cross instead
+                if cfg.trend_use_trailing_stop:
+                    eff_trailing = Decimal(str(cfg.trend_trailing_stop_pct))
+                    eff_exit_signals = None
+                else:
+                    eff_trailing = Decimal('0')  # 0 = disabled (explicit override)
+                    eff_exit_signals = [
+                        s.strip() for s in cfg.trend_exit_on_signals.split(",") if s.strip()
+                    ] or None
+
                 trend_exit = {
                     name: {
                         "stop_loss_pct": Decimal(str(cfg.trend_stop_loss_pct)),
-                        "trailing_stop_pct": Decimal(str(cfg.trend_trailing_stop_pct)),
+                        "trailing_stop_pct": eff_trailing,
                         "take_profit_pct": Decimal(str(cfg.trend_take_profit_pct)),
                         "max_holding_days": cfg.trend_max_holding_days,
+                        "exit_on_signals": eff_exit_signals,
                     }
                     for name in trend_names
                 }
                 self.engine.set_signal_exit_config(trend_exit)
+                mode = "trailing_stop" if cfg.trend_use_trailing_stop else f"signal_exit({eff_exit_signals})"
                 self.logger.info(
                     f"Trend exit config set for: {trend_names} "
-                    f"(stop={cfg.trend_stop_loss_pct}, trailing={cfg.trend_trailing_stop_pct}, "
+                    f"(stop={cfg.trend_stop_loss_pct}, mode={mode}, "
                     f"holding={cfg.trend_max_holding_days}d)"
                 )
 

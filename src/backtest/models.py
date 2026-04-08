@@ -109,6 +109,10 @@ class Position:
     # P6: per-signal exit overrides (trend signals use wider stop / longer holding)
     max_holding_days_override: Optional[int] = None
     trailing_stop_pct_override: Optional[Decimal] = None
+    # P3-B: signal-based exit — exit when one of these sell signal names fires for this symbol
+    # None = no signal-based exit (use trailing stop / stop loss only)
+    # Decimal('0') for trailing_stop_pct_override = trailing stop disabled (use signal exit instead)
+    exit_on_signals: Optional[List[str]] = None
 
 
 @dataclass

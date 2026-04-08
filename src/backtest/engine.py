@@ -188,6 +188,7 @@ class BacktestEngine:
             eff_take_profit_pct = exit_cfg.get("take_profit_pct", self.take_profit_pct)
             eff_trailing_pct = exit_cfg.get("trailing_stop_pct", None)
             eff_max_holding = exit_cfg.get("max_holding_days", None)
+            eff_exit_on_signals = exit_cfg.get("exit_on_signals", None)
 
             # Create position
             position = Position(
@@ -203,6 +204,7 @@ class BacktestEngine:
                 entry_signal_name=signal.signal_name,
                 max_holding_days_override=eff_max_holding,
                 trailing_stop_pct_override=eff_trailing_pct,
+                exit_on_signals=eff_exit_on_signals,
             )
 
             self.positions[signal.symbol] = position
@@ -291,8 +293,12 @@ class BacktestEngine:
             position.current_date = self.current_date
 
             # Update trailing stop: ratchet up as price rises above entry
-            # P6: use per-position trailing_stop_pct_override if set, else engine default
-            eff_trailing = position.trailing_stop_pct_override or self.trailing_stop_pct
+            # P6: use per-position trailing_stop_pct_override if explicitly set, else engine default
+            # P3-B: Decimal('0') means trailing stop disabled (signal-based exit instead)
+            if position.trailing_stop_pct_override is not None:
+                eff_trailing = position.trailing_stop_pct_override  # may be 0 = disabled
+            else:
+                eff_trailing = self.trailing_stop_pct
             if eff_trailing and current_price > position.entry_price:
                 new_trailing_stop = (
                     current_price * (Decimal('1') - eff_trailing)
@@ -556,9 +562,21 @@ class BacktestEngine:
                     sizing_override = self.position_sizing * Decimal(str(self.strong_trend_multiplier))
                 self.execute_buy_order(signal, sizing_override=sizing_override)
             elif signal.signal_type == SignalType.SELL and signal.symbol in self.positions:
-                current_price = self.get_current_price(signal.symbol, self.current_date)
-                if current_price:
-                    self.execute_sell_order(signal.symbol, current_price, "Sell Signal")
+                position = self.positions[signal.symbol]
+                # P3-B: signal-based exit for trend positions
+                # If position specifies exit_on_signals, only exit on matching signals.
+                # Otherwise (mean-reversion positions), exit on any sell signal.
+                if position.exit_on_signals is not None:
+                    should_exit = signal.signal_name in position.exit_on_signals
+                else:
+                    should_exit = True
+                if should_exit:
+                    current_price = self.get_current_price(signal.symbol, self.current_date)
+                    if current_price:
+                        self.execute_sell_order(
+                            signal.symbol, current_price,
+                            f"Signal Exit: {signal.signal_name}"
+                        )
 
     def run_backtest(
         self,
