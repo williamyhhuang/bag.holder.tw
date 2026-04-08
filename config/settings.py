@@ -349,15 +349,14 @@ class BacktestSettings(BaseSettings):
     )
 
     # ── 回測時間範圍 ─────────────────────────────────────────────────
-    # 格式：YYYY-MM-DD；end_date 留空則預設為今天
-    backtest_start_date: Optional[date] = Field(
+    # 格式：YYYY-MM-DD；留空則預設為今天（end_date）或程式預設值（start_date）
+    # 欄位名不加 backtest_ 前綴，避免與 env_prefix="BACKTEST_" 疊加成 BACKTEST_BACKTEST_*
+    start_date: Optional[date] = Field(
         default=None,
-        env="BACKTEST_START_DATE",
         description="回測起始日期（YYYY-MM-DD），留空使用程式預設值",
     )
-    backtest_end_date: Optional[date] = Field(
+    end_date: Optional[date] = Field(
         default=None,
-        env="BACKTEST_END_DATE",
         description="回測結束日期（YYYY-MM-DD），留空使用今天",
     )
 
@@ -365,7 +364,19 @@ class BacktestSettings(BaseSettings):
     def split_codes(cls, v):
         if isinstance(v, str):
             return [int(c.strip()) for c in v.split(",") if c.strip()]
+        if isinstance(v, int):
+            return [v]
         return v
+
+    @validator("start_date", "end_date", pre=True)
+    def parse_date(cls, v):
+        """Accept YYYY-MM-DD strings; treat empty string as None."""
+        if not v:
+            return None
+        if isinstance(v, date):
+            return v
+        from datetime import datetime
+        return datetime.strptime(str(v).strip(), "%Y-%m-%d").date()
 
     def load_excluded_symbols(self, project_root: Path) -> Set[str]:
         """回傳應排除的股票代碼集合（依 exclude_industry_codes 設定）。
@@ -392,6 +403,8 @@ class BacktestSettings(BaseSettings):
 
     class Config:
         env_prefix = "BACKTEST_"
+        env_file = str(PROJECT_ROOT / ".env")
+        env_file_encoding = "utf-8"
 
 
 class Settings(BaseSettings):

@@ -93,9 +93,9 @@ class BacktestRunner:
         """
         cfg = settings.backtest
         if start_date is None:
-            start_date = cfg.backtest_start_date or date(2024, 9, 1)
+            start_date = cfg.start_date or date(2024, 9, 1)
         if end_date is None:
-            end_date = cfg.backtest_end_date or date.today()
+            end_date = cfg.end_date or date.today()
 
         self.logger.info(f"Starting full backtest from {start_date} to {end_date}")
 

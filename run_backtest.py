@@ -39,8 +39,8 @@ async def run_demo_backtest():
         # Resolve the actual dates used (for display)
         cfg = settings.backtest
         from datetime import date
-        start_date = cfg.backtest_start_date or date(2024, 9, 1)
-        end_date = cfg.backtest_end_date or date.today()
+        start_date = cfg.start_date or date(2024, 9, 1)
+        end_date = cfg.end_date or date.today()
 
         print(f"📅 Backtest Period: {start_date} to {end_date}")
         print(f"💰 Initial Capital: NT$1,000,000")
