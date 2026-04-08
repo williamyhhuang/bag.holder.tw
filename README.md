@@ -295,6 +295,12 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v3.3.0 - 2026-04-09
+- 🎯 **趨勢部位停損從 10% 擴至 15%**：給 Donchian Breakout / MACD Golden Cross 更大的空間讓 8% trailing stop 發揮，避免過早被打出
+- 🔄 **P3-B 從信號式出場恢復為 trailing stop**：信號式出場（RSI Momentum Loss / MACD Death Cross）在現有配置下觸發 0 次（部位被停損/profit-protection 先退出），改回 trailing stop 效果更好
+- 📈 **回測結果**（584 天）：總報酬 **42.26%**、年化 24.60%、夏普比率 **1.13**、勝率 **51.58%**、Donchian Breakout 勝率 **53.8%**
+- ✅ 更新單元測試預設值以反映最新設定（87 tests pass）
+
 ### v3.2.0 - 2026-04-08
 - 🎯 **P3-C：市場環境分層訊號路由**：依 TAIEX RSI(14) 將市場分三區，各區允許不同訊號
   - **STRONG**（RSI >= 60）：全部訊號允許（趨勢 + 均值回歸）

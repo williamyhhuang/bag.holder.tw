@@ -1750,7 +1750,7 @@ class TestP6TrendFollowing:
         from config.settings import BacktestSettings
         s = BacktestSettings()
         assert s.donchian_period == 20
-        assert s.trend_stop_loss_pct == 0.10
+        assert s.trend_stop_loss_pct == 0.15
         assert s.trend_trailing_stop_pct == 0.08
         assert s.trend_take_profit_pct == 0.40
         assert s.trend_max_holding_days == 60
@@ -1863,10 +1863,11 @@ class TestP3BSignalBasedExit:
             assert engine.positions["DB3"].stop_loss == initial_stop
 
     def test_p3b_settings_defaults(self):
-        """BacktestSettings P3-B 預設值：trend_use_trailing_stop=False，exit_on=RSI+MACD Death Cross"""
+        """BacktestSettings P3-B 預設值：trend_use_trailing_stop=True（15% 停損 + 8% trailing 最佳配置）"""
         from config.settings import BacktestSettings
         s = BacktestSettings()
-        assert s.trend_use_trailing_stop is False
+        assert s.trend_use_trailing_stop is True
+        assert s.trend_stop_loss_pct == 0.15
         assert "RSI Momentum Loss" in s.trend_exit_on_signals
         assert "MACD Death Cross" in s.trend_exit_on_signals
         assert "Death Cross" in s.trend_exit_on_signals

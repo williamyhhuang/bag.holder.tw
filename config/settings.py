@@ -380,9 +380,9 @@ class BacktestSettings(BaseSettings):
         description="套用趨勢出場參數的訊號名稱（逗號分隔）",
     )
     trend_stop_loss_pct: float = Field(
-        default=0.10,
+        default=0.15,
         env="BACKTEST_TREND_STOP_LOSS_PCT",
-        description="趨勢訊號停損百分比（0.10 = 10%）",
+        description="趨勢訊號停損百分比（0.15 = 15%；寬停損讓 trailing stop 有空間發揮）",
     )
     trend_trailing_stop_pct: float = Field(
         default=0.08,
@@ -391,9 +391,9 @@ class BacktestSettings(BaseSettings):
     )
     # P3-B: 訊號式出場 — 趨勢倉位不使用追蹤停損，改用 MACD 死叉等訊號出場
     trend_use_trailing_stop: bool = Field(
-        default=False,
+        default=True,
         env="BACKTEST_TREND_USE_TRAILING_STOP",
-        description="趨勢倉位是否啟用追蹤停損（False = 改用 trend_exit_on_signals 訊號出場）",
+        description="趨勢倉位是否啟用追蹤停損（True = 用 8% trailing；False = 改用 trend_exit_on_signals 訊號出場）",
     )
     trend_exit_on_signals: str = Field(
         default="RSI Momentum Loss,MACD Death Cross,Death Cross",
