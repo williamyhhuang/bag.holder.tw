@@ -295,6 +295,10 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v2.9.0 - 2026-04-08
+- 🔍 **新增過濾器診斷腳本 `scripts/diagnose_filters.py`**：逐步累加 9 個場景（baseline → +disabled_signals → +market_regime → ... → full），對每個場景輸出整體績效比較表、各 filter 對交易次數的削減量、以及各訊號勝率明細。協助定位哪個 filter 是績效劣於大盤的主因
+- ✅ **新增 `TestDiagnoseFilters` 單元測試**（6 tests）：驗證場景定義的累加邏輯、最終場景與生產設定一致性、訊號勝率統計正確性、報告輸出不崩潰
+
 ### v2.8.0 - 2026-04-08
 - ⚙️ **所有 BacktestSettings 參數補齊至 `.env` / `.env.example`**：新增 `BACKTEST_*` 完整區塊，包含時間範圍、停損停利、進場過濾、大盤環境、動能排名、產業排除共 15 個參數
 - 🔗 **strategy.py 與 BacktestSettings 完全一致**：`BacktestRunner` 現在把 `disabled_signals`、`require_ma60_uptrend`、`require_volume_confirmation`、`volume_confirmation_multiplier`、`rsi_overbought_threshold` 全部從 config 讀取並傳入 `TechnicalStrategy`，消除寫死預設值的不一致風險

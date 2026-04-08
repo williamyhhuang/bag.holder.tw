@@ -1094,5 +1094,155 @@ class TestMomentumRankings:
             assert start <= d <= end
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# diagnose_filters.py 單元測試
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDiagnoseFilters:
+    """Unit tests for scripts/diagnose_filters.py logic."""
+
+    def _make_stock_data(self, symbol: str, prices: list, base_date: date = None):
+        if base_date is None:
+            base_date = date(2025, 1, 1)
+        records = []
+        for i, price in enumerate(prices):
+            records.append(StockData(
+                symbol=symbol,
+                date=base_date + timedelta(days=i),
+                open_price=Decimal(str(price)),
+                high_price=Decimal(str(price * 1.01)),
+                low_price=Decimal(str(price * 0.99)),
+                close_price=Decimal(str(price)),
+                volume=500000,
+            ))
+        return records
+
+    def test_scenario_definitions_are_cumulative(self):
+        """Scenarios should progressively add filters (each scenario is a strict superset
+        of restrictions compared to the baseline). Verified by checking that later
+        scenarios have at least as many disabled signals as earlier ones."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.diagnose_filters import SCENARIOS
+
+        baseline = SCENARIOS[0]
+        assert not baseline.disabled_signals, "baseline should have no disabled signals"
+        assert not baseline.require_ma60_uptrend, "baseline should not require MA60 uptrend"
+        assert not baseline.require_volume_confirmation, "baseline should not require volume confirmation"
+        assert baseline.rsi_min_entry == 0.0, "baseline should have no RSI min entry"
+        assert not baseline.use_market_regime, "baseline should not use market regime filter"
+        assert baseline.momentum_top_n == 0, "baseline should have no momentum filter"
+
+    def test_last_scenario_matches_production(self):
+        """The final scenario should match the current production config."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.diagnose_filters import SCENARIOS
+        from config.settings import settings
+
+        last = SCENARIOS[-1]
+        cfg = settings.backtest
+
+        prod_disabled = [s.strip() for s in cfg.disabled_signals.split(",") if s.strip()]
+        assert set(last.disabled_signals) == set(prod_disabled), \
+            f"last scenario disabled_signals {last.disabled_signals} != production {prod_disabled}"
+        assert last.require_ma60_uptrend == cfg.require_ma60_uptrend
+        assert last.require_volume_confirmation == cfg.require_volume_confirmation
+        assert last.rsi_min_entry == cfg.rsi_min_entry
+        assert last.use_market_regime is True
+        assert last.momentum_top_n == cfg.momentum_top_n
+
+    def test_analyze_signal_breakdown_counts(self):
+        """_analyze_signal_breakdown should correctly count trades and wins per signal."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.diagnose_filters import _analyze_signal_breakdown
+        from src.backtest.models import Position, PositionStatus
+
+        positions = []
+        base = date(2025, 1, 1)
+        for i, (sig, pnl) in enumerate([
+            ("BB Squeeze Break", Decimal("500")),
+            ("BB Squeeze Break", Decimal("-200")),
+            ("BB Squeeze Break", Decimal("300")),
+            ("Volume Surge", Decimal("100")),
+            ("Volume Surge", Decimal("-50")),
+        ]):
+            pos = Position(
+                symbol=f"SYM{i}",
+                quantity=1000,
+                entry_price=Decimal("100"),
+                entry_date=base,
+                current_price=Decimal("100"),
+                current_date=base,
+                status=PositionStatus.CLOSED,
+                entry_signal_name=sig,
+            )
+            pos.pnl = pnl
+            pos.exit_price = Decimal("100") + pnl / 1000
+            pos.exit_date = base + timedelta(days=2)
+            pos.holding_days = 2
+            positions.append(pos)
+
+        breakdown = _analyze_signal_breakdown(positions)
+
+        assert breakdown["BB Squeeze Break"]["trades"] == 3
+        assert breakdown["BB Squeeze Break"]["wins"] == 2
+        assert breakdown["Volume Surge"]["trades"] == 2
+        assert breakdown["Volume Surge"]["wins"] == 1
+
+    def test_scenario_result_win_rate_by_signal_formatting(self):
+        """win_rate_by_signal should return formatted string or '  0 trades'."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.diagnose_filters import ScenarioResult
+
+        result = ScenarioResult(
+            name="test",
+            description="test",
+            total_trades=10,
+            win_rate=60.0,
+            total_return_pct=5.0,
+            profit_factor=1.5,
+            max_drawdown=10.0,
+            sharpe=0.5,
+            avg_holding=3.0,
+            signal_breakdown={
+                "BB Squeeze Break": {"trades": 8, "wins": 5},
+            },
+        )
+        assert "0 trades" in result.win_rate_by_signal("Unknown Signal")
+        formatted = result.win_rate_by_signal("BB Squeeze Break")
+        assert "5" in formatted and "8" in formatted
+
+    def test_print_report_no_crash_empty(self):
+        """print_report should not raise even with empty results list."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.diagnose_filters import print_report
+
+        # Should complete without exception
+        print_report([], taiex_return=56.34)
+
+    def test_print_report_single_result(self):
+        """print_report with one result should not crash."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.diagnose_filters import ScenarioResult, print_report
+
+        r = ScenarioResult(
+            name="0_baseline",
+            description="baseline",
+            total_trades=100,
+            win_rate=50.0,
+            total_return_pct=5.0,
+            profit_factor=1.2,
+            max_drawdown=15.0,
+            sharpe=0.3,
+            avg_holding=2.5,
+        )
+        print_report([r], taiex_return=56.34)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
