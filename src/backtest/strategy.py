@@ -20,6 +20,13 @@ class TechnicalStrategy:
     # Despite low win rates (22-32%), their position timing had positive portfolio effect.
     DEFAULT_DISABLED_SIGNALS: list = []
 
+    # Signals that use trend-following logic (skip MA alignment filter)
+    TREND_SIGNAL_NAMES: List[str] = [
+        "Donchian Breakout",
+        "Golden Cross",
+        "MACD Golden Cross",
+    ]
+
     def __init__(
         self,
         ma_periods: List[int] = [5, 10, 20, 60],
@@ -35,6 +42,7 @@ class TechnicalStrategy:
         volume_confirmation_multiplier: float = 1.5,
         rsi_overbought_threshold: float = 70.0,
         rsi_min_entry: float = 50.0,
+        donchian_period: int = 20,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -54,6 +62,7 @@ class TechnicalStrategy:
         self.volume_confirmation_multiplier = Decimal(str(volume_confirmation_multiplier))
         self.rsi_overbought_threshold = Decimal(str(rsi_overbought_threshold))
         self.rsi_min_entry = Decimal(str(rsi_min_entry))
+        self.donchian_period = donchian_period
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -240,6 +249,23 @@ class TechnicalStrategy:
                     volume=current_price_data.volume
                 )
 
+                # P6: Donchian Channel Breakout (trend-following signal)
+                # Close > highest high of last donchian_period trading dates → upside breakout
+                if self.donchian_period > 0 and i >= self.donchian_period:
+                    lookback_dates = sorted_dates[i - self.donchian_period: i]
+                    donchian_high = max(
+                        (price_lookup[d].high_price for d in lookback_dates if d in price_lookup),
+                        default=None,
+                    )
+                    if donchian_high is not None and current_price_data.close_price > donchian_high:
+                        detected_signals.append({
+                            'type': 'BUY',
+                            'name': 'Donchian Breakout',
+                            'description': f'收盤突破近 {self.donchian_period} 日最高（{donchian_high}）',
+                            'strength': 'STRONG',
+                            'price': current_price_data.close_price,
+                        })
+
                 # Convert to TradingSignal objects, applying buy-quality filters
                 for signal_data in detected_signals:
                     signal_type = self.map_signal_type(signal_data['type'])
@@ -321,17 +347,19 @@ class TechnicalStrategy:
                     return SignalType.WATCH
 
         # Filter 4: MA alignment — MA5 > MA10 > MA20 ensures short AND mid-term trend is bullish.
-        # Prevents entering on a single-day spike above upper BB when the underlying trend is weak.
-        ma5 = indicators.ma5
-        ma10 = indicators.ma10
-        ma20 = indicators.ma20
-        if ma5 is not None and ma10 is not None and ma20 is not None:
-            if not (ma5 > ma10 > ma20):
-                self.logger.debug(
-                    f"Signal '{signal_name}' blocked: MA alignment failed "
-                    f"(MA5={ma5}, MA10={ma10}, MA20={ma20}) → WATCH"
-                )
-                return SignalType.WATCH
+        # Skipped for trend signals (Donchian Breakout / Golden Cross / MACD GC): the breakout
+        # itself is the trend confirmation; requiring prior MA alignment would block early entries.
+        if signal_name not in self.TREND_SIGNAL_NAMES:
+            ma5 = indicators.ma5
+            ma10 = indicators.ma10
+            ma20 = indicators.ma20
+            if ma5 is not None and ma10 is not None and ma20 is not None:
+                if not (ma5 > ma10 > ma20):
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: MA alignment failed "
+                        f"(MA5={ma5}, MA10={ma10}, MA20={ma20}) → WATCH"
+                    )
+                    return SignalType.WATCH
 
         # Filter 5: RSI momentum confirmation.
         # Require RSI >= rsi_min_entry (default 50) to ensure the stock has upward momentum.

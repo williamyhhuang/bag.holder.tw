@@ -106,6 +106,9 @@ class Position:
     pnl_percent: Optional[Decimal] = None
     holding_days: Optional[int] = None
     entry_signal_name: Optional[str] = None
+    # P6: per-signal exit overrides (trend signals use wider stop / longer holding)
+    max_holding_days_override: Optional[int] = None
+    trailing_stop_pct_override: Optional[Decimal] = None
 
 
 @dataclass

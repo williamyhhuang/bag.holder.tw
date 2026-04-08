@@ -371,6 +371,40 @@ class BacktestSettings(BaseSettings):
         description="STRONG 市場下趨勢訊號倉位乘數（2.0 = 10%，其餘信號維持 5%）",
     )
 
+    # ── P6 趨勢訊號出場參數 ──────────────────────────────────────────
+    # 趨勢訊號（Donchian Breakout / Golden Cross / MACD GC）使用較寬的停損與較長持倉
+    # 讓趨勢有空間發展，而不被 3% 追蹤停損提早出場
+    trend_signal_names: str = Field(
+        default="Donchian Breakout,Golden Cross,MACD Golden Cross",
+        env="BACKTEST_TREND_SIGNAL_NAMES",
+        description="套用趨勢出場參數的訊號名稱（逗號分隔）",
+    )
+    trend_stop_loss_pct: float = Field(
+        default=0.10,
+        env="BACKTEST_TREND_STOP_LOSS_PCT",
+        description="趨勢訊號停損百分比（0.10 = 10%）",
+    )
+    trend_trailing_stop_pct: float = Field(
+        default=0.08,
+        env="BACKTEST_TREND_TRAILING_STOP_PCT",
+        description="趨勢訊號追蹤停損百分比（0.08 = 8%）",
+    )
+    trend_take_profit_pct: float = Field(
+        default=0.40,
+        env="BACKTEST_TREND_TAKE_PROFIT_PCT",
+        description="趨勢訊號停利百分比（0.40 = 40%，高門檻讓趨勢跑）",
+    )
+    trend_max_holding_days: int = Field(
+        default=60,
+        env="BACKTEST_TREND_MAX_HOLDING_DAYS",
+        description="趨勢訊號最長持倉天數（60 天，讓趨勢充分發展）",
+    )
+    donchian_period: int = Field(
+        default=20,
+        env="BACKTEST_DONCHIAN_PERIOD",
+        description="Donchian Channel 突破回看天數（20 = 過去 20 個交易日最高）",
+    )
+
     # ── P4 持倉規模設定 ──────────────────────────────────────────────
     # 每筆交易佔初始資金比例（0.05 = 5%）
     # P4 (2026-04-08): 從 10% 降至 5%，允許最多 ~20 倉位同時運行，提升大盤曝險

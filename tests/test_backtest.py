@@ -1589,5 +1589,172 @@ class TestP5TrendSignalMultiplier:
         assert "MACD Golden Cross" in s.neutral_regime_signals
 
 
+class TestP6TrendFollowing:
+    """P6: Donchian Breakout 訊號 + 趨勢訊號寬停損/長持倉測試"""
+
+    def _make_price(self, sym: str, d: date, close: float, high: float = None) -> StockData:
+        if high is None:
+            high = close * 1.01
+        return StockData(
+            symbol=sym,
+            date=d,
+            open_price=Decimal(str(close * 0.99)),
+            high_price=Decimal(str(high)),
+            low_price=Decimal(str(close * 0.98)),
+            close_price=Decimal(str(close)),
+            volume=1_000_000,
+        )
+
+    def _make_signal(self, sym: str, d: date, name: str, price: float) -> TradingSignal:
+        return TradingSignal(
+            symbol=sym,
+            date=d,
+            signal_type=SignalType.BUY,
+            signal_name=name,
+            price=Decimal(str(price)),
+            description="test",
+            strength="STRONG",
+            indicators=TechnicalIndicators(date=d),
+        )
+
+    def test_donchian_breakout_signal_generated(self):
+        """Donchian Breakout 訊號：收盤 > 過去 N 日最高應產生 BUY 訊號"""
+        strategy = TechnicalStrategy(donchian_period=5, require_ma60_uptrend=False,
+                                     rsi_min_entry=0.0, require_volume_confirmation=False)
+        base = date(2025, 1, 1)
+        # 前 5 日最高約 102，第 6 日收盤 110 > 102 → 應觸發
+        prices = [self._make_price("X", base + timedelta(days=i),
+                                   close=100 + i * 0.2, high=102)
+                  for i in range(5)]
+        prices.append(self._make_price("X", base + timedelta(days=5), close=110, high=111))
+
+        # 需要足夠 records 讓 indicator 計算不被 skip
+        # strategy.calculate_indicators 需要 max(ma_periods + [rsi, macd_slow, bb]) records
+        # 用 60 筆長歷史
+        long_prices = [self._make_price("X", base - timedelta(days=100 - i),
+                                        close=80 + i * 0.1) for i in range(100)]
+        long_prices += prices
+
+        signals = strategy.generate_signals("X", long_prices,
+                                            start_date=base + timedelta(days=5),
+                                            end_date=base + timedelta(days=5))
+        donchian_buys = [s for s in signals
+                         if s.signal_name == "Donchian Breakout"
+                         and s.signal_type == SignalType.BUY]
+        assert len(donchian_buys) >= 1
+
+    def test_trend_signal_uses_wider_stop_loss(self):
+        """set_signal_exit_config: Donchian Breakout 倉位應使用 10% 停損（非預設 5%）"""
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.05'),
+            take_profit_pct=Decimal('0.10'),
+        )
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0.08"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+            }
+        })
+        d = date(2025, 9, 1)
+        price = Decimal('100')
+        engine.add_price_data("DB", [StockData(
+            symbol="DB", date=d,
+            open_price=price, high_price=price * Decimal('1.01'),
+            low_price=price * Decimal('0.99'), close_price=price, volume=1_000_000,
+        )])
+        engine.current_date = d
+        signal = self._make_signal("DB", d, "Donchian Breakout", 100)
+        engine.execute_buy_order(signal)
+
+        assert "DB" in engine.positions
+        pos = engine.positions["DB"]
+        # stop_loss should be 10% below entry: 100 * 0.90 = 90
+        assert pos.stop_loss == price * Decimal('0.90')
+        # take_profit should be 40% above: 100 * 1.40 = 140
+        assert pos.take_profit == price * Decimal('1.40')
+        # max_holding_days_override should be 60
+        assert pos.max_holding_days_override == 60
+
+    def test_trend_signal_uses_per_position_trailing_stop(self):
+        """趨勢倉位的 trailing stop 應使用 per-position 設定（8%），而非引擎預設（3%）"""
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.05'),
+            trailing_stop_pct=Decimal('0.03'),
+        )
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0.08"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+            }
+        })
+        d = date(2025, 9, 1)
+        price = Decimal('100')
+        d2 = date(2025, 9, 2)
+        price2 = Decimal('110')
+        engine.add_price_data("DB2", [
+            StockData("DB2", d, price, price * Decimal('1.01'), price * Decimal('0.99'), price, 1_000_000),
+            StockData("DB2", d2, price2, price2 * Decimal('1.01'), price2 * Decimal('0.99'), price2, 1_000_000),
+        ])
+        engine.current_date = d
+        signal = self._make_signal("DB2", d, "Donchian Breakout", 100)
+        engine.execute_buy_order(signal)
+
+        # Advance to day 2 and check trailing stop update
+        engine.current_date = d2
+        engine.check_position_exits()
+
+        if "DB2" in engine.positions:
+            pos = engine.positions["DB2"]
+            # With 8% trailing stop and price=110: new trailing = 110 * 0.92 = 101.20
+            expected_trailing = (price2 * Decimal('0.92')).quantize(Decimal('0.01'))
+            assert pos.stop_loss == expected_trailing
+
+    def test_non_trend_signal_uses_default_exit_params(self):
+        """BB Squeeze Break 不在 trend config 中，應使用引擎預設停損（5%）"""
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.05'),
+            take_profit_pct=Decimal('0.10'),
+        )
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0.08"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+            }
+        })
+        d = date(2025, 9, 1)
+        price = Decimal('100')
+        engine.add_price_data("BB", [StockData(
+            "BB", d, price, price * Decimal('1.01'), price * Decimal('0.99'), price, 1_000_000,
+        )])
+        engine.current_date = d
+        signal = self._make_signal("BB", d, "BB Squeeze Break", 100)
+        engine.execute_buy_order(signal)
+
+        assert "BB" in engine.positions
+        pos = engine.positions["BB"]
+        assert pos.stop_loss == price * Decimal('0.95')   # 5% stop
+        assert pos.take_profit == price * Decimal('1.10')  # 10% profit
+        assert pos.max_holding_days_override is None
+
+    def test_p6_settings_defaults(self):
+        """BacktestSettings P6 預設值：Donchian 20 日、10% 停損、8% 追蹤、40% 停利、60 天"""
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert s.donchian_period == 20
+        assert s.trend_stop_loss_pct == 0.10
+        assert s.trend_trailing_stop_pct == 0.08
+        assert s.trend_take_profit_pct == 0.40
+        assert s.trend_max_holding_days == 60
+        assert "Donchian Breakout" in s.trend_signal_names
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

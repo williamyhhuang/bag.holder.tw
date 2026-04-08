@@ -42,6 +42,7 @@ class BacktestRunner:
             require_volume_confirmation=cfg.require_volume_confirmation,
             volume_confirmation_multiplier=cfg.volume_confirmation_multiplier,
             rsi_overbought_threshold=cfg.rsi_overbought_threshold,
+            donchian_period=cfg.donchian_period,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
@@ -198,6 +199,25 @@ class BacktestRunner:
                 strong_trend_signals=_parse_signals(cfg.strong_trend_signals),
                 strong_trend_multiplier=cfg.strong_trend_multiplier,
             )
+
+            # P6: configure trend signal exit parameters
+            trend_names = [s.strip() for s in cfg.trend_signal_names.split(",") if s.strip()]
+            if trend_names:
+                trend_exit = {
+                    name: {
+                        "stop_loss_pct": Decimal(str(cfg.trend_stop_loss_pct)),
+                        "trailing_stop_pct": Decimal(str(cfg.trend_trailing_stop_pct)),
+                        "take_profit_pct": Decimal(str(cfg.trend_take_profit_pct)),
+                        "max_holding_days": cfg.trend_max_holding_days,
+                    }
+                    for name in trend_names
+                }
+                self.engine.set_signal_exit_config(trend_exit)
+                self.logger.info(
+                    f"Trend exit config set for: {trend_names} "
+                    f"(stop={cfg.trend_stop_loss_pct}, trailing={cfg.trend_trailing_stop_pct}, "
+                    f"holding={cfg.trend_max_holding_days}d)"
+                )
 
             # Add price data to engine
             for symbol, data in stock_data.items():

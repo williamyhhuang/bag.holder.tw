@@ -55,6 +55,10 @@ class BacktestEngine:
         # P5: trend signal multiplier (STRONG regime only)
         self.strong_trend_signals: Optional[List[str]] = strong_trend_signals
         self.strong_trend_multiplier: float = strong_trend_multiplier
+        # P6: per-signal exit config (trend signals use wider stop / longer holding)
+        # Keys are signal names; each value is a dict with optional keys:
+        #   stop_loss_pct, take_profit_pct, trailing_stop_pct, max_holding_days
+        self.signal_exit_config: Dict[str, dict] = {}
 
         self.logger = get_logger(self.__class__.__name__)
 
@@ -178,6 +182,13 @@ class BacktestEngine:
             # Update cash
             self.cash -= total_cost
 
+            # Apply per-signal exit config (P6: trend signals use wider stop / longer holding)
+            exit_cfg = self.signal_exit_config.get(signal.signal_name, {})
+            eff_stop_loss_pct = exit_cfg.get("stop_loss_pct", self.stop_loss_pct)
+            eff_take_profit_pct = exit_cfg.get("take_profit_pct", self.take_profit_pct)
+            eff_trailing_pct = exit_cfg.get("trailing_stop_pct", None)
+            eff_max_holding = exit_cfg.get("max_holding_days", None)
+
             # Create position
             position = Position(
                 symbol=signal.symbol,
@@ -187,9 +198,11 @@ class BacktestEngine:
                 current_price=signal.price,
                 current_date=signal.date,
                 status=PositionStatus.OPEN,
-                stop_loss=signal.price * (Decimal('1') - self.stop_loss_pct),
-                take_profit=signal.price * (Decimal('1') + self.take_profit_pct),
+                stop_loss=signal.price * (Decimal('1') - eff_stop_loss_pct),
+                take_profit=signal.price * (Decimal('1') + eff_take_profit_pct),
                 entry_signal_name=signal.signal_name,
+                max_holding_days_override=eff_max_holding,
+                trailing_stop_pct_override=eff_trailing_pct,
             )
 
             self.positions[signal.symbol] = position
@@ -278,24 +291,28 @@ class BacktestEngine:
             position.current_date = self.current_date
 
             # Update trailing stop: ratchet up as price rises above entry
-            if self.trailing_stop_pct and current_price > position.entry_price:
+            # P6: use per-position trailing_stop_pct_override if set, else engine default
+            eff_trailing = position.trailing_stop_pct_override or self.trailing_stop_pct
+            if eff_trailing and current_price > position.entry_price:
                 new_trailing_stop = (
-                    current_price * (Decimal('1') - self.trailing_stop_pct)
+                    current_price * (Decimal('1') - eff_trailing)
                 ).quantize(Decimal('0.01'))
                 if new_trailing_stop > (position.stop_loss or Decimal('0')):
                     position.stop_loss = new_trailing_stop
 
             # Check stop loss
-            if current_price <= position.stop_loss:
+            if position.stop_loss is not None and current_price <= position.stop_loss:
                 positions_to_close.append((symbol, current_price, "Stop Loss"))
 
             # Check take profit
-            elif current_price >= position.take_profit:
+            elif position.take_profit is not None and current_price >= position.take_profit:
                 positions_to_close.append((symbol, current_price, "Take Profit"))
 
-            # Check max holding period
-            elif (self.current_date - position.entry_date).days >= self.max_holding_days:
-                positions_to_close.append((symbol, current_price, "Max Holding Period"))
+            # Check max holding period (P6: use per-position override if set)
+            else:
+                eff_max_days = position.max_holding_days_override or self.max_holding_days
+                if (self.current_date - position.entry_date).days >= eff_max_days:
+                    positions_to_close.append((symbol, current_price, "Max Holding Period"))
 
         # Execute exits
         for symbol, price, reason in positions_to_close:
@@ -445,6 +462,25 @@ class BacktestEngine:
         if rsi >= Decimal(str(self.market_regime_strong_rsi)):
             return "STRONG"
         return "NEUTRAL"
+
+    def set_signal_exit_config(self, config: Dict[str, dict]):
+        """Set per-signal exit parameters for trend-following signals.
+
+        P6: Trend signals (Donchian Breakout, Golden Cross, MACD Golden Cross) need
+        wider stops and longer holding to capture multi-week price moves.
+
+        config format:
+          {
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0.08"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+            },
+            ...
+          }
+        """
+        self.signal_exit_config = config
 
     def set_momentum_whitelist(self, whitelist: Dict[date, Set[str]]):
         """Set the daily momentum whitelist for BUY signal filtering.
