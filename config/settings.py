@@ -3,6 +3,7 @@ Application configuration settings
 """
 import json
 import os
+from datetime import date
 from typing import List, Optional, Set
 from pathlib import Path
 
@@ -313,6 +314,19 @@ class BacktestSettings(BaseSettings):
         default=20,
         env="BACKTEST_MOMENTUM_LOOKBACK_DAYS",
         description="計算動能的回看天數（預設 20 個交易日）",
+    )
+
+    # ── 回測時間範圍 ─────────────────────────────────────────────────
+    # 格式：YYYY-MM-DD；end_date 留空則預設為今天
+    backtest_start_date: Optional[date] = Field(
+        default=None,
+        env="BACKTEST_START_DATE",
+        description="回測起始日期（YYYY-MM-DD），留空使用程式預設值",
+    )
+    backtest_end_date: Optional[date] = Field(
+        default=None,
+        env="BACKTEST_END_DATE",
+        description="回測結束日期（YYYY-MM-DD），留空使用今天",
     )
 
     @validator("exclude_industry_codes", pre=True)

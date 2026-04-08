@@ -73,7 +73,7 @@ class BacktestRunner:
 
     async def run_full_backtest(
         self,
-        start_date: date = date(2024, 9, 1),
+        start_date: date = None,
         end_date: date = None,
         initial_capital: Decimal = Decimal('1000000')
     ):
@@ -81,12 +81,15 @@ class BacktestRunner:
         Run complete backtesting process
 
         Args:
-            start_date: Backtest start date
-            end_date: Backtest end date (defaults to today)
+            start_date: Backtest start date (overrides config; defaults to BACKTEST_START_DATE)
+            end_date: Backtest end date (overrides config; defaults to BACKTEST_END_DATE or today)
             initial_capital: Initial capital
         """
+        cfg = settings.backtest
+        if start_date is None:
+            start_date = cfg.backtest_start_date or date(2024, 9, 1)
         if end_date is None:
-            end_date = date.today()
+            end_date = cfg.backtest_end_date or date.today()
 
         self.logger.info(f"Starting full backtest from {start_date} to {end_date}")
 

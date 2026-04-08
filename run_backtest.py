@@ -5,7 +5,6 @@ Simple script to run backtest demo
 import sys
 import os
 import asyncio
-from datetime import date, timedelta
 from decimal import Decimal
 
 # Add src directory to path
@@ -14,6 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 try:
     from src.backtest.main import BacktestRunner
     from src.utils.logger import get_logger
+    from config.settings import settings
 except ImportError as e:
     print(f"Import error: {e}")
     print("Please ensure all dependencies are installed and paths are correct.")
@@ -30,20 +30,21 @@ async def run_demo_backtest():
     try:
         runner = BacktestRunner()
 
-        # Backtest period: 2025-10-01 to 2026-01-01
-        start_date = date(2025, 10, 1)
-        end_date = date(2026, 1, 1)
+        # Dates come from config (BACKTEST_START_DATE / BACKTEST_END_DATE in .env)
+        # run_full_backtest() resolves None → config value → fallback
+        result, files = await runner.run_full_backtest(
+            initial_capital=Decimal('1000000')
+        )
+
+        # Resolve the actual dates used (for display)
+        cfg = settings.backtest
+        from datetime import date
+        start_date = cfg.backtest_start_date or date(2024, 9, 1)
+        end_date = cfg.backtest_end_date or date.today()
 
         print(f"📅 Backtest Period: {start_date} to {end_date}")
         print(f"💰 Initial Capital: NT$1,000,000")
         print()
-
-        # Run backtest
-        result, files = await runner.run_full_backtest(
-            start_date=start_date,
-            end_date=end_date,
-            initial_capital=Decimal('1000000')
-        )
 
         # Display results
         print("📊 BACKTEST RESULTS")
