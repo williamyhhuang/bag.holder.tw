@@ -358,10 +358,10 @@ class BacktestSettings(BaseSettings):
     )
 
     # ── P5 趨勢訊號加倍倉位 ───────────────────────────────────────────
-    # STRONG 市場環境下，趨勢訊號（Golden Cross / MACD Golden Cross）使用
-    # position_sizing * strong_trend_multiplier 的倉位，提升牛市曝險
+    # STRONG 市場環境下，趨勢訊號使用 position_sizing * multiplier 的倉位
+    # P6b: 移除 Golden Cross（勝率 26.1%），只保留 Donchian Breakout + MACD Golden Cross
     strong_trend_signals: str = Field(
-        default="Golden Cross,MACD Golden Cross",
+        default="Donchian Breakout,MACD Golden Cross",
         env="BACKTEST_STRONG_TREND_SIGNALS",
         description="STRONG 市場下使用加倍倉位的趨勢訊號（逗號分隔）",
     )
@@ -375,7 +375,7 @@ class BacktestSettings(BaseSettings):
     # 趨勢訊號（Donchian Breakout / Golden Cross / MACD GC）使用較寬的停損與較長持倉
     # 讓趨勢有空間發展，而不被 3% 追蹤停損提早出場
     trend_signal_names: str = Field(
-        default="Donchian Breakout,Golden Cross,MACD Golden Cross",
+        default="Donchian Breakout,MACD Golden Cross",
         env="BACKTEST_TREND_SIGNAL_NAMES",
         description="套用趨勢出場參數的訊號名稱（逗號分隔）",
     )

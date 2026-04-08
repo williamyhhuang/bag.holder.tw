@@ -1754,7 +1754,11 @@ class TestP6TrendFollowing:
         assert s.trend_trailing_stop_pct == 0.08
         assert s.trend_take_profit_pct == 0.40
         assert s.trend_max_holding_days == 60
-        assert "Donchian Breakout" in s.trend_signal_names
+        trend_list = [x.strip() for x in s.trend_signal_names.split(",")]
+        assert "Donchian Breakout" in trend_list
+        assert "MACD Golden Cross" in trend_list
+        # Golden Cross removed (P6b): 26.1% win rate was dragging performance
+        assert "Golden Cross" not in trend_list
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
