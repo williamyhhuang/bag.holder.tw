@@ -3,7 +3,7 @@ Backtesting engine with portfolio management and performance calculation
 """
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Set, Tuple
 import uuid
 
 from .models import (
@@ -37,7 +37,8 @@ class BacktestEngine:
         self.take_profit_pct = take_profit_pct
         self.max_holding_days = max_holding_days
         self.trailing_stop_pct = trailing_stop_pct
-        self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if TAIEX >= MA20
+        self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
+        self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
 
         self.logger = get_logger(self.__class__.__name__)
 
@@ -307,23 +308,81 @@ class BacktestEngine:
 
         self.portfolio_history.append(portfolio)
 
-    def build_benchmark_filter(self, benchmark_data: List[StockData], ma_period: int = 20):
-        """Pre-compute whether each benchmark date is bullish (close >= MA).
+    @staticmethod
+    def _calc_rsi(closes: List[Decimal], period: int = 14) -> Optional[Decimal]:
+        """Calculate RSI for the last element given a price list.
 
-        Result stored in self.benchmark_bullish so run_backtest can do O(1) lookups.
+        Returns None when there is insufficient data (< period + 1 bars).
+        """
+        if len(closes) < period + 1:
+            return None
+        gains, losses = [], []
+        for j in range(len(closes) - period, len(closes)):
+            delta = closes[j] - closes[j - 1]
+            if delta > 0:
+                gains.append(delta)
+                losses.append(Decimal('0'))
+            else:
+                gains.append(Decimal('0'))
+                losses.append(abs(delta))
+        avg_gain = sum(gains) / Decimal(str(period))
+        avg_loss = sum(losses) / Decimal(str(period))
+        if avg_loss == 0:
+            return Decimal('100')
+        rs = avg_gain / avg_loss
+        return Decimal('100') - (Decimal('100') / (Decimal('1') + rs))
+
+    def build_benchmark_filter(
+        self,
+        benchmark_data: List[StockData],
+        ma_period: int = 20,
+        ma_short: int = 5,
+        rsi_period: int = 14,
+        rsi_threshold: float = 45.0,
+        check_ma5: bool = True,
+    ):
+        """Pre-compute whether each benchmark date passes all market regime checks.
+
+        Bullish = ALL enabled conditions are met:
+          1. TAIEX close >= MA20   — price above long-term trend
+          2. TAIEX MA5 >= MA20    — short-term trend above long-term (if check_ma5=True)
+          3. TAIEX RSI(14) >= rsi_threshold — market has upward momentum
+
+        Result stored in self.benchmark_bullish for O(1) lookups in run_backtest.
         """
         if not benchmark_data:
             return
         prices = sorted(benchmark_data, key=lambda x: x.date)
+        closes = [p.close_price for p in prices]
+        rsi_dec = Decimal(str(rsi_threshold))
+
         for i in range(len(prices)):
+            # Need at least ma_period bars for MA20
             if i < ma_period - 1:
                 continue
-            window = [prices[j].close_price for j in range(i - ma_period + 1, i + 1)]
-            ma = sum(window) / Decimal(str(ma_period))
-            self.benchmark_bullish[prices[i].date] = prices[i].close_price >= ma
+
+            # Condition 1: close >= MA20
+            window_long = closes[i - ma_period + 1: i + 1]
+            ma20 = sum(window_long) / Decimal(str(ma_period))
+            above_ma20 = prices[i].close_price >= ma20
+
+            # Condition 2: MA5 >= MA20 (optional)
+            if check_ma5 and i >= ma_short - 1:
+                window_short = closes[i - ma_short + 1: i + 1]
+                ma5 = sum(window_short) / Decimal(str(ma_short))
+                ma5_above_ma20 = ma5 >= ma20
+            else:
+                ma5_above_ma20 = True  # skip when disabled or insufficient data
+
+            # Condition 3: RSI(14) >= threshold
+            rsi_window = closes[max(0, i - rsi_period): i + 1]
+            rsi = self._calc_rsi(rsi_window, period=rsi_period)
+            rsi_ok = (rsi is not None and rsi >= rsi_dec)
+
+            self.benchmark_bullish[prices[i].date] = above_ma20 and ma5_above_ma20 and rsi_ok
 
     def is_market_bullish(self, target_date: date) -> bool:
-        """Return True if TAIEX is above its 20-day MA on or before target_date.
+        """Return True if TAIEX passes all market regime checks on or before target_date.
 
         Falls back to True (no filter) when benchmark data is unavailable.
         """
@@ -334,11 +393,32 @@ class BacktestEngine:
             return True
         return self.benchmark_bullish[max(available)]
 
+    def set_momentum_whitelist(self, whitelist: Dict[date, Set[str]]):
+        """Set the daily momentum whitelist for BUY signal filtering.
+
+        Only symbols present in the whitelist for a given date will be allowed
+        to generate BUY orders. Pass an empty dict to disable filtering.
+        """
+        self.momentum_whitelist = whitelist
+
+    def _get_momentum_allowed(self, target_date: date) -> Optional[Set[str]]:
+        """Return the allowed symbol set for the most recent whitelist date."""
+        if not self.momentum_whitelist:
+            return None
+        available = [d for d in self.momentum_whitelist if d <= target_date]
+        if not available:
+            return None
+        return self.momentum_whitelist[max(available)]
+
     def process_signals(self, signals: List[TradingSignal], market_bullish: bool = True):
         """Process a list of trading signals for the current date.
 
-        BUY signals are suppressed when market_bullish is False (TAIEX below MA20).
+        BUY signals are suppressed when:
+        - market_bullish is False (TAIEX fails regime checks), OR
+        - momentum_whitelist is set and the symbol is not in top-N momentum stocks.
         """
+        momentum_allowed = self._get_momentum_allowed(self.current_date)
+
         for signal in signals:
             if signal.date != self.current_date:
                 continue
@@ -346,7 +426,12 @@ class BacktestEngine:
             if signal.signal_type == SignalType.BUY:
                 if not market_bullish:
                     self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: market below MA20"
+                        f"Skipping BUY {signal.symbol}: market regime filter"
+                    )
+                    continue
+                if momentum_allowed is not None and signal.symbol not in momentum_allowed:
+                    self.logger.debug(
+                        f"Skipping BUY {signal.symbol}: not in top-N momentum"
                     )
                     continue
                 self.execute_buy_order(signal)
@@ -361,6 +446,8 @@ class BacktestEngine:
         start_date: date,
         end_date: date,
         benchmark_data: Optional[List[StockData]] = None,
+        market_regime_rsi_threshold: float = 45.0,
+        market_regime_check_ma5: bool = True,
     ) -> BacktestResult:
         """
         Run complete backtest
@@ -369,17 +456,26 @@ class BacktestEngine:
             signals: List of trading signals
             start_date: Backtest start date
             end_date: Backtest end date
-            benchmark_data: Optional TAIEX data for market MA20 filter
+            benchmark_data: Optional TAIEX data for market regime filter
+            market_regime_rsi_threshold: TAIEX RSI(14) must be >= this value
+            market_regime_check_ma5: Also require TAIEX MA5 >= MA20
 
         Returns:
             BacktestResult object with performance metrics
         """
         self.logger.info(f"Starting backtest from {start_date} to {end_date}")
 
-        # Build benchmark MA20 filter if data provided
+        # Build enhanced market regime filter if benchmark data provided
         if benchmark_data:
-            self.build_benchmark_filter(benchmark_data)
-            self.logger.info("Benchmark MA20 filter enabled")
+            self.build_benchmark_filter(
+                benchmark_data,
+                rsi_threshold=market_regime_rsi_threshold,
+                check_ma5=market_regime_check_ma5,
+            )
+            self.logger.info(
+                f"Market regime filter enabled "
+                f"(MA5>MA20: {market_regime_check_ma5}, RSI>={market_regime_rsi_threshold})"
+            )
 
         # Group signals by date
         signals_by_date: Dict[date, List[TradingSignal]] = {}

@@ -284,6 +284,37 @@ class BacktestSettings(BaseSettings):
         description="RSI 進場最低門檻（50 = 股票需具備上漲動能）",
     )
 
+    # ── 大盤市場環境過濾 ─────────────────────────────────────────────
+    # 三層大盤篩選（任一為 False 即暫停新進場）：
+    #   1. TAIEX 收盤 >= MA20（價格在長期均線上方）
+    #   2. TAIEX MA5 >= MA20（短期趨勢優於長期趨勢）
+    #   3. TAIEX RSI(14) >= market_regime_rsi_threshold（大盤具備上漲動能）
+    # Q4 2025 策略虧損 15%，大盤卻漲 11%，根本原因是沒有偵測市場環境
+    market_regime_rsi_threshold: float = Field(
+        default=45.0,
+        env="BACKTEST_MARKET_REGIME_RSI_THRESHOLD",
+        description="大盤 RSI 進場門檻（45 = 大盤需具備基本動能）",
+    )
+    market_regime_check_ma5: bool = Field(
+        default=True,
+        env="BACKTEST_MARKET_REGIME_CHECK_MA5",
+        description="是否啟用 TAIEX MA5 > MA20 趨勢對齊檢查",
+    )
+
+    # ── 動能排名過濾 ─────────────────────────────────────────────────
+    # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
+    # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break
+    momentum_top_n: int = Field(
+        default=50,
+        env="BACKTEST_MOMENTUM_TOP_N",
+        description="每日動能排名篩選，只交易前 N 名（0 = 停用）",
+    )
+    momentum_lookback_days: int = Field(
+        default=20,
+        env="BACKTEST_MOMENTUM_LOOKBACK_DAYS",
+        description="計算動能的回看天數（預設 20 個交易日）",
+    )
+
     @validator("exclude_industry_codes", pre=True)
     def split_codes(cls, v):
         if isinstance(v, str):

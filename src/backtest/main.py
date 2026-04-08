@@ -186,9 +186,16 @@ class BacktestRunner:
             self.logger.info("Step 5: Fetching benchmark data for market filter...")
             benchmark_data = self.data_source.get_market_index_data(start_date, end_date)
 
-            # Step 6: Run backtest (pass benchmark for TAIEX MA20 buy filter)
+            # Step 6: Run backtest (pass benchmark for enhanced market regime filter)
             self.logger.info("Step 6: Running backtest...")
-            result = self.engine.run_backtest(signals, start_date, end_date, benchmark_data=benchmark_data)
+            result = self.engine.run_backtest(
+                signals,
+                start_date,
+                end_date,
+                benchmark_data=benchmark_data,
+                market_regime_rsi_threshold=cfg.market_regime_rsi_threshold,
+                market_regime_check_ma5=cfg.market_regime_check_ma5,
+            )
 
             # Step 7: Generate reports
             self.logger.info("Step 7: Generating reports...")
