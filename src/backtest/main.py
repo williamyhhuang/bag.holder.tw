@@ -32,10 +32,16 @@ class BacktestRunner:
         self.logger = get_logger(self.__class__.__name__)
         self.data_source = YFinanceDataSource()
         self.yf_client = YFinanceClient()
-        # 從 BacktestSettings 讀取策略參數（停損/停利/RSI 等皆可透過 .env 調整）
+        # 從 BacktestSettings 讀取策略參數，與 strategy.py TechnicalStrategy 完全對齊
         cfg = settings.backtest
+        disabled = [s.strip() for s in cfg.disabled_signals.split(",") if s.strip()]
         self.strategy = TechnicalStrategy(
             rsi_min_entry=cfg.rsi_min_entry,
+            disabled_signals=disabled,
+            require_ma60_uptrend=cfg.require_ma60_uptrend,
+            require_volume_confirmation=cfg.require_volume_confirmation,
+            volume_confirmation_multiplier=cfg.volume_confirmation_multiplier,
+            rsi_overbought_threshold=cfg.rsi_overbought_threshold,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

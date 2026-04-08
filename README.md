@@ -295,6 +295,10 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v2.8.0 - 2026-04-08
+- ⚙️ **所有 BacktestSettings 參數補齊至 `.env` / `.env.example`**：新增 `BACKTEST_*` 完整區塊，包含時間範圍、停損停利、進場過濾、大盤環境、動能排名、產業排除共 15 個參數
+- 🔗 **strategy.py 與 BacktestSettings 完全一致**：`BacktestRunner` 現在把 `disabled_signals`、`require_ma60_uptrend`、`require_volume_confirmation`、`volume_confirmation_multiplier`、`rsi_overbought_threshold` 全部從 config 讀取並傳入 `TechnicalStrategy`，消除寫死預設值的不一致風險
+
 ### v2.7.0 - 2026-04-08
 - 🌐 **強化大盤市場環境過濾器（Direction 1）**：原本只檢查 TAIEX 收盤 >= MA20，新增三層篩選：
   - TAIEX close >= MA20（原有）

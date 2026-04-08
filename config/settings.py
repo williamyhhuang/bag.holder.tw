@@ -285,6 +285,38 @@ class BacktestSettings(BaseSettings):
         description="RSI 進場最低門檻（50 = 股票需具備上漲動能）",
     )
 
+    # ── TechnicalStrategy 對應參數（與 strategy.py 一致）───────────
+    # Filter 1: 停用的訊號名稱（逗號分隔）
+    # MACD Golden Cross 勝率 13-17%；Golden Cross Q4 2025: 0%、Q1 2026: 45.5%
+    disabled_signals: str = Field(
+        default="MACD Golden Cross,Golden Cross",
+        env="BACKTEST_DISABLED_SIGNALS",
+        description="停用的訊號名稱，逗號分隔（對應 strategy.py DEFAULT_DISABLED_SIGNALS）",
+    )
+    # Filter 2: 個股價格需在 MA60 上方（長期上升趨勢）
+    require_ma60_uptrend: bool = Field(
+        default=True,
+        env="BACKTEST_REQUIRE_MA60_UPTREND",
+        description="進場時個股需在 MA60 上方",
+    )
+    # Filter 3: 進場量能確認，當日成交量 > volume_confirmation_multiplier × MA20 量
+    require_volume_confirmation: bool = Field(
+        default=True,
+        env="BACKTEST_REQUIRE_VOLUME_CONFIRMATION",
+        description="進場時需量能確認",
+    )
+    volume_confirmation_multiplier: float = Field(
+        default=1.5,
+        env="BACKTEST_VOLUME_CONFIRMATION_MULTIPLIER",
+        description="量能確認倍數（預設 1.5 = 當日量 > 1.5× MA20 量）",
+    )
+    # RSI 超買門檻（賣出訊號參考）
+    rsi_overbought_threshold: float = Field(
+        default=70.0,
+        env="BACKTEST_RSI_OVERBOUGHT_THRESHOLD",
+        description="RSI 超買門檻（70 = 出現超買訊號）",
+    )
+
     # ── 大盤市場環境過濾 ─────────────────────────────────────────────
     # 三層大盤篩選（任一為 False 即暫停新進場）：
     #   1. TAIEX 收盤 >= MA20（價格在長期均線上方）
