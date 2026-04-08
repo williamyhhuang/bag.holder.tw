@@ -162,7 +162,7 @@ class YFinanceClient:
 
     def save_stock_data(self, symbol: str, data: pd.DataFrame) -> bool:
         """
-        Save stock data to CSV file
+        Save stock data to CSV file, appending to existing data without duplicates.
 
         Args:
             symbol: Stock symbol
@@ -181,8 +181,17 @@ class YFinanceClient:
             filename = f"{clean_symbol}.csv"
             filepath = data_dir / filename
 
-            # Save to CSV
-            data.to_csv(filepath, index=False)
+            # If file exists, merge with existing data to avoid overwriting history
+            if filepath.exists():
+                existing = pd.read_csv(filepath)
+                combined = pd.concat([existing, data], ignore_index=True)
+                combined['date'] = pd.to_datetime(combined['date'])
+                combined = combined.drop_duplicates(subset=['date'], keep='last')
+                combined = combined.sort_values('date').reset_index(drop=True)
+                combined.to_csv(filepath, index=False)
+            else:
+                data.to_csv(filepath, index=False)
+
             return True
 
         except Exception as e:

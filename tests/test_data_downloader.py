@@ -76,6 +76,84 @@ class TestYFinanceClient:
             # For this test, we'll just check if the method runs without error
             assert isinstance(result, bool)
 
+    def test_save_stock_data_appends_new_rows(self):
+        """New dates should be appended to the existing CSV, not overwrite it."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('src.data_downloader.yfinance_client.settings') as mock_settings:
+                mock_settings.data.stocks_path = temp_dir
+
+                day1 = pd.DataFrame({
+                    'date': ['2026-03-28'],
+                    'open': [100.0], 'high': [110.0], 'low': [95.0],
+                    'close': [105.0], 'volume': [1000000], 'symbol': ['TEST.TW'],
+                })
+                day2 = pd.DataFrame({
+                    'date': ['2026-03-31'],
+                    'open': [106.0], 'high': [112.0], 'low': [104.0],
+                    'close': [110.0], 'volume': [1200000], 'symbol': ['TEST.TW'],
+                })
+
+                self.client.save_stock_data('TEST.TW', day1)
+                self.client.save_stock_data('TEST.TW', day2)
+
+                saved = pd.read_csv(os.path.join(temp_dir, 'TEST_TW.csv'))
+                assert len(saved) == 2, "Should have two distinct date rows"
+
+    def test_save_stock_data_deduplicates_on_same_date(self):
+        """Saving data for an existing date should update the row, not create a duplicate."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('src.data_downloader.yfinance_client.settings') as mock_settings:
+                mock_settings.data.stocks_path = temp_dir
+
+                original = pd.DataFrame({
+                    'date': ['2026-03-28'],
+                    'open': [100.0], 'high': [110.0], 'low': [95.0],
+                    'close': [105.0], 'volume': [1000000], 'symbol': ['TEST.TW'],
+                })
+                updated = pd.DataFrame({
+                    'date': ['2026-03-28'],
+                    'open': [100.0], 'high': [115.0], 'low': [95.0],
+                    'close': [112.0], 'volume': [1500000], 'symbol': ['TEST.TW'],
+                })
+
+                self.client.save_stock_data('TEST.TW', original)
+                self.client.save_stock_data('TEST.TW', updated)
+
+                saved = pd.read_csv(os.path.join(temp_dir, 'TEST_TW.csv'))
+                assert len(saved) == 1, "Duplicate date should not create extra rows"
+                assert saved['close'].iloc[0] == 112.0, "Should keep the latest value"
+
+    def test_save_stock_data_sorted_by_date(self):
+        """Saved CSV should always be sorted ascending by date."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('src.data_downloader.yfinance_client.settings') as mock_settings:
+                mock_settings.data.stocks_path = temp_dir
+
+                # Save newer date first, then older
+                new_row = pd.DataFrame({
+                    'date': ['2026-03-31'],
+                    'open': [106.0], 'high': [112.0], 'low': [104.0],
+                    'close': [110.0], 'volume': [1200000], 'symbol': ['TEST.TW'],
+                })
+                old_row = pd.DataFrame({
+                    'date': ['2026-03-28'],
+                    'open': [100.0], 'high': [110.0], 'low': [95.0],
+                    'close': [105.0], 'volume': [1000000], 'symbol': ['TEST.TW'],
+                })
+
+                self.client.save_stock_data('TEST.TW', new_row)
+                self.client.save_stock_data('TEST.TW', old_row)
+
+                saved = pd.read_csv(os.path.join(temp_dir, 'TEST_TW.csv'))
+                dates = pd.to_datetime(saved['date']).tolist()
+                assert dates == sorted(dates), "Rows should be sorted ascending by date"
+
 class TestBatchDownload:
     """Unit tests for _download_batch"""
 
