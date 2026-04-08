@@ -79,13 +79,15 @@ class CSVScannerCLI:
 
             for stock in stocks[:10]:  # Show top 10
                 symbol = stock['symbol'].replace('_', '.')
+                name = stock.get('name', '')
+                symbol_display = f"{symbol} {name}" if name else symbol
                 action = "做多" if stock['action'] == 'long' else "做空"
                 price = stock['price']
                 change_pct = stock['price_change_pct']
                 volume = stock['volume']
                 rsi = stock['rsi14']
 
-                print(f"  {symbol:<10} | {action:<4} | 價格: {price:>8.2f} | "
+                print(f"  {symbol_display:<20} | {action:<4} | 價格: {price:>8.2f} | "
                       f"漲跌: {change_pct:>+6.2f}% | 成交量: {volume:>10,.0f} | "
                       f"RSI: {rsi:>5.1f}")
 

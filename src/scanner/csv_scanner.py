@@ -16,6 +16,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 from src.utils.logger import get_logger
+from src.utils.stock_name_mapper import get_stock_names, lookup_name
 from config.settings import settings
 
 logger = get_logger(__name__)
@@ -26,6 +27,7 @@ class CSVStockScanner:
     def __init__(self):
         self.logger = get_logger(self.__class__.__name__)
         self.data_path = Path(settings.data.stocks_path)
+        self._stock_names = get_stock_names()
 
     def calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate technical indicators for a stock"""
@@ -133,6 +135,7 @@ class CSVStockScanner:
                     ):
                         results.append({
                             'symbol': symbol,
+                            'name': lookup_name(symbol, self._stock_names),
                             'strategy': 'momentum',
                             'action': 'long',
                             'price': latest.get('close', 0),
@@ -185,6 +188,7 @@ class CSVStockScanner:
                     ):
                         results.append({
                             'symbol': symbol,
+                            'name': lookup_name(symbol, self._stock_names),
                             'strategy': 'oversold',
                             'action': 'long',
                             'price': latest.get('close', 0),
@@ -237,6 +241,7 @@ class CSVStockScanner:
                     ):
                         results.append({
                             'symbol': symbol,
+                            'name': lookup_name(symbol, self._stock_names),
                             'strategy': 'breakout',
                             'action': 'long',
                             'price': latest.get('close', 0),
@@ -291,11 +296,13 @@ class CSVStockScanner:
 
                 for stock in stocks[:5]:  # Limit to top 5 per strategy
                     symbol = stock['symbol'].replace('_', '.')
+                    name = stock.get('name', '')
+                    display = f"{symbol} {name}" if name else symbol
                     action = "做多" if stock['action'] == 'long' else "做空"
                     price = stock['price']
                     change_pct = stock['price_change_pct']
 
-                    message += f"• {symbol} - {action}\\n"
+                    message += f"• {display} - {action}\\n"
                     message += f"  價格: {price:.2f} ({change_pct:+.2f}%)\\n"
 
                 message += "\\n"

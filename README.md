@@ -322,6 +322,11 @@ docker compose up -d
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
 - ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
 
+### v2.10.0 - 2026-04-09
+- 🏷️ **`python main.py scan` 顯示股票名稱**：選股結果除股票代號外，同時顯示中文公司名稱（如「2330.TW 台積電」）
+- 🆕 **新增 `src/utils/stock_name_mapper.py`**：從 TWSE / TPEX OpenAPI 取得股票名稱並快取至 `data/stock_names.json`（24 小時 TTL），支援 `lookup_name(symbol_stem)` 查詢
+- ✅ **新增 `tests/test_stock_name_mapper.py`**（7 tests）：覆蓋 TSE/OTC 名稱抓取、underscore/dot 格式查詢、快取讀取與過期更新
+
 ### v2.9.0 - 2026-04-08
 - 🔍 **新增過濾器診斷腳本 `scripts/diagnose_filters.py`**：逐步累加 9 個場景（baseline → +disabled_signals → +market_regime → ... → full），對每個場景輸出整體績效比較表、各 filter 對交易次數的削減量、以及各訊號勝率明細。協助定位哪個 filter 是績效劣於大盤的主因
 - ✅ **新增 `TestDiagnoseFilters` 單元測試**（6 tests）：驗證場景定義的累加邏輯、最終場景與生產設定一致性、訊號勝率統計正確性、報告輸出不崩潰
