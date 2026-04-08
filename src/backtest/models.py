@@ -113,6 +113,12 @@ class Position:
     # None = no signal-based exit (use trailing stop / stop loss only)
     # Decimal('0') for trailing_stop_pct_override = trailing stop disabled (use signal exit instead)
     exit_on_signals: Optional[List[str]] = None
+    # P3-B/C: profit-protection trailing stop
+    # Activate trailing stop only after position is in profit > profit_threshold_pct.
+    # Before threshold: only hard stop_loss applies.
+    # After threshold: trailing stop ratchets up at profit_trailing_pct from peak.
+    profit_threshold_pct: Optional[Decimal] = None   # e.g. Decimal('0.05') = 5%
+    profit_trailing_pct: Optional[Decimal] = None    # e.g. Decimal('0.06') = 6% from peak
 
 
 @dataclass

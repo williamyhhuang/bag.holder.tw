@@ -220,6 +220,8 @@ class BacktestRunner:
                         "take_profit_pct": Decimal(str(cfg.trend_take_profit_pct)),
                         "max_holding_days": cfg.trend_max_holding_days,
                         "exit_on_signals": eff_exit_signals,
+                        "profit_threshold_pct": Decimal(str(cfg.trend_profit_threshold_pct)),
+                        "profit_trailing_pct": Decimal(str(cfg.trend_profit_trailing_pct)),
                     }
                     for name in trend_names
                 }

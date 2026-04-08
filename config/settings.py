@@ -396,9 +396,20 @@ class BacktestSettings(BaseSettings):
         description="趨勢倉位是否啟用追蹤停損（False = 改用 trend_exit_on_signals 訊號出場）",
     )
     trend_exit_on_signals: str = Field(
-        default="MACD Death Cross,Death Cross",
+        default="RSI Momentum Loss,MACD Death Cross,Death Cross",
         env="BACKTEST_TREND_EXIT_ON_SIGNALS",
         description="趨勢倉位的訊號式出場觸發訊號（逗號分隔；trend_use_trailing_stop=False 時啟用）",
+    )
+    # P3-B/C: 獲利保護停損 — 倉位獲利超過門檻後才啟動追蹤停損，保護已獲利的部位
+    trend_profit_threshold_pct: float = Field(
+        default=0.05,
+        env="BACKTEST_TREND_PROFIT_THRESHOLD_PCT",
+        description="啟動獲利保護停損的獲利門檻（0.05 = 5%）",
+    )
+    trend_profit_trailing_pct: float = Field(
+        default=0.06,
+        env="BACKTEST_TREND_PROFIT_TRAILING_PCT",
+        description="獲利保護停損從最高點回撤百分比（0.06 = 6%）",
     )
     trend_take_profit_pct: float = Field(
         default=0.40,

@@ -249,6 +249,20 @@ class TechnicalStrategy:
                     volume=current_price_data.volume
                 )
 
+                # P3-B/A: RSI Momentum Loss — RSI crosses below 50 (trend losing momentum)
+                # Faster than MACD Death Cross; signals early trend reversal for exit
+                curr_rsi = current_indicators.rsi14
+                prev_rsi = previous_indicators.rsi14
+                if (curr_rsi is not None and prev_rsi is not None
+                        and curr_rsi < Decimal('50') and prev_rsi >= Decimal('50')):
+                    detected_signals.append({
+                        'type': 'SELL',
+                        'name': 'RSI Momentum Loss',
+                        'description': f'RSI 跌破 50（{float(curr_rsi):.1f}），趨勢動能衰退',
+                        'strength': 'MEDIUM',
+                        'price': current_price_data.close_price,
+                    })
+
                 # P6: Donchian Channel Breakout (trend-following signal)
                 # Close > highest high of last donchian_period trading dates → upside breakout
                 if self.donchian_period > 0 and i >= self.donchian_period:

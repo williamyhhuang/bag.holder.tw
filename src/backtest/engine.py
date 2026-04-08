@@ -189,6 +189,8 @@ class BacktestEngine:
             eff_trailing_pct = exit_cfg.get("trailing_stop_pct", None)
             eff_max_holding = exit_cfg.get("max_holding_days", None)
             eff_exit_on_signals = exit_cfg.get("exit_on_signals", None)
+            eff_profit_threshold = exit_cfg.get("profit_threshold_pct", None)
+            eff_profit_trailing = exit_cfg.get("profit_trailing_pct", None)
 
             # Create position
             position = Position(
@@ -205,6 +207,8 @@ class BacktestEngine:
                 max_holding_days_override=eff_max_holding,
                 trailing_stop_pct_override=eff_trailing_pct,
                 exit_on_signals=eff_exit_on_signals,
+                profit_threshold_pct=eff_profit_threshold,
+                profit_trailing_pct=eff_profit_trailing,
             )
 
             self.positions[signal.symbol] = position
@@ -305,6 +309,18 @@ class BacktestEngine:
                 ).quantize(Decimal('0.01'))
                 if new_trailing_stop > (position.stop_loss or Decimal('0')):
                     position.stop_loss = new_trailing_stop
+
+            # C: profit-protection trailing stop — only activates once position is in profit
+            # > profit_threshold_pct (e.g. 5%). Ratchets at profit_trailing_pct (e.g. 6%) from peak.
+            if (position.profit_threshold_pct is not None
+                    and position.profit_trailing_pct is not None):
+                profit_pct = (current_price - position.entry_price) / position.entry_price
+                if profit_pct > position.profit_threshold_pct:
+                    protection_stop = (
+                        current_price * (Decimal('1') - position.profit_trailing_pct)
+                    ).quantize(Decimal('0.01'))
+                    if protection_stop > (position.stop_loss or Decimal('0')):
+                        position.stop_loss = protection_stop
 
             # Check stop loss
             if position.stop_loss is not None and current_price <= position.stop_loss:

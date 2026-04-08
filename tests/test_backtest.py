@@ -1863,12 +1863,98 @@ class TestP3BSignalBasedExit:
             assert engine.positions["DB3"].stop_loss == initial_stop
 
     def test_p3b_settings_defaults(self):
-        """BacktestSettings P3-B 預設值：trend_use_trailing_stop=False，exit_on=MACD Death Cross"""
+        """BacktestSettings P3-B 預設值：trend_use_trailing_stop=False，exit_on=RSI+MACD Death Cross"""
         from config.settings import BacktestSettings
         s = BacktestSettings()
         assert s.trend_use_trailing_stop is False
+        assert "RSI Momentum Loss" in s.trend_exit_on_signals
         assert "MACD Death Cross" in s.trend_exit_on_signals
         assert "Death Cross" in s.trend_exit_on_signals
+
+    def test_profit_protection_trailing_stop_activates_after_threshold(self):
+        """倉位獲利 > 5% 後應啟動獲利保護停損（6% trailing）"""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'),
+                                stop_loss_pct=Decimal('0.10'))
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+                "exit_on_signals": ["RSI Momentum Loss", "MACD Death Cross"],
+                "profit_threshold_pct": Decimal("0.05"),
+                "profit_trailing_pct": Decimal("0.06"),
+            }
+        })
+        d1, d2 = date(2025, 9, 1), date(2025, 9, 5)
+        # price rises to 110 (+10%) → profit_threshold (5%) exceeded → trailing stop activates
+        engine.add_price_data("DB", [
+            self._make_price("DB", d1, 100),
+            self._make_price("DB", d2, 110),
+        ])
+        engine.current_date = d1
+        engine.execute_buy_order(
+            self._make_signal("DB", d1, SignalType.BUY, "Donchian Breakout", 100))
+        initial_stop = engine.positions["DB"].stop_loss  # 100 * 0.90 = 90
+
+        engine.current_date = d2
+        engine.check_position_exits()
+
+        if "DB" in engine.positions:
+            pos = engine.positions["DB"]
+            # 6% trailing from 110 = 103.40 → higher than original 90
+            expected = (Decimal('110') * Decimal('0.94')).quantize(Decimal('0.01'))
+            assert pos.stop_loss == expected
+
+    def test_profit_protection_not_activated_below_threshold(self):
+        """倉位獲利 < 5% 時不應更新停損（維持原始 -10%）"""
+        engine = BacktestEngine(initial_capital=Decimal('1000000'),
+                                stop_loss_pct=Decimal('0.10'))
+        engine.set_signal_exit_config({
+            "Donchian Breakout": {
+                "stop_loss_pct": Decimal("0.10"),
+                "trailing_stop_pct": Decimal("0"),
+                "take_profit_pct": Decimal("0.40"),
+                "max_holding_days": 60,
+                "exit_on_signals": ["RSI Momentum Loss"],
+                "profit_threshold_pct": Decimal("0.05"),
+                "profit_trailing_pct": Decimal("0.06"),
+            }
+        })
+        d1, d2 = date(2025, 9, 1), date(2025, 9, 2)
+        engine.add_price_data("DB2", [
+            self._make_price("DB2", d1, 100),
+            self._make_price("DB2", d2, 103),   # +3% < 5% threshold
+        ])
+        engine.current_date = d1
+        engine.execute_buy_order(
+            self._make_signal("DB2", d1, SignalType.BUY, "Donchian Breakout", 100))
+        initial_stop = engine.positions["DB2"].stop_loss
+
+        engine.current_date = d2
+        engine.check_position_exits()
+
+        if "DB2" in engine.positions:
+            assert engine.positions["DB2"].stop_loss == initial_stop  # unchanged
+
+    def test_rsi_momentum_loss_signal_generated(self):
+        """RSI 從 ≥50 跌破 50 時應產生 RSI Momentum Loss SELL 訊號"""
+        strategy = TechnicalStrategy(require_ma60_uptrend=False, rsi_min_entry=0.0,
+                                     require_volume_confirmation=False)
+        base = date(2025, 1, 1)
+        # 需要足夠歷史讓 RSI 計算
+        long_prices = [self._make_price("X", base - timedelta(days=100 - i),
+                                        80 + i * 0.2) for i in range(100)]
+        # RSI 會接近中性附近；加幾根下跌來強制 RSI 跌破 50
+        long_prices += [self._make_price("X", base + timedelta(days=i), 100 - i * 3)
+                        for i in range(10)]
+
+        signals = strategy.generate_signals("X", long_prices,
+                                            start_date=base, end_date=base + timedelta(days=9))
+        rsi_loss = [s for s in signals
+                    if s.signal_name == "RSI Momentum Loss"
+                    and s.signal_type == SignalType.SELL]
+        assert len(rsi_loss) >= 1
 
 
 if __name__ == "__main__":
