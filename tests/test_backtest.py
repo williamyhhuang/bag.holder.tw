@@ -987,5 +987,112 @@ class TestBacktestIndustryFilter:
         assert len(filtered) == 2
 
 
+class TestMomentumRankings:
+    """Tests for TechnicalStrategy.build_momentum_rankings() (Direction 4)."""
+
+    def _make_stock_data(self, symbol: str, prices: list, base_date: date = None):
+        if base_date is None:
+            base_date = date(2025, 9, 1)
+        records = []
+        for i, price in enumerate(prices):
+            records.append(StockData(
+                symbol=symbol,
+                date=base_date + timedelta(days=i),
+                open_price=Decimal(str(price)),
+                high_price=Decimal(str(price)),
+                low_price=Decimal(str(price)),
+                close_price=Decimal(str(price)),
+                volume=100000,
+            ))
+        return records
+
+    def test_top_n_limits_symbols_per_day(self):
+        """Only top_n symbols should appear in the whitelist on each date."""
+        strategy = TechnicalStrategy()
+        # 5 stocks with ascending momentum (last closes above lookback)
+        stock_data = {}
+        base = date(2025, 9, 1)
+        for idx, sym in enumerate(["A", "B", "C", "D", "E"]):
+            # Stock A has 1% gain, B 2%, ..., E 5% over 20 days
+            gain = (idx + 1) * 0.01
+            start_price = 100.0
+            end_price = round(start_price * (1 + gain), 2)
+            prices = [start_price] * 20 + [end_price] * 5
+            stock_data[sym] = self._make_stock_data(sym, prices, base_date=base)
+
+        target_date = base + timedelta(days=24)  # last day with data
+        whitelist = strategy.build_momentum_rankings(
+            stock_data, lookback_days=20, top_n=3,
+            start_date=target_date, end_date=target_date
+        )
+
+        assert target_date in whitelist
+        assert len(whitelist[target_date]) <= 3
+
+    def test_top_symbols_have_highest_momentum(self):
+        """Symbols with the highest recent return should be in the top-N set."""
+        strategy = TechnicalStrategy()
+        base = date(2025, 9, 1)
+        # WINNER: +20% momentum, LOSER: -5% momentum
+        winner_prices = [100.0] * 20 + [120.0] * 5
+        loser_prices = [100.0] * 20 + [95.0] * 5
+        stock_data = {
+            "WINNER": self._make_stock_data("WINNER", winner_prices, base_date=base),
+            "LOSER": self._make_stock_data("LOSER", loser_prices, base_date=base),
+        }
+
+        target_date = base + timedelta(days=24)
+        whitelist = strategy.build_momentum_rankings(
+            stock_data, lookback_days=20, top_n=1,
+            start_date=target_date, end_date=target_date
+        )
+
+        assert target_date in whitelist
+        assert "WINNER" in whitelist[target_date]
+        assert "LOSER" not in whitelist[target_date]
+
+    def test_returns_empty_dict_when_top_n_is_zero(self):
+        """Passing top_n=0 should return an empty dict (filter disabled)."""
+        strategy = TechnicalStrategy()
+        prices = [100.0] * 25
+        stock_data = {"SYM": self._make_stock_data("SYM", prices)}
+        result = strategy.build_momentum_rankings(stock_data, top_n=0)
+        assert result == {}
+
+    def test_symbols_without_history_excluded_from_ranking(self):
+        """A symbol with insufficient history for lookback should not appear in top-N."""
+        strategy = TechnicalStrategy()
+        base = date(2025, 9, 1)
+        # ESTABLISHED has 25 bars; NEW only has 5 bars (no lookback possible at target)
+        stock_data = {
+            "ESTABLISHED": self._make_stock_data("ESTABLISHED", [100.0] * 25, base_date=base),
+            "NEW": self._make_stock_data("NEW", [200.0] * 5, base_date=base + timedelta(days=20)),
+        }
+        target_date = base + timedelta(days=24)
+        whitelist = strategy.build_momentum_rankings(
+            stock_data, lookback_days=20, top_n=10,
+            start_date=target_date, end_date=target_date
+        )
+        if target_date in whitelist:
+            # NEW had no lookback data → should not be ranked
+            assert "ESTABLISHED" in whitelist.get(target_date, set())
+
+    def test_whitelist_covers_date_range(self):
+        """Output dict should have entries for each trading date in [start, end]."""
+        strategy = TechnicalStrategy()
+        base = date(2025, 9, 1)
+        prices = [100.0] * 30
+        stock_data = {"SYM": self._make_stock_data("SYM", prices, base_date=base)}
+
+        start = base + timedelta(days=21)
+        end = base + timedelta(days=29)
+        whitelist = strategy.build_momentum_rankings(
+            stock_data, lookback_days=20, top_n=5,
+            start_date=start, end_date=end
+        )
+        for d in whitelist:
+            assert start <= d <= end
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

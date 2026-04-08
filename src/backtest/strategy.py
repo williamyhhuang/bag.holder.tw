@@ -1,9 +1,9 @@
 """
 Trading strategy implementation for backtesting
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Set, Tuple
 
 from .models import StockData, TradingSignal, TechnicalIndicators, SignalType
 from ..indicators.calculator import IndicatorCalculator, SignalDetector
@@ -474,3 +474,84 @@ class TechnicalStrategy:
             filtered = [s for s in filtered if s.date <= end_date]
 
         return filtered
+
+    def build_momentum_rankings(
+        self,
+        stock_data_dict: Dict[str, List[StockData]],
+        lookback_days: int = 20,
+        top_n: int = 50,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[date, Set[str]]:
+        """Build a daily top-N momentum whitelist from historical price data.
+
+        For each trading date in [start_date, end_date], rank all stocks by their
+        lookback_days price return (close[t] / close[t-lookback_days] - 1) and
+        return the set of symbols that rank in the top_n.
+
+        Stocks without enough history to compute the lookback return are excluded
+        from consideration (not promoted to top-N by default).
+
+        Args:
+            stock_data_dict: Symbol → list of StockData (sorted by date ascending).
+            lookback_days:   Number of calendar days to look back when computing
+                             momentum (default 20 ≈ 1 trading month).
+            top_n:           Maximum number of symbols allowed per day (0 = no limit).
+            start_date:      First date to include in the output dict.
+            end_date:        Last date to include in the output dict.
+
+        Returns:
+            Dict mapping each trading date to a set of the top_n symbol strings.
+        """
+        if top_n <= 0:
+            return {}
+
+        # Build per-symbol price lookups: {symbol: {date: close_price}}
+        price_lookup: Dict[str, Dict[date, Decimal]] = {}
+        for symbol, records in stock_data_dict.items():
+            price_lookup[symbol] = {r.date: r.close_price for r in records}
+
+        # Collect all unique trading dates across the universe
+        all_dates: Set[date] = set()
+        for records in stock_data_dict.values():
+            for r in records:
+                all_dates.add(r.date)
+
+        # Filter to the requested range
+        if start_date:
+            all_dates = {d for d in all_dates if d >= start_date}
+        if end_date:
+            all_dates = {d for d in all_dates if d <= end_date}
+
+        whitelist: Dict[date, Set[str]] = {}
+
+        for target_date in sorted(all_dates):
+            lookback_target = target_date - timedelta(days=lookback_days)
+
+            momentum_scores: Dict[str, float] = {}
+            for symbol, prices in price_lookup.items():
+                current_close = prices.get(target_date)
+                if current_close is None:
+                    continue  # symbol not traded on this date
+
+                # Find the closest available date on or before the lookback target
+                past_dates = [d for d in prices if d <= lookback_target]
+                if not past_dates:
+                    continue  # not enough history
+
+                past_close = prices[max(past_dates)]
+                if past_close == 0:
+                    continue
+
+                momentum = float(current_close / past_close) - 1.0
+                momentum_scores[symbol] = momentum
+
+            # Rank by momentum descending, keep top_n
+            ranked = sorted(momentum_scores, key=lambda s: momentum_scores[s], reverse=True)
+            whitelist[target_date] = set(ranked[:top_n])
+
+        self.logger.info(
+            f"Built momentum rankings for {len(whitelist)} dates "
+            f"(lookback={lookback_days}d, top_n={top_n})"
+        )
+        return whitelist

@@ -186,6 +186,26 @@ class BacktestRunner:
             self.logger.info("Step 5: Fetching benchmark data for market filter...")
             benchmark_data = self.data_source.get_market_index_data(start_date, end_date)
 
+            # Step 5b: Build momentum rankings (Direction 4)
+            if cfg.momentum_top_n > 0:
+                self.logger.info(
+                    f"Step 5b: Building momentum rankings "
+                    f"(top_n={cfg.momentum_top_n}, lookback={cfg.momentum_lookback_days}d)..."
+                )
+                momentum_whitelist = self.strategy.build_momentum_rankings(
+                    stock_data_dict=stock_data,
+                    lookback_days=cfg.momentum_lookback_days,
+                    top_n=cfg.momentum_top_n,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                self.engine.set_momentum_whitelist(momentum_whitelist)
+                self.logger.info(
+                    f"Momentum whitelist set for {len(momentum_whitelist)} trading dates"
+                )
+            else:
+                self.logger.info("Step 5b: Momentum ranking disabled (momentum_top_n=0)")
+
             # Step 6: Run backtest (pass benchmark for enhanced market regime filter)
             self.logger.info("Step 6: Running backtest...")
             result = self.engine.run_backtest(

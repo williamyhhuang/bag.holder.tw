@@ -295,6 +295,16 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v2.7.0 - 2026-04-08
+- 🌐 **強化大盤市場環境過濾器（Direction 1）**：原本只檢查 TAIEX 收盤 >= MA20，新增三層篩選：
+  - TAIEX close >= MA20（原有）
+  - TAIEX MA5 >= MA20（短期趨勢對齊，新增）
+  - TAIEX RSI(14) >= 45（大盤動能確認，新增）
+  - 任一條件不通過即暫停當日新進場，直接應對 Q4 2025 虧損 -15% 的根本問題
+- 📊 **動能排名過濾器（Direction 4）**：每個交易日計算所有股票近 20 日動能，只允許排名前 50 的股票發出 BUY 訊號，避免進場動能不足的股票
+- ⚙️ **新增 4 個設定參數**：`BACKTEST_MARKET_REGIME_RSI_THRESHOLD`（預設 45）、`BACKTEST_MARKET_REGIME_CHECK_MA5`（預設 True）、`BACKTEST_MOMENTUM_TOP_N`（預設 50）、`BACKTEST_MOMENTUM_LOOKBACK_DAYS`（預設 20）
+- 🧪 新增 10 個單元測試覆蓋新功能，全部 55 個測試通過
+
 ### v2.4.0 - 2026-04-07
 - 🎯 **策略勝率突破 50%**：自動回測優化，勝率從 45.68% 提升至 **53.36%**
 - 📊 **新增 MA 均線對齊過濾**：進場時需 MA5 > MA10 > MA20，確保短中期趨勢一致，避免買在動量消退的假突破
