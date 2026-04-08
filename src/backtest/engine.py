@@ -340,13 +340,19 @@ class BacktestEngine:
         rsi_period: int = 14,
         rsi_threshold: float = 45.0,
         check_ma5: bool = True,
+        check_close_ma20: bool = False,
     ):
         """Pre-compute whether each benchmark date passes all market regime checks.
 
         Bullish = ALL enabled conditions are met:
-          1. TAIEX close >= MA20   — price above long-term trend
+          1. TAIEX close >= MA20   — price above long-term trend (optional, check_close_ma20)
           2. TAIEX MA5 >= MA20    — short-term trend above long-term (if check_ma5=True)
           3. TAIEX RSI(14) >= rsi_threshold — market has upward momentum
+
+        P1-C (2026-04-08): check_close_ma20 defaults to False.
+        Condition 1 is redundant when check_ma5=True — if MA5>=MA20, the trend is
+        already confirmed. Removing it relaxes the filter slightly and increases
+        the number of bullish trading days without sacrificing the trend quality gate.
 
         Result stored in self.benchmark_bullish for O(1) lookups in run_backtest.
         """
@@ -361,10 +367,11 @@ class BacktestEngine:
             if i < ma_period - 1:
                 continue
 
-            # Condition 1: close >= MA20
             window_long = closes[i - ma_period + 1: i + 1]
             ma20 = sum(window_long) / Decimal(str(ma_period))
-            above_ma20 = prices[i].close_price >= ma20
+
+            # Condition 1: close >= MA20 (optional)
+            above_ma20 = (prices[i].close_price >= ma20) if check_close_ma20 else True
 
             # Condition 2: MA5 >= MA20 (optional)
             if check_ma5 and i >= ma_short - 1:
@@ -448,6 +455,7 @@ class BacktestEngine:
         benchmark_data: Optional[List[StockData]] = None,
         market_regime_rsi_threshold: float = 45.0,
         market_regime_check_ma5: bool = True,
+        market_regime_check_close_ma20: bool = False,
     ) -> BacktestResult:
         """
         Run complete backtest
@@ -459,6 +467,8 @@ class BacktestEngine:
             benchmark_data: Optional TAIEX data for market regime filter
             market_regime_rsi_threshold: TAIEX RSI(14) must be >= this value
             market_regime_check_ma5: Also require TAIEX MA5 >= MA20
+            market_regime_check_close_ma20: Also require TAIEX close >= MA20
+                (P1-C: defaults to False — redundant when check_ma5=True)
 
         Returns:
             BacktestResult object with performance metrics
@@ -471,10 +481,12 @@ class BacktestEngine:
                 benchmark_data,
                 rsi_threshold=market_regime_rsi_threshold,
                 check_ma5=market_regime_check_ma5,
+                check_close_ma20=market_regime_check_close_ma20,
             )
             self.logger.info(
                 f"Market regime filter enabled "
-                f"(MA5>MA20: {market_regime_check_ma5}, RSI>={market_regime_rsi_threshold})"
+                f"(close>MA20: {market_regime_check_close_ma20}, "
+                f"MA5>MA20: {market_regime_check_ma5}, RSI>={market_regime_rsi_threshold})"
             )
 
         # Group signals by date
