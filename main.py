@@ -34,6 +34,22 @@ def run_download(args):
         logger.error(f"Download command failed: {e}")
         return False
 
+def run_signals(args):
+    """Run today's trading signals command"""
+    cmd = ['python', '-m', 'src.scanner.signals_main', 'signals']
+
+    if getattr(args, 'watch', False):
+        cmd.append('--watch')
+    if getattr(args, 'send_telegram', False):
+        cmd.append('--send-telegram')
+
+    try:
+        result = subprocess.run(cmd, cwd=project_root, check=True)
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Signals command failed: {e}")
+        return False
+
 def run_scan(args):
     """Run scan command"""
     cmd = ['python', '-m', 'src.scanner.csv_main', 'scan']
@@ -92,7 +108,12 @@ def create_parser():
   python main.py download
   python main.py download --start-date 2024-01-01 --end-date 2024-01-31
 
-  # 執行選股分析
+  # 今日買賣訊號（P1 策略完整過濾，建議進出場）
+  python main.py signals
+  python main.py signals --watch         # 含觀察清單
+  python main.py signals --send-telegram
+
+  # 執行選股分析（觀察清單，寬鬆條件）
   python main.py scan
   python main.py scan --strategy momentum --send-telegram
 
@@ -130,8 +151,21 @@ def create_parser():
         help='限制下載股票數量 (測試用)'
     )
 
+    # Signals command (P1 actionable buy/sell signals)
+    signals_parser = subparsers.add_parser('signals', help='今日 P1 策略買賣訊號（建議進出場）')
+    signals_parser.add_argument(
+        '--watch',
+        action='store_true',
+        help='同時顯示觀察清單（訊號觸發但未達條件）'
+    )
+    signals_parser.add_argument(
+        '--send-telegram',
+        action='store_true',
+        help='發送結果到 Telegram'
+    )
+
     # Scan command
-    scan_parser = subparsers.add_parser('scan', help='執行選股分析')
+    scan_parser = subparsers.add_parser('scan', help='執行選股分析（觀察清單）')
     scan_parser.add_argument(
         '--strategy',
         choices=['momentum', 'oversold', 'breakout'],
@@ -172,6 +206,8 @@ def main():
     try:
         if args.command == 'download':
             success = run_download(args)
+        elif args.command == 'signals':
+            success = run_signals(args)
         elif args.command == 'scan':
             success = run_scan(args)
         elif args.command == 'backtest':
