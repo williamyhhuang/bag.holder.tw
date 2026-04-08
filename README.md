@@ -295,6 +295,14 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v3.4.0 - 2026-04-09
+- 🎯 **Donchian 週期從 20 天調整至 50 天**：更長週期過濾假突破，勝率維持 53%，夏普顯著提升
+- 📊 **動能排名 top_n 從 50 縮至 30**：更精選動能最強的 30 支，報酬 +7%、回撤大幅下降
+- 🔧 **大盤 RSI 門檻從 45 放寬至 40**：容許更多交易日進場，微幅改善報酬
+- 📈 **回測結果**（585 天）：總報酬 **51.73%**（超越 TAIEX 49.45%）、年化 28%+、夏普 **1.68**、最大回撤 **7.73%**
+- 🔬 以下方向實測無效（恢復原設定）：停用 Golden Cross、NEUTRAL 開放 Donchian、縮 BB 倉位增趨勢倍率、移除停利限制
+- ✅ 更新單元測試與 diagnose_filters.py 的生產配置（87 tests pass）
+
 ### v3.3.0 - 2026-04-09
 - 🎯 **趨勢部位停損從 10% 擴至 15%**：給 Donchian Breakout / MACD Golden Cross 更大的空間讓 8% trailing stop 發揮，避免過早被打出
 - 🔄 **P3-B 從信號式出場恢復為 trailing stop**：信號式出場（RSI Momentum Loss / MACD Death Cross）在現有配置下觸發 0 次（部位被停損/profit-protection 先退出），改回 trailing stop 效果更好

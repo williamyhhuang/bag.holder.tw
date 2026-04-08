@@ -1749,7 +1749,7 @@ class TestP6TrendFollowing:
         """BacktestSettings P6 預設值：Donchian 20 日、10% 停損、8% 追蹤、40% 停利、60 天"""
         from config.settings import BacktestSettings
         s = BacktestSettings()
-        assert s.donchian_period == 20
+        assert s.donchian_period == 50
         assert s.trend_stop_loss_pct == 0.15
         assert s.trend_trailing_stop_pct == 0.08
         assert s.trend_take_profit_pct == 0.40

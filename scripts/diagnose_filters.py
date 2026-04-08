@@ -139,7 +139,7 @@ SCENARIOS: List[Scenario] = [
         require_volume_confirmation=False,  # P1: 移除 Volume Confirmation
         volume_confirmation_multiplier=1.5,
         rsi_min_entry=50.0,
-        momentum_top_n=50,
+        momentum_top_n=30,
         momentum_lookback_days=20,
     ),
 ]

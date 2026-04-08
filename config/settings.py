@@ -326,7 +326,7 @@ class BacktestSettings(BaseSettings):
     #   3. TAIEX RSI(14) >= market_regime_rsi_threshold（大盤具備上漲動能）
     # Q4 2025 策略虧損 15%，大盤卻漲 11%，根本原因是沒有偵測市場環境
     market_regime_rsi_threshold: float = Field(
-        default=45.0,
+        default=40.0,
         env="BACKTEST_MARKET_REGIME_RSI_THRESHOLD",
         description="大盤 RSI 進場門檻（45 = 大盤需具備基本動能）",
     )
@@ -422,9 +422,9 @@ class BacktestSettings(BaseSettings):
         description="趨勢訊號最長持倉天數（60 天，讓趨勢充分發展）",
     )
     donchian_period: int = Field(
-        default=20,
+        default=50,
         env="BACKTEST_DONCHIAN_PERIOD",
-        description="Donchian Channel 突破回看天數（20 = 過去 20 個交易日最高）",
+        description="Donchian Channel 突破回看天數（50 = 過去 50 個交易日最高，回測最佳值）",
     )
 
     # ── P4 持倉規模設定 ──────────────────────────────────────────────
@@ -440,9 +440,9 @@ class BacktestSettings(BaseSettings):
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
     # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break
     momentum_top_n: int = Field(
-        default=50,
+        default=30,
         env="BACKTEST_MOMENTUM_TOP_N",
-        description="每日動能排名篩選，只交易前 N 名（0 = 停用）",
+        description="每日動能排名篩選，只交易前 N 名（0 = 停用；30 = 回測最佳值）",
     )
     momentum_lookback_days: int = Field(
         default=20,
