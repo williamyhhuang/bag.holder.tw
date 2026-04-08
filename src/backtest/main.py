@@ -48,6 +48,7 @@ class BacktestRunner:
             take_profit_pct=Decimal(str(cfg.take_profit_pct)),
             trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
             max_holding_days=cfg.max_holding_days,
+            position_sizing=Decimal(str(cfg.position_sizing)),
         )
         self.analyzer = PerformanceAnalyzer()
         self.reporter = BacktestReporter()
@@ -190,6 +191,7 @@ class BacktestRunner:
                 take_profit_pct=Decimal(str(cfg.take_profit_pct)),
                 trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
                 max_holding_days=cfg.max_holding_days,
+                position_sizing=Decimal(str(cfg.position_sizing)),
                 market_regime_strong_rsi=cfg.market_regime_strong_rsi,
                 strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
                 neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),

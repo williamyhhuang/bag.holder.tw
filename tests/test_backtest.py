@@ -1402,5 +1402,75 @@ class TestDiagnoseFilters:
         print_report([r], taiex_return=56.34)
 
 
+class TestP4PositionSizing:
+    """P4: 測試放寬持倉上限 — 較小的 position_sizing 允許更多倉位同時運行"""
+
+    def _make_buy_signal(self, symbol: str, target_date: date, price: Decimal) -> TradingSignal:
+        return TradingSignal(
+            symbol=symbol,
+            date=target_date,
+            signal_type=SignalType.BUY,
+            signal_name="BB Squeeze Break",
+            price=price,
+            description="test",
+            strength="MEDIUM",
+            indicators=TechnicalIndicators(date=target_date),
+        )
+
+    def _make_price_data(self, symbol: str, target_date: date, price: Decimal) -> StockData:
+        return StockData(
+            symbol=symbol,
+            date=target_date,
+            open_price=price,
+            high_price=price * Decimal('1.01'),
+            low_price=price * Decimal('0.99'),
+            close_price=price,
+            volume=1000000,
+        )
+
+    def test_5pct_sizing_allows_more_positions(self):
+        """5% sizing 允許比 10% sizing 更多倉位同時進場"""
+        capital = Decimal('1000000')
+        price = Decimal('50')  # 低價股，確保每張 (1000股) 成本可負擔
+
+        engine_10pct = BacktestEngine(initial_capital=capital, position_sizing=Decimal('0.10'))
+        engine_5pct = BacktestEngine(initial_capital=capital, position_sizing=Decimal('0.05'))
+
+        # 同一天有 15 支股票發出 BUY 訊號
+        signals = []
+        for i in range(15):
+            sym = f"SYM{i:02d}"
+            signals.append(self._make_buy_signal(sym, date(2025, 9, 1), price))
+            engine_10pct.add_price_data(sym, [self._make_price_data(sym, date(2025, 9, 1), price)])
+            engine_5pct.add_price_data(sym, [self._make_price_data(sym, date(2025, 9, 1), price)])
+
+        engine_10pct.current_date = date(2025, 9, 1)
+        engine_5pct.current_date = date(2025, 9, 1)
+
+        for sig in signals:
+            engine_10pct.execute_buy_order(sig)
+            engine_5pct.execute_buy_order(sig)
+
+        # 5% sizing 應允許更多倉位
+        assert len(engine_5pct.positions) > len(engine_10pct.positions)
+
+    def test_position_sizing_from_settings(self):
+        """BacktestSettings 應能正確讀取 BACKTEST_POSITION_SIZING"""
+        import os
+        # 不改環境變數；驗證預設值為 5%
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert s.position_sizing == 0.05
+
+    def test_position_size_calculation_with_5pct(self):
+        """5% sizing 計算：100萬 × 5% = 5萬，50元股票可買 1000 股"""
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            position_sizing=Decimal('0.05'),
+        )
+        shares = engine.calculate_position_size(Decimal('50'))
+        assert shares == 1000  # 50,000 / 50 = 1000 shares = 1 張
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
