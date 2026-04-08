@@ -130,13 +130,13 @@ SCENARIOS: List[Scenario] = [
     ),
     Scenario(
         name="8_momentum_top50",
-        description="+動能排名前 50（full = 目前生產設定）",
-        disabled_signals=["MACD Golden Cross", "Golden Cross"],
+        description="+動能排名前 50（full = 目前生產設定 P1）",
+        disabled_signals=[],          # P1: 恢復 Golden Cross + MACD Golden Cross
         use_market_regime=True,
         market_regime_check_ma5=True,
         market_regime_rsi_threshold=45.0,
         require_ma60_uptrend=True,
-        require_volume_confirmation=True,
+        require_volume_confirmation=False,  # P1: 移除 Volume Confirmation
         volume_confirmation_multiplier=1.5,
         rsi_min_entry=50.0,
         momentum_top_n=50,

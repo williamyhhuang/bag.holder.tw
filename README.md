@@ -295,6 +295,11 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v3.0.0 - 2026-04-08
+- 🔄 **P1：恢復 Golden Cross + MACD Golden Cross**：過濾器診斷顯示停用這兩個訊號讓報酬率 -5.90%，儘管勝率低（22-32%），其進場時機對組合有正向錨定效果
+- 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
+- ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
+
 ### v2.9.0 - 2026-04-08
 - 🔍 **新增過濾器診斷腳本 `scripts/diagnose_filters.py`**：逐步累加 9 個場景（baseline → +disabled_signals → +market_regime → ... → full），對每個場景輸出整體績效比較表、各 filter 對交易次數的削減量、以及各訊號勝率明細。協助定位哪個 filter 是績效劣於大盤的主因
 - ✅ **新增 `TestDiagnoseFilters` 單元測試**（6 tests）：驗證場景定義的累加邏輯、最終場景與生產設定一致性、訊號勝率統計正確性、報告輸出不崩潰

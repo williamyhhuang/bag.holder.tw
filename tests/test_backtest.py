@@ -308,14 +308,20 @@ class TestTechnicalStrategy:
         )
 
     def test_disabled_signal_becomes_watch(self):
-        """MACD Golden Cross should be demoted to WATCH (disabled by default)."""
-        result = self.strategy._apply_buy_filters(
-            signal_name='MACD Golden Cross',
+        """A signal explicitly added to disabled_signals should be demoted to WATCH."""
+        strategy = TechnicalStrategy(disabled_signals=['TestSignal'])
+        from src.backtest.models import TechnicalIndicators as TI
+        result = strategy._apply_buy_filters(
+            signal_name='TestSignal',
             price=Decimal('100'),
             volume=200000,
             indicators=self._make_indicators(ma60=80, volume_ma20=100000),
         )
         assert result == SignalType.WATCH
+
+    def test_macd_golden_cross_not_disabled_by_default(self):
+        """P1: MACD Golden Cross is no longer in DEFAULT_DISABLED_SIGNALS."""
+        assert 'MACD Golden Cross' not in TechnicalStrategy.DEFAULT_DISABLED_SIGNALS
 
     def test_price_below_ma60_becomes_watch(self):
         """BUY signal should be blocked when price is below MA60."""
@@ -327,15 +333,24 @@ class TestTechnicalStrategy:
         )
         assert result == SignalType.WATCH
 
-    def test_low_volume_becomes_watch(self):
-        """BUY signal should be blocked when volume < 1.5× MA20 volume."""
-        result = self.strategy._apply_buy_filters(
+    def test_low_volume_blocked_only_when_confirmation_enabled(self):
+        """Volume confirmation is opt-in. Low volume blocks only when require_volume_confirmation=True."""
+        # Default strategy (P1): volume confirmation disabled → low volume passes
+        result_default = self.strategy._apply_buy_filters(
             signal_name='BB Squeeze Break',
             price=Decimal('100'),
-            volume=100000,                                  # only 1× MA20 < 1.5×
+            volume=100000,  # only 1× MA20, below 1.5× threshold
             indicators=self._make_indicators(ma60=80, volume_ma20=100000),
         )
-        assert result == SignalType.WATCH
+        # With confirmation explicitly enabled → blocked
+        strict_strategy = TechnicalStrategy(require_volume_confirmation=True)
+        result_strict = strict_strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('100'),
+            volume=100000,
+            indicators=self._make_indicators(ma60=80, volume_ma20=100000, rsi14=55),
+        )
+        assert result_strict == SignalType.WATCH
 
     def test_ma_alignment_fails_blocks_signal(self):
         """BUY signal should be blocked when MA5 <= MA10 (trend not fully aligned)."""
@@ -376,15 +391,15 @@ class TestTechnicalStrategy:
         )
         assert result == SignalType.BUY
 
-    def test_golden_cross_disabled_by_default(self):
-        """Golden Cross should be demoted to WATCH by default (win rate < 50%)."""
+    def test_golden_cross_not_disabled_by_default(self):
+        """P1: Golden Cross is restored — it should pass filters when other conditions are met."""
         result = self.strategy._apply_buy_filters(
             signal_name='Golden Cross',
             price=Decimal('100'),
             volume=200000,
             indicators=self._make_indicators(ma60=80, volume_ma20=100000, rsi14=60),
         )
-        assert result == SignalType.WATCH
+        assert result == SignalType.BUY
 
     def test_rsi_below_min_entry_becomes_watch(self):
         """BUY signal should be blocked when RSI < rsi_min_entry (weak momentum)."""

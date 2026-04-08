@@ -15,10 +15,10 @@ logger = get_logger(__name__)
 class TechnicalStrategy:
     """Technical analysis strategy using existing indicator logic"""
 
-    # Signals disabled based on backtest results:
-    #   - MACD Golden Cross: 13-17% win rate across multiple runs
-    #   - Golden Cross (MA5 > MA20): 0% in Q4-2025, 45.5% in Q1-2026 — consistently < 50%
-    DEFAULT_DISABLED_SIGNALS = ['MACD Golden Cross', 'Golden Cross']
+    # P1 (2026-04-08): Restored Golden Cross + MACD Golden Cross.
+    # Filter diagnosis showed disabling them degraded return by -5.90%.
+    # Despite low win rates (22-32%), their position timing had positive portfolio effect.
+    DEFAULT_DISABLED_SIGNALS: list = []
 
     def __init__(
         self,
