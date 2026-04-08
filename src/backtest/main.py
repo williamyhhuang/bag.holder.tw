@@ -195,6 +195,8 @@ class BacktestRunner:
                 market_regime_strong_rsi=cfg.market_regime_strong_rsi,
                 strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
                 neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),
+                strong_trend_signals=_parse_signals(cfg.strong_trend_signals),
+                strong_trend_multiplier=cfg.strong_trend_multiplier,
             )
 
             # Add price data to engine

@@ -32,6 +32,9 @@ class BacktestEngine:
         market_regime_strong_rsi: float = 60.0,
         strong_regime_signals: Optional[List[str]] = None,
         neutral_regime_signals: Optional[List[str]] = None,
+        # P5: trend signal position multiplier in STRONG regime
+        strong_trend_signals: Optional[List[str]] = None,
+        strong_trend_multiplier: float = 1.0,
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -49,6 +52,9 @@ class BacktestEngine:
         self.market_regime_strong_rsi = market_regime_strong_rsi
         self.strong_regime_signals: Optional[List[str]] = strong_regime_signals
         self.neutral_regime_signals: Optional[List[str]] = neutral_regime_signals
+        # P5: trend signal multiplier (STRONG regime only)
+        self.strong_trend_signals: Optional[List[str]] = strong_trend_signals
+        self.strong_trend_multiplier: float = strong_trend_multiplier
 
         self.logger = get_logger(self.__class__.__name__)
 
@@ -115,12 +121,13 @@ class BacktestEngine:
 
         return commission, tax
 
-    def execute_buy_order(self, signal: TradingSignal) -> bool:
+    def execute_buy_order(self, signal: TradingSignal, sizing_override: Optional[Decimal] = None) -> bool:
         """
         Execute a buy order based on trading signal
 
         Args:
             signal: Trading signal
+            sizing_override: Override position_sizing for this order (P5: trend signals in STRONG)
 
         Returns:
             True if order executed successfully
@@ -131,8 +138,14 @@ class BacktestEngine:
                 self.logger.debug(f"Already holding position in {signal.symbol}")
                 return False
 
-            # Calculate position size
-            quantity = self.calculate_position_size(signal.price)
+            # Calculate position size (use override if provided)
+            if sizing_override is not None:
+                original = self.position_sizing
+                self.position_sizing = sizing_override
+                quantity = self.calculate_position_size(signal.price)
+                self.position_sizing = original
+            else:
+                quantity = self.calculate_position_size(signal.price)
             if quantity <= 0:
                 self.logger.debug(f"Insufficient cash for {signal.symbol}")
                 return False
@@ -496,7 +509,16 @@ class BacktestEngine:
                         f"Skipping BUY {signal.symbol}: not in top-N momentum"
                     )
                     continue
-                self.execute_buy_order(signal)
+                # P5: apply trend signal multiplier in STRONG regime
+                sizing_override = None
+                if (
+                    regime == "STRONG"
+                    and self.strong_trend_signals is not None
+                    and signal.signal_name in self.strong_trend_signals
+                    and self.strong_trend_multiplier != 1.0
+                ):
+                    sizing_override = self.position_sizing * Decimal(str(self.strong_trend_multiplier))
+                self.execute_buy_order(signal, sizing_override=sizing_override)
             elif signal.signal_type == SignalType.SELL and signal.symbol in self.positions:
                 current_price = self.get_current_price(signal.symbol, self.current_date)
                 if current_price:

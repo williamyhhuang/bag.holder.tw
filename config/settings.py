@@ -352,9 +352,23 @@ class BacktestSettings(BaseSettings):
         description="強勢市場允許的訊號（空白 = 全部）",
     )
     neutral_regime_signals: str = Field(
-        default="BB Squeeze Break,RSI Oversold",
+        default="BB Squeeze Break,RSI Oversold,Golden Cross,MACD Golden Cross",
         env="BACKTEST_NEUTRAL_REGIME_SIGNALS",
         description="中性市場允許的訊號（空白 = 全部）",
+    )
+
+    # ── P5 趨勢訊號加倍倉位 ───────────────────────────────────────────
+    # STRONG 市場環境下，趨勢訊號（Golden Cross / MACD Golden Cross）使用
+    # position_sizing * strong_trend_multiplier 的倉位，提升牛市曝險
+    strong_trend_signals: str = Field(
+        default="Golden Cross,MACD Golden Cross",
+        env="BACKTEST_STRONG_TREND_SIGNALS",
+        description="STRONG 市場下使用加倍倉位的趨勢訊號（逗號分隔）",
+    )
+    strong_trend_multiplier: float = Field(
+        default=2.0,
+        env="BACKTEST_STRONG_TREND_MULTIPLIER",
+        description="STRONG 市場下趨勢訊號倉位乘數（2.0 = 10%，其餘信號維持 5%）",
     )
 
     # ── P4 持倉規模設定 ──────────────────────────────────────────────

@@ -1472,5 +1472,122 @@ class TestP4PositionSizing:
         assert shares == 1000  # 50,000 / 50 = 1000 shares = 1 張
 
 
+class TestP5TrendSignalMultiplier:
+    """P5: STRONG 市場趨勢訊號倉位乘數測試"""
+
+    def _make_signal(self, sym: str, signal_name: str, price: Decimal) -> TradingSignal:
+        return TradingSignal(
+            symbol=sym,
+            date=date(2025, 9, 1),
+            signal_type=SignalType.BUY,
+            signal_name=signal_name,
+            price=price,
+            description="test",
+            strength="STRONG",
+            indicators=TechnicalIndicators(date=date(2025, 9, 1)),
+        )
+
+    def _make_price(self, sym: str, price: Decimal) -> StockData:
+        return StockData(
+            symbol=sym,
+            date=date(2025, 9, 1),
+            open_price=price,
+            high_price=price * Decimal('1.01'),
+            low_price=price * Decimal('0.99'),
+            close_price=price,
+            volume=1000000,
+        )
+
+    def test_trend_signal_in_strong_regime_uses_larger_position(self):
+        """STRONG 市場下 Golden Cross 應使用 2× 倉位（10% 而非 5%）"""
+        capital = Decimal('1000000')
+        price = Decimal('50')  # target: 50k (5%) or 100k (10%)
+
+        engine = BacktestEngine(
+            initial_capital=capital,
+            position_sizing=Decimal('0.05'),
+            strong_trend_signals=["Golden Cross"],
+            strong_trend_multiplier=2.0,
+        )
+        engine.add_price_data("GC", [self._make_price("GC", price)])
+        engine.current_date = date(2025, 9, 1)
+
+        # Make market STRONG: ensure benchmark_rsi >= 60
+        engine.benchmark_bullish[date(2025, 9, 1)] = True
+        engine.benchmark_rsi[date(2025, 9, 1)] = Decimal('65')
+
+        signal = self._make_signal("GC", "Golden Cross", price)
+        engine.process_signals([signal], market_bullish=True)
+
+        assert "GC" in engine.positions
+        # 2× sizing = 10% of 1M = 100k / 50 = 2000 shares
+        assert engine.positions["GC"].quantity == 2000
+
+    def test_non_trend_signal_in_strong_regime_uses_normal_position(self):
+        """STRONG 市場下 BB Squeeze Break 應使用正常 5% 倉位"""
+        capital = Decimal('1000000')
+        price = Decimal('50')
+
+        engine = BacktestEngine(
+            initial_capital=capital,
+            position_sizing=Decimal('0.05'),
+            strong_trend_signals=["Golden Cross", "MACD Golden Cross"],
+            strong_trend_multiplier=2.0,
+        )
+        engine.add_price_data("BB", [self._make_price("BB", price)])
+        engine.current_date = date(2025, 9, 1)
+
+        engine.benchmark_bullish[date(2025, 9, 1)] = True
+        engine.benchmark_rsi[date(2025, 9, 1)] = Decimal('65')
+
+        signal = self._make_signal("BB", "BB Squeeze Break", price)
+        engine.process_signals([signal], market_bullish=True)
+
+        assert "BB" in engine.positions
+        # Normal sizing = 5% of 1M = 50k / 50 = 1000 shares
+        assert engine.positions["BB"].quantity == 1000
+
+    def test_trend_signal_in_neutral_regime_uses_normal_position(self):
+        """NEUTRAL 市場下 Golden Cross 不應套用乘數"""
+        capital = Decimal('1000000')
+        price = Decimal('50')
+
+        engine = BacktestEngine(
+            initial_capital=capital,
+            position_sizing=Decimal('0.05'),
+            neutral_regime_signals=["Golden Cross", "MACD Golden Cross", "BB Squeeze Break"],
+            strong_trend_signals=["Golden Cross"],
+            strong_trend_multiplier=2.0,
+        )
+        engine.add_price_data("GC2", [self._make_price("GC2", price)])
+        engine.current_date = date(2025, 9, 1)
+
+        # NEUTRAL: bullish but RSI < 60
+        engine.benchmark_bullish[date(2025, 9, 1)] = True
+        engine.benchmark_rsi[date(2025, 9, 1)] = Decimal('55')  # < 60 → NEUTRAL
+
+        signal = self._make_signal("GC2", "Golden Cross", price)
+        engine.process_signals([signal], market_bullish=True)
+
+        assert "GC2" in engine.positions
+        # Normal sizing = 5% → 1000 shares
+        assert engine.positions["GC2"].quantity == 1000
+
+    def test_p5_settings_defaults(self):
+        """BacktestSettings P5 預設值應為 Golden Cross + MACD Golden Cross，乘數 2.0"""
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert "Golden Cross" in s.strong_trend_signals
+        assert "MACD Golden Cross" in s.strong_trend_signals
+        assert s.strong_trend_multiplier == 2.0
+
+    def test_neutral_regime_allows_trend_signals_by_default(self):
+        """P5: neutral_regime_signals 預設值應包含 Golden Cross 和 MACD Golden Cross"""
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert "Golden Cross" in s.neutral_regime_signals
+        assert "MACD Golden Cross" in s.neutral_regime_signals
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
