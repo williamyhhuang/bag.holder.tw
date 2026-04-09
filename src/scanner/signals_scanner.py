@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.backtest import YFinanceDataSource, TechnicalStrategy
 from src.backtest.models import StockData, TradingSignal, SignalType, TechnicalIndicators
+from src.scanner.sector_trend import SectorTrendAnalyzer
 from src.utils.logger import get_logger
 from src.utils.stock_name_mapper import get_stock_names
 from config.settings import settings
@@ -103,6 +104,7 @@ class SignalsScanner:
         self.logger = get_logger(self.__class__.__name__)
         self.data_source = YFinanceDataSource()
         self._stock_names = get_stock_names()
+        self.sector_analyzer = SectorTrendAnalyzer()
 
         cfg = settings.backtest
         disabled = [s.strip() for s in cfg.disabled_signals.split(",") if s.strip()]
@@ -202,6 +204,27 @@ class SignalsScanner:
         top30 = self._build_momentum_top_n(stock_data, target_date)
         self.logger.info(f"動能前30名: {len(top30) if top30 else '停用'}")
 
+        # 計算族群趨勢（若啟用）
+        strong_sectors = None
+        sector_summary = []
+        if self.cfg.enable_sector_trend_filter:
+            self.logger.info("計算族群趨勢強度...")
+            sector_strength = self.sector_analyzer.compute_sector_strength(
+                stock_data, target_date
+            )
+            strong_sectors = self.sector_analyzer.get_strong_sectors(
+                sector_strength, threshold=self.cfg.sector_trend_threshold
+            )
+            sector_summary = self.sector_analyzer.build_sector_summary(
+                sector_strength, threshold=self.cfg.sector_trend_threshold
+            )
+            strong_count = sum(1 for r in sector_summary if r["is_strong"])
+            total_count = len(sector_summary)
+            self.logger.info(
+                f"族群分析完成：{strong_count}/{total_count} 個族群為強勢"
+                f"（門檻 {self.cfg.sector_trend_threshold:.0%}）"
+            )
+
         # 只針對最新交易日產生訊號（傳入全量歷史資料供指標計算，僅輸出 target_date 的訊號）
         self.logger.info("產生技術訊號...")
         all_signals = self.strategy.generate_signals_for_multiple_stocks(
@@ -239,11 +262,22 @@ class SignalsScanner:
             if sig.signal_type == SignalType.BUY:
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
-                if in_top30:
-                    buy_list.append(entry)
-                else:
+
+                # 族群趨勢過濾
+                stock_sector = self.sector_analyzer.get_stock_sector(sig.symbol)
+                entry["sector"] = stock_sector
+                in_strong_sector = (
+                    strong_sectors is None or stock_sector in strong_sectors
+                )
+
+                if not in_top30:
                     entry["reason"] = "動能排名不在前30"
                     watch_list.append(entry)
+                elif not in_strong_sector:
+                    entry["reason"] = f"族群偏弱（{stock_sector}）"
+                    watch_list.append(entry)
+                else:
+                    buy_list.append(entry)
 
             elif sig.signal_type == SignalType.SELL:
                 # 只保留 P1 策略定義的出場訊號，過濾掉 RSI Overbought 等雜訊
@@ -251,6 +285,7 @@ class SignalsScanner:
                     sell_list.append(entry)
 
             elif sig.signal_type == SignalType.WATCH:
+                entry["sector"] = self.sector_analyzer.get_stock_sector(sig.symbol)
                 entry["reason"] = _watch_reason_with_price(
                     sig.signal_name, sig.price, sig.indicators, self.strategy
                 )
@@ -294,4 +329,5 @@ class SignalsScanner:
             "buy": buy_list,
             "sell": sell_list,
             "watch": watch_list,
+            "sector_summary": sector_summary,
         }

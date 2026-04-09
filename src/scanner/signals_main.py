@@ -29,13 +29,14 @@ def display_signals(result: dict, show_watch: bool = False):
     # ── 建議買入 ──
     print(f"\n✅ 建議買入 ({len(buy_list)} 支)  [P1 策略完整過濾通過]")
     if buy_list:
-        print(f"  {'代號':<16} {'名稱':<10} {'觸發訊號':<40} {'價格':>9} {'RSI':>6}")
-        print("  " + "-" * 85)
+        print(f"  {'代號':<16} {'名稱':<10} {'族群':<10} {'觸發訊號':<30} {'價格':>9} {'RSI':>6}")
+        print("  " + "-" * 95)
         for s in buy_list:
             name = (s["name"] or "")[:8]
-            signal = s["signal"][:40]
+            sector = (s.get("sector") or "")[:8]
+            signal = s["signal"][:30]
             rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
-            print(f"  {s['symbol']:<16} {name:<10} {signal:<40} {s['price']:>9.2f} {rsi_str:>6}")
+            print(f"  {s['symbol']:<16} {name:<10} {sector:<10} {signal:<30} {s['price']:>9.2f} {rsi_str:>6}")
     else:
         print("  （今日無 P1 買入訊號）")
 
@@ -69,10 +70,27 @@ def display_signals(result: dict, show_watch: bool = False):
                 reason = s.get("reason", "")[:30]
                 print(f"  {s['symbol']:<16} {name:<10} {signal:<22} {rsi_str:>6}  {reason}")
 
+    # ── 族群強弱摘要 ──
+    sector_summary = result.get("sector_summary", [])
+    if sector_summary:
+        strong_rows = [r for r in sector_summary if r["is_strong"]]
+        weak_rows = [r for r in sector_summary if not r["is_strong"]]
+        print(f"\n🏭 族群趨勢摘要（強勢 {len(strong_rows)} / 弱勢 {len(weak_rows)}）")
+        if strong_rows:
+            strong_str = "  強勢：" + "、".join(
+                f"{r['sector']}({r['strength_pct']:.0f}%)" for r in strong_rows
+            )
+            print(strong_str)
+        if weak_rows:
+            weak_str = "  弱勢：" + "、".join(
+                f"{r['sector']}({r['strength_pct']:.0f}%)" for r in weak_rows
+            )
+            print(weak_str)
+
     print(f"\n{'='*60}")
     print("  說明：")
     print("  • 買入訊號需同時通過：MA60上方、均線排列(MA5>MA10>MA20)、")
-    print("    RSI≥50、動能排名前30、成交量≥1000張（P1生產策略設定）")
+    print("    RSI≥50、動能排名前30、成交量≥1000張、族群強勢（P1生產策略）")
     print("  • 賣出警示為參考，不代表強制出場")
     print(f"{'='*60}\n")
 
@@ -93,7 +111,9 @@ def format_for_telegram(result: dict) -> list[str]:
         for s in buy_list:
             name = s["name"] or ""
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
-            lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}")
+            sector = s.get("sector") or ""
+            sector_tag = f"[{sector}] " if sector else ""
+            lines.append(f"  {s['symbol']} {name} {sector_tag}| {s['signal']} | {s['price']:.2f} {rsi_str}")
         lines.append("")
 
     if sell_list:
@@ -105,6 +125,16 @@ def format_for_telegram(result: dict) -> list[str]:
 
     if not buy_list and not sell_list:
         lines.append("今日無買賣訊號")
+
+    # 族群摘要
+    sector_summary = result.get("sector_summary", [])
+    if sector_summary:
+        strong_rows = [r for r in sector_summary if r["is_strong"]]
+        weak_rows = [r for r in sector_summary if not r["is_strong"]]
+        lines.append(f"\n🏭 族群趨勢：強勢 {len(strong_rows)} 族群 / 弱勢 {len(weak_rows)} 族群")
+        if weak_rows:
+            weak_names = "、".join(r["sector"] for r in weak_rows[:8])
+            lines.append(f"弱勢族群：{weak_names}")
 
     return _split_into_chunks("\n".join(lines))
 

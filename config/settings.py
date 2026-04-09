@@ -443,6 +443,20 @@ class BacktestSettings(BaseSettings):
         description="每筆交易佔初始資金比例（0.05 = 5%，允許最多 20 倉位同時運行）",
     )
 
+    # ── 族群趨勢過濾 ─────────────────────────────────────────────────
+    # 只保留強勢族群的買入訊號，過濾掉弱勢族群
+    # 強勢族群定義：族群內超過 threshold 比例的股票收盤 > MA20
+    enable_sector_trend_filter: bool = Field(
+        default=True,
+        env="BACKTEST_ENABLE_SECTOR_TREND_FILTER",
+        description="啟用族群趨勢過濾（True = 只保留強勢族群的買入訊號）",
+    )
+    sector_trend_threshold: float = Field(
+        default=0.5,
+        env="BACKTEST_SECTOR_TREND_THRESHOLD",
+        description="族群強勢門檻（0.5 = 族群內 50% 以上股票在 MA20 上方視為強勢）",
+    )
+
     # ── 動能排名過濾 ─────────────────────────────────────────────────
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
     # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break
