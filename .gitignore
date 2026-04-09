@@ -133,6 +133,9 @@ fubon_neo*.whl
 *.backup
 *.bak
 
+# Reports
+reports/*.md
+
 # Runtime files
 *.pid
 *.lock
