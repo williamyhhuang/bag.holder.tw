@@ -43,6 +43,7 @@ class BacktestRunner:
             volume_confirmation_multiplier=cfg.volume_confirmation_multiplier,
             rsi_overbought_threshold=cfg.rsi_overbought_threshold,
             donchian_period=cfg.donchian_period,
+            min_volume_lots=cfg.min_volume_lots,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

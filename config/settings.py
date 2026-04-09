@@ -318,6 +318,13 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_RSI_OVERBOUGHT_THRESHOLD",
         description="RSI 超買門檻（70 = 出現超買訊號）",
     )
+    # Filter 6: 最低成交張數門檻（流動性過濾）
+    # 1 張 = 1,000 股；設 1000 = 成交量需 >= 1,000,000 股；0 = 停用
+    min_volume_lots: int = Field(
+        default=0,
+        env="BACKTEST_MIN_VOLUME_LOTS",
+        description="最低成交張數門檻（1 張=1,000 股；0=停用）",
+    )
 
     # ── 大盤市場環境過濾 ─────────────────────────────────────────────
     # 三層大盤篩選（任一為 False 即暫停新進場）：

@@ -43,6 +43,7 @@ class TechnicalStrategy:
         rsi_overbought_threshold: float = 70.0,
         rsi_min_entry: float = 50.0,
         donchian_period: int = 20,
+        min_volume_lots: int = 0,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -63,6 +64,8 @@ class TechnicalStrategy:
         self.rsi_overbought_threshold = Decimal(str(rsi_overbought_threshold))
         self.rsi_min_entry = Decimal(str(rsi_min_entry))
         self.donchian_period = donchian_period
+        # Filter 6: minimum daily volume in lots (1 lot = 1,000 shares); 0 = disabled
+        self.min_volume_lots = min_volume_lots
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -386,6 +389,18 @@ class TechnicalStrategy:
                 self.logger.debug(
                     f"Signal '{signal_name}' blocked: RSI {rsi} < min entry "
                     f"{self.rsi_min_entry} → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 6: minimum daily volume (liquidity filter).
+        # 1 lot (張) = 1,000 shares; min_volume_lots=1000 means volume >= 1,000,000 shares.
+        # Avoids low-liquidity stocks where slippage invalidates backtest assumptions.
+        if self.min_volume_lots > 0:
+            min_shares = self.min_volume_lots * 1000
+            if volume < min_shares:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: volume {volume} < "
+                    f"min {min_shares} ({self.min_volume_lots} lots) → WATCH"
                 )
                 return SignalType.WATCH
 

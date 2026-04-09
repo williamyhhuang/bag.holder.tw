@@ -461,6 +461,46 @@ class TestTechnicalStrategy:
         )
         assert result == SignalType.BUY
 
+    def test_min_volume_lots_blocks_low_volume(self):
+        """BUY signal should be blocked when volume < min_volume_lots * 1000."""
+        strategy = TechnicalStrategy(min_volume_lots=1000)
+        indicators = self._make_indicators(ma60=80, volume_ma20=100000, rsi14=60)
+        # 999 張 = 999,000 股，低於 1000 張門檻
+        result = strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=999_000,
+            indicators=indicators,
+        )
+        assert result == SignalType.WATCH
+
+    def test_min_volume_lots_passes_at_threshold(self):
+        """BUY signal should pass when volume exactly equals min_volume_lots * 1000."""
+        strategy = TechnicalStrategy(min_volume_lots=1000)
+        indicators = self._make_indicators(ma60=80, volume_ma20=100000, rsi14=60)
+        # 1000 張 = 1,000,000 股，恰好達到門檻
+        result = strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=1_000_000,
+            indicators=indicators,
+        )
+        assert result == SignalType.BUY
+
+    def test_min_volume_lots_zero_disabled(self):
+        """Filter should be skipped when min_volume_lots=0."""
+        # Disable volume_confirmation so the only liquidity check is min_volume_lots
+        strategy = TechnicalStrategy(min_volume_lots=0, require_volume_confirmation=False)
+        indicators = self._make_indicators(ma60=80, volume_ma20=100000, rsi14=60)
+        # 極低成交量，但 min_volume_lots=0 表示停用過濾
+        result = strategy._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=100,
+            indicators=indicators,
+        )
+        assert result == SignalType.BUY
+
 
 class TestPerformanceAnalyzer:
     """Test PerformanceAnalyzer"""
