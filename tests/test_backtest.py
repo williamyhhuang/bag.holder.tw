@@ -501,6 +501,170 @@ class TestTechnicalStrategy:
         )
         assert result == SignalType.BUY
 
+    # ── Cooldown tests ─────────────────────────────────────────────────
+
+    def _make_price_series(self, symbol: str, n: int = 120, base_price: float = 100.0) -> list:
+        """Build n trading days of flat price data (enough to warm up all indicators)."""
+        result = []
+        for i in range(n):
+            d = date(2025, 1, 1) + __import__('datetime').timedelta(days=i)
+            p = Decimal(str(base_price))
+            result.append(StockData(
+                symbol=symbol, date=d,
+                open_price=p, high_price=p, low_price=p, close_price=p,
+                volume=2_000_000,
+            ))
+        return result
+
+    def test_signal_cooldown_days_default_zero(self):
+        """Default strategy has cooldown disabled (signal_cooldown_days=0)."""
+        assert TechnicalStrategy().signal_cooldown_days == 0
+
+    def test_signal_cooldown_blocks_repeat_buy_within_window(self):
+        """A second BUY signal on the same stock within cooldown days should become WATCH."""
+        from unittest.mock import patch, MagicMock
+
+        strategy = TechnicalStrategy(
+            signal_cooldown_days=5,
+            require_ma60_uptrend=False,
+            require_volume_confirmation=False,
+            rsi_min_entry=0,
+            donchian_period=0,
+            disabled_signals=[],
+        )
+
+        price_data = self._make_price_series("TEST", n=120)
+        base_date = date(2025, 1, 1)
+
+        # Inject two BUY signals 3 trading days apart via mock SignalDetector
+        call_count = [0]
+
+        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+            call_count[0] += 1
+            # Emit a BUY on calls 50 and 53 (3 days apart, within cooldown=5)
+            if call_count[0] in (50, 53):
+                return [{'type': 'BUY', 'name': 'Golden Cross',
+                         'description': 'test', 'strength': 'MEDIUM',
+                         'price': current_price}]
+            return []
+
+        strategy.signal_detector.detect_signals = fake_detect
+
+        signals = strategy.generate_signals("TEST", price_data)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+        watch_signals = [s for s in signals if s.signal_type == SignalType.WATCH
+                         and s.signal_name == 'Golden Cross']
+
+        # First BUY passes; second within cooldown becomes WATCH
+        assert len(buy_signals) == 1
+        assert len(watch_signals) >= 1
+
+    def test_signal_cooldown_allows_buy_after_window(self):
+        """A BUY signal beyond the cooldown window should still be accepted."""
+        strategy = TechnicalStrategy(
+            signal_cooldown_days=3,
+            require_ma60_uptrend=False,
+            require_volume_confirmation=False,
+            rsi_min_entry=0,
+            donchian_period=0,
+            disabled_signals=[],
+        )
+
+        price_data = self._make_price_series("TEST", n=120)
+        call_count = [0]
+
+        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+            call_count[0] += 1
+            # Emit BUY on call 40 and call 50 (10 days apart, beyond cooldown=3)
+            if call_count[0] in (40, 50):
+                return [{'type': 'BUY', 'name': 'Golden Cross',
+                         'description': 'test', 'strength': 'MEDIUM',
+                         'price': current_price}]
+            return []
+
+        strategy.signal_detector.detect_signals = fake_detect
+
+        signals = strategy.generate_signals("TEST", price_data)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+
+        # Both signals beyond cooldown window → both should be BUY
+        assert len(buy_signals) == 2
+
+    def test_signal_cooldown_disabled_when_zero(self):
+        """With signal_cooldown_days=0, repeated BUY signals are never suppressed."""
+        strategy = TechnicalStrategy(
+            signal_cooldown_days=0,
+            require_ma60_uptrend=False,
+            require_volume_confirmation=False,
+            rsi_min_entry=0,
+            donchian_period=0,
+            disabled_signals=[],
+        )
+
+        price_data = self._make_price_series("TEST", n=120)
+        call_count = [0]
+
+        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+            call_count[0] += 1
+            if call_count[0] in (40, 41, 42):
+                return [{'type': 'BUY', 'name': 'Golden Cross',
+                         'description': 'test', 'strength': 'MEDIUM',
+                         'price': current_price}]
+            return []
+
+        strategy.signal_detector.detect_signals = fake_detect
+
+        signals = strategy.generate_signals("TEST", price_data)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+
+        # All three consecutive BUYs should pass when cooldown is disabled
+        assert len(buy_signals) == 3
+
+    def test_signal_cooldown_tracks_history_before_start_date(self):
+        """Cooldown should suppress BUY even when the prior BUY was before start_date.
+
+        sorted_dates produced by calculate_indicators starts from ~day4 (first MA5 value).
+        call_count N corresponds to sorted_dates[N], which is approximately day(4+N).
+        start_date = day 60  →  in_output_range requires sorted_dates[N] >= day60, i.e. N >= 56.
+
+        Strategy:
+          - call 50 → day ~54 → before start_date (pre-history)
+          - call 58 → day ~62 → after start_date, 8 trading days from call 50 → within cooldown=10
+        """
+        strategy = TechnicalStrategy(
+            signal_cooldown_days=10,
+            require_ma60_uptrend=False,
+            require_volume_confirmation=False,
+            rsi_min_entry=0,
+            donchian_period=0,
+            disabled_signals=[],
+        )
+
+        price_data = self._make_price_series("TEST", n=120)
+        call_count = [0]
+
+        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+            call_count[0] += 1
+            # call 50 lands before start_date; call 58 is ~8 trading days later (within cooldown=10)
+            if call_count[0] in (50, 58):
+                return [{'type': 'BUY', 'name': 'Golden Cross',
+                         'description': 'test', 'strength': 'MEDIUM',
+                         'price': current_price}]
+            return []
+
+        strategy.signal_detector.detect_signals = fake_detect
+
+        # start_date = day-index 60 → sorted_dates index ~56 → call 56 is the first in-range call
+        start = date(2025, 1, 1) + __import__('datetime').timedelta(days=60)
+        signals = strategy.generate_signals("TEST", price_data, start_date=start)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+        watch_signals = [s for s in signals if s.signal_type == SignalType.WATCH
+                         and s.signal_name == 'Golden Cross']
+
+        # call 50 (pre-history) recorded last_buy_date; call 58 is within cooldown → WATCH
+        assert len(buy_signals) == 0
+        assert len(watch_signals) >= 1
+
 
 class TestPerformanceAnalyzer:
     """Test PerformanceAnalyzer"""

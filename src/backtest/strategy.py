@@ -44,6 +44,7 @@ class TechnicalStrategy:
         rsi_min_entry: float = 50.0,
         donchian_period: int = 20,
         min_volume_lots: int = 0,
+        signal_cooldown_days: int = 0,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -66,6 +67,8 @@ class TechnicalStrategy:
         self.donchian_period = donchian_period
         # Filter 6: minimum daily volume in lots (1 lot = 1,000 shares); 0 = disabled
         self.min_volume_lots = min_volume_lots
+        # Filter 7: cooldown — skip BUY if same symbol triggered BUY within N trading days; 0 = disabled
+        self.signal_cooldown_days = signal_cooldown_days
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -220,16 +223,20 @@ class TechnicalStrategy:
             # Sort dates for chronological processing
             sorted_dates = sorted(indicators_data.keys())
 
+            # Filter 7: cooldown tracking — last BUY signal date per symbol
+            # Processed across full history so cooldown works even when start_date restricts output
+            last_buy_date: Dict[str, date] = {}
+
             for i, current_date in enumerate(sorted_dates):
-                # Skip if outside date range
-                if start_date and current_date < start_date:
-                    continue
                 if end_date and current_date > end_date:
                     break
 
                 # Need at least one previous date for signal detection
                 if i == 0:
                     continue
+
+                # Skip if outside date range (still track cooldown state below)
+                in_output_range = (not start_date or current_date >= start_date)
 
                 current_indicators = indicators_data[current_date]
                 previous_indicators = indicators_data[sorted_dates[i-1]]
@@ -295,6 +302,30 @@ class TechnicalStrategy:
                             volume=current_price_data.volume,
                             indicators=current_indicators,
                         )
+
+                    # Filter 7: cooldown — downgrade BUY to WATCH if same symbol triggered
+                    # a BUY within the last signal_cooldown_days trading dates
+                    if signal_type == SignalType.BUY and self.signal_cooldown_days > 0:
+                        prev_buy = last_buy_date.get(symbol)
+                        if prev_buy is not None:
+                            days_since = sum(
+                                1 for d in sorted_dates
+                                if prev_buy < d <= current_date
+                            )
+                            if days_since <= self.signal_cooldown_days:
+                                self.logger.debug(
+                                    f"Signal '{signal_data['name']}' blocked: cooldown "
+                                    f"({days_since} trading days since last BUY on {prev_buy}) → WATCH"
+                                )
+                                signal_type = SignalType.WATCH
+
+                    # Record last BUY date for cooldown tracking (regardless of output range)
+                    if signal_type == SignalType.BUY:
+                        last_buy_date[symbol] = current_date
+
+                    # Only append to output within the requested date range
+                    if not in_output_range:
+                        continue
 
                     trading_signal = TradingSignal(
                         symbol=symbol,

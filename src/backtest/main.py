@@ -45,6 +45,7 @@ class BacktestRunner:
             rsi_overbought_threshold=cfg.rsi_overbought_threshold,
             donchian_period=cfg.donchian_period,
             min_volume_lots=cfg.min_volume_lots,
+            signal_cooldown_days=cfg.signal_cooldown_days,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

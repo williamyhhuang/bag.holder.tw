@@ -115,6 +115,7 @@ class SignalsScanner:
             volume_confirmation_multiplier=cfg.volume_confirmation_multiplier,
             rsi_min_entry=cfg.rsi_min_entry,
             donchian_period=cfg.donchian_period,
+            signal_cooldown_days=cfg.signal_cooldown_days,
         )
         self.cfg = cfg
 

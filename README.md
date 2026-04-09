@@ -212,6 +212,20 @@ BACKTEST_SECTOR_TREND_THRESHOLD=0.5        # 強勢族群門檻（預設 50%）
 
 若希望停用族群過濾，設定 `BACKTEST_ENABLE_SECTOR_TREND_FILTER=false`。
 
+### 買入冷卻期（Signal Cooldown）
+
+同一支股票在最近 N 個交易日內已觸發過買入訊號時，後續的買入訊號會自動降級為 WATCH，避免同一波上漲中反覆進場。
+
+**設定方式（`.env`）：**
+```
+BACKTEST_SIGNAL_COOLDOWN_DAYS=10   # 冷卻期交易日數（0 = 停用，預設 10）
+```
+
+- **預設值 10**：約 2 個交易週
+- **停用**：設定 `BACKTEST_SIGNAL_COOLDOWN_DAYS=0`
+- **適用範圍**：策略掃描（`signals`）與回測（`backtest`）皆有效
+- **歷史感知**：Scanner 即使只看今日訊號，冷卻期也會回溯歷史資料確認先前是否已觸發
+
 ### 回測分析 (backtest)
 完整的策略回測系統，驗證交易策略績效。
 
@@ -418,6 +432,11 @@ docker compose up -d
   - **WEAK**（市場環境過濾觸發）：暫停所有買進
 - 📊 `BacktestEngine` 新增 `get_market_regime()`、`benchmark_rsi` 儲存、`strong/neutral_regime_signals` 路由設定
 - ✅ **新增 `TestMarketRegime` 單元測試**（5 tests）：覆蓋 WEAK/STRONG/NEUTRAL 判斷與訊號封鎖邏輯
+
+### v3.1.0 - 2026-04-10
+- 🆕 **新增買入冷卻期（Signal Cooldown）**：同一支股票在 `BACKTEST_SIGNAL_COOLDOWN_DAYS` 個交易日內重複出現買入訊號時，自動降級為 WATCH，避免同一波上漲中反覆進場（預設 10 日）
+- 📋 **新增 `docs/reduce_trade_frequency.md`**：記錄 10 種降低交易頻率的方法及建議回測驗證順序
+- ✅ **新增 5 個單元測試**：覆蓋冷卻期啟用/停用、窗口內/外訊號、跨 start_date 歷史追蹤
 
 ### v3.0.0 - 2026-04-08
 - 🔄 **P1：恢復 Golden Cross + MACD Golden Cross**：過濾器診斷顯示停用這兩個訊號讓報酬率 -5.90%，儘管勝率低（22-32%），其進場時機對組合有正向錨定效果

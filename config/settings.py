@@ -457,6 +457,16 @@ class BacktestSettings(BaseSettings):
         description="族群強勢門檻（0.5 = 族群內 50% 以上股票在 MA20 上方視為強勢）",
     )
 
+    # ── 同股票買入冷卻期 ──────────────────────────────────────────────
+    # 同一支股票在最近 signal_cooldown_days 個交易日內已觸發過買入訊號，
+    # 就自動跳過（降級為 WATCH），避免同一波上漲中反覆進場。
+    # 0 = 停用；建議值 10（約 2 個交易週）
+    signal_cooldown_days: int = Field(
+        default=10,
+        env="BACKTEST_SIGNAL_COOLDOWN_DAYS",
+        description="同股票買入冷卻期（交易日數；0 = 停用）",
+    )
+
     # ── 動能排名過濾 ─────────────────────────────────────────────────
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
     # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break
