@@ -2,7 +2,9 @@
 CLI entry point for today's trading signals
 """
 import argparse
+import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -12,6 +14,26 @@ from src.telegram.simple_notifier import TelegramNotifier
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+SIGNALS_LOG_DIR = PROJECT_ROOT / "data" / "signals_log"
+
+
+def save_signals_history(result: dict) -> Path:
+    """將訊號結果存成 JSON，路徑：data/signals_log/YYYYMMDD_HHMMSS.json"""
+    SIGNALS_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filepath = SIGNALS_LOG_DIR / f"signals_{timestamp}.json"
+
+    # date 物件需轉為字串才能 JSON 序列化
+    payload = dict(result)
+    if hasattr(payload.get("target_date"), "isoformat"):
+        payload["target_date"] = payload["target_date"].isoformat()
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    return filepath
 
 
 def display_signals(result: dict, show_watch: bool = False):
@@ -170,6 +192,9 @@ def run_signals(args):
         scanner = SignalsScanner()
         result = scanner.scan_today()
         display_signals(result, show_watch=getattr(args, "watch", False))
+
+        saved_path = save_signals_history(result)
+        print(f"📁 訊號記錄已儲存：{saved_path.relative_to(PROJECT_ROOT)}")
 
         if getattr(args, "send_telegram", False):
             notifier = TelegramNotifier()

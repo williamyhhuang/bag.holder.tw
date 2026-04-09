@@ -1,9 +1,13 @@
 """
 Unit tests for src/scanner/signals_scanner.py
 """
+import json
 import sys
 import os
+import tempfile
 from datetime import date
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -151,3 +155,63 @@ class TestVolumeFilter:
         volume_on_date = {"5566": 1_000_000}
         symbol = "5566"
         assert volume_on_date.get(symbol, 0) >= MIN_VOLUME_SHARES
+
+
+class TestSaveSignalsHistory:
+    """save_signals_history 歷史記錄儲存"""
+
+    def _make_result(self, target_date=date(2026, 4, 9)):
+        return {
+            "target_date": target_date,
+            "total_scanned": 1950,
+            "buy": [{"symbol": "2330.TW", "name": "台積電", "signal": "Donchian Breakout",
+                     "price": 1955.0, "rsi": 72.1, "sector": "半導體業"}],
+            "sell": [],
+            "watch": [],
+            "sector_summary": [],
+        }
+
+    def test_file_created(self):
+        """執行後應建立 JSON 檔案"""
+        from src.scanner.signals_main import save_signals_history
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+                filepath = save_signals_history(self._make_result())
+            assert filepath.exists()
+            assert filepath.suffix == ".json"
+
+    def test_json_content_correct(self):
+        """JSON 內容應包含 target_date、buy、sell"""
+        from src.scanner.signals_main import save_signals_history
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+                filepath = save_signals_history(self._make_result())
+            with open(filepath, encoding="utf-8") as f:
+                data = json.load(f)
+        assert data["target_date"] == "2026-04-09"
+        assert data["total_scanned"] == 1950
+        assert len(data["buy"]) == 1
+        assert data["buy"][0]["symbol"] == "2330.TW"
+
+    def test_date_serialized_as_string(self):
+        """date 物件應序列化為 ISO 格式字串"""
+        from src.scanner.signals_main import save_signals_history
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+                filepath = save_signals_history(self._make_result())
+            with open(filepath, encoding="utf-8") as f:
+                data = json.load(f)
+        assert isinstance(data["target_date"], str)
+        assert data["target_date"] == "2026-04-09"
+
+    def test_filename_contains_timestamp(self):
+        """檔名應包含 signals_ 前綴與時間戳"""
+        from src.scanner.signals_main import save_signals_history
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+                filepath = save_signals_history(self._make_result())
+            assert filepath.name.startswith("signals_")

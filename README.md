@@ -169,6 +169,9 @@ python main.py signals --send-telegram
 4. RSI ≥ 50（具備上漲動能）
 5. 近 20 日動能排名前 30（避免動能衰退的假突破）
 
+**訊號歷史記錄：**
+每次執行 `python main.py signals` 會自動將結果存為 JSON 至 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比較。
+
 **賣出警示訊號（持有中請注意）：**
 - MACD Death Cross（最嚴重）
 - Death Cross（MA5 跌破 MA20）
@@ -418,6 +421,11 @@ docker compose up -d
 - 📈 **回測結果**（585 天）：總報酬 **51.73%**（超越 TAIEX 49.45%）、年化 28%+、夏普 **1.68**、最大回撤 **7.73%**
 - 🔬 以下方向實測無效（恢復原設定）：停用 Golden Cross、NEUTRAL 開放 Donchian、縮 BB 倉位增趨勢倍率、移除停利限制
 - ✅ 更新單元測試與 diagnose_filters.py 的生產配置（87 tests pass）
+
+### v3.4.0 - 2026-04-10
+- 📁 **signals 歷史記錄自動儲存**：每次執行 `python main.py signals` 自動將結果（買入、賣出、族群摘要）存為 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比對
+- 🐛 **修正 TEST_TW.csv 汙染 latest date 偵測的 bug**：測試遺留的 `data/stocks/TEST_TW.csv` 含有未來日期 timestamp，導致 scanner 誤判最新交易日，造成無訊號輸出；已刪除該檔案
+- ✅ 新增 `TestSaveSignalsHistory` 單元測試（25 tests pass）
 
 ### v3.3.0 - 2026-04-09
 - 🎯 **趨勢部位停損從 10% 擴至 15%**：給 Donchian Breakout / MACD Golden Cross 更大的空間讓 8% trailing stop 發揮，避免過早被打出
