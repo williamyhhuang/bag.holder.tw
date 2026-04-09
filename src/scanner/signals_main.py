@@ -77,8 +77,11 @@ def display_signals(result: dict, show_watch: bool = False):
     print(f"{'='*60}\n")
 
 
-def format_for_telegram(result: dict) -> str:
-    """格式化為 Telegram 訊息"""
+TELEGRAM_MAX_LENGTH = 4096
+
+
+def format_for_telegram(result: dict) -> list[str]:
+    """格式化為 Telegram 訊息，超過 4096 字元時自動切割為多則"""
     target_date = result["target_date"]
     buy_list = result["buy"]
     sell_list = result["sell"]
@@ -87,7 +90,7 @@ def format_for_telegram(result: dict) -> str:
 
     if buy_list:
         lines.append(f"✅ *建議買入* ({len(buy_list)} 支)")
-        for s in buy_list[:10]:
+        for s in buy_list:
             name = s["name"] or ""
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
             lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}")
@@ -95,7 +98,7 @@ def format_for_telegram(result: dict) -> str:
 
     if sell_list:
         lines.append(f"⚠️ *賣出警示* ({len(sell_list)} 支)")
-        for s in sell_list[:10]:
+        for s in sell_list:
             name = s["name"] or ""
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
             lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}")
@@ -103,7 +106,32 @@ def format_for_telegram(result: dict) -> str:
     if not buy_list and not sell_list:
         lines.append("今日無買賣訊號")
 
-    return "\n".join(lines)
+    return _split_into_chunks("\n".join(lines))
+
+
+def _split_into_chunks(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]:
+    """將長文字按行切割為不超過 max_length 的多則訊息"""
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    current_lines = []
+    current_len = 0
+
+    for line in text.split("\n"):
+        # +1 for the newline character
+        needed = len(line) + 1
+        if current_lines and current_len + needed > max_length:
+            chunks.append("\n".join(current_lines))
+            current_lines = []
+            current_len = 0
+        current_lines.append(line)
+        current_len += needed
+
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+
+    return chunks
 
 
 def run_signals(args):
@@ -115,10 +143,11 @@ def run_signals(args):
 
         if getattr(args, "send_telegram", False):
             notifier = TelegramNotifier()
-            msg = format_for_telegram(result)
-            ok = notifier.send_message(msg)
+            chunks = format_for_telegram(result)
+            ok = all(notifier.send_message(chunk) for chunk in chunks)
             if ok:
-                print("Telegram 訊息發送成功")
+                sent = f"（共 {len(chunks)} 則）" if len(chunks) > 1 else ""
+                print(f"Telegram 訊息發送成功{sent}")
             else:
                 print("Telegram 發送失敗")
 
