@@ -85,7 +85,8 @@ class BacktestRunner:
         self,
         start_date: date = None,
         end_date: date = None,
-        initial_capital: Decimal = Decimal('1000000')
+        initial_capital: Decimal = Decimal('1000000'),
+        skip_download: bool = False,
     ):
         """
         Run complete backtesting process
@@ -123,7 +124,7 @@ class BacktestRunner:
 
                 # If local data doesn't cover the required period, download history
                 coverage = self._coverage_ratio(stock_data, needed_start, end_date)
-                if coverage < 0.1:  # < 10 % of symbols have enough history
+                if coverage < 0.1 and not skip_download:  # < 10 % of symbols have enough history
                     self._download_history(stocks_dir, needed_start, end_date)
                     # Reload after download
                     stock_data = self.data_source.load_from_stocks_dir(
@@ -133,7 +134,17 @@ class BacktestRunner:
                     )
                     if not stock_data:
                         raise Exception("No stock data after historical download")
+                elif coverage < 0.1 and skip_download:
+                    self.logger.warning(
+                        f"Local data coverage is low ({coverage:.0%}) but --skip-download is set. "
+                        "Proceeding with available local data."
+                    )
             else:
+                if skip_download:
+                    raise Exception(
+                        f"Local data directory '{stocks_dir}' is empty or missing, "
+                        "and --skip-download is set. Cannot proceed without data."
+                    )
                 self.logger.info("Local data not found – fetching from yfinance...")
                 stock_symbols = self.data_source.get_taiwan_stock_list()
                 stock_data = self.data_source.fetch_multiple_stocks(

@@ -218,6 +218,9 @@ BACKTEST_SECTOR_TREND_THRESHOLD=0.5        # 強勢族群門檻（預設 50%）
 ```bash
 # 執行回測
 python main.py backtest
+
+# 略過下載，直接使用本地資料（加速重跑回測）
+python main.py backtest --skip-download
 ```
 
 **回測功能:**
@@ -343,6 +346,9 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v4.1.0 - 2026-04-09
+- ⚡ **`backtest` 新增 `--skip-download` 參數**：略過自動下載資料，直接使用本地 `data/stocks/` 資料，加速重跑回測
 
 ### v4.0.0 - 2026-04-09
 - 🏭 **新增族群趨勢過濾器**：`signals` 指令新增第 6 道進場過濾，只保留強勢族群的買入訊號

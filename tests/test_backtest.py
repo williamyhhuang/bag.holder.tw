@@ -1998,5 +1998,129 @@ class TestP3BSignalBasedExit:
         assert len(rsi_loss) >= 1
 
 
+class TestBacktestRunnerSkipDownload:
+    """Test BacktestRunner skip_download behaviour"""
+
+    def test_skip_download_avoids_download_when_low_coverage(self):
+        """_download_history should NOT be called when skip_download=True even if coverage is low."""
+        from src.backtest.main import BacktestRunner
+
+        runner = BacktestRunner()
+
+        stock_records = [
+            StockData(
+                symbol="2330",
+                date=date(2024, 9, 1),
+                open_price=Decimal('500'),
+                high_price=Decimal('510'),
+                low_price=Decimal('495'),
+                close_price=Decimal('505'),
+                volume=1_000_000,
+            )
+        ]
+        stock_data = {"2330": stock_records}
+
+        with (
+            patch.object(runner.data_source, 'load_from_stocks_dir', return_value=stock_data),
+            patch('os.path.isdir', return_value=True),
+            patch('os.listdir', return_value=['2330.csv']),
+            patch.object(runner, '_coverage_ratio', return_value=0.0),  # force low coverage
+            patch.object(runner, '_download_history') as mock_dl,
+            patch.object(runner.strategy, 'generate_signals_for_multiple_stocks', return_value=[]),
+            patch.object(runner.strategy, 'get_signal_summary', return_value={}),
+            patch.object(runner.strategy, 'build_momentum_rankings', return_value={}),
+            patch.object(runner.strategy, 'build_sector_whitelist', return_value={}),
+            patch.object(runner.engine, 'run_backtest', return_value=Mock(
+                total_return_pct=Decimal('0'),
+                win_rate=Decimal('0'),
+                max_drawdown=Decimal('0'),
+                sharpe_ratio=Decimal('0'),
+                total_trades=0,
+                winning_trades=0,
+                losing_trades=0,
+                initial_capital=Decimal('1000000'),
+                final_capital=Decimal('1000000'),
+            )),
+            patch.object(runner.reporter, 'export_all_results', return_value={}),
+            patch.object(runner.data_source, 'get_market_index_data', return_value=[]),
+        ):
+            import asyncio
+            asyncio.run(runner.run_full_backtest(
+                start_date=date(2024, 9, 1),
+                end_date=date(2024, 9, 30),
+                skip_download=True,
+            ))
+            mock_dl.assert_not_called()
+
+    def test_no_skip_download_triggers_download_when_low_coverage(self):
+        """_download_history SHOULD be called when coverage is low and skip_download=False."""
+        from src.backtest.main import BacktestRunner
+
+        runner = BacktestRunner()
+
+        stock_records = [
+            StockData(
+                symbol="2330",
+                date=date(2024, 9, 1),
+                open_price=Decimal('500'),
+                high_price=Decimal('510'),
+                low_price=Decimal('495'),
+                close_price=Decimal('505'),
+                volume=1_000_000,
+            )
+        ]
+        stock_data = {"2330": stock_records}
+
+        with (
+            patch.object(runner.data_source, 'load_from_stocks_dir', return_value=stock_data),
+            patch('os.path.isdir', return_value=True),
+            patch('os.listdir', return_value=['2330.csv']),
+            patch.object(runner, '_coverage_ratio', return_value=0.0),
+            patch.object(runner, '_download_history') as mock_dl,
+            patch.object(runner.strategy, 'generate_signals_for_multiple_stocks', return_value=[]),
+            patch.object(runner.strategy, 'get_signal_summary', return_value={}),
+            patch.object(runner.strategy, 'build_momentum_rankings', return_value={}),
+            patch.object(runner.strategy, 'build_sector_whitelist', return_value={}),
+            patch.object(runner.engine, 'run_backtest', return_value=Mock(
+                total_return_pct=Decimal('0'),
+                win_rate=Decimal('0'),
+                max_drawdown=Decimal('0'),
+                sharpe_ratio=Decimal('0'),
+                total_trades=0,
+                winning_trades=0,
+                losing_trades=0,
+                initial_capital=Decimal('1000000'),
+                final_capital=Decimal('1000000'),
+            )),
+            patch.object(runner.reporter, 'export_all_results', return_value={}),
+            patch.object(runner.data_source, 'get_market_index_data', return_value=[]),
+        ):
+            import asyncio
+            asyncio.run(runner.run_full_backtest(
+                start_date=date(2024, 9, 1),
+                end_date=date(2024, 9, 30),
+                skip_download=False,
+            ))
+            mock_dl.assert_called_once()
+
+    def test_skip_download_raises_when_no_local_data(self):
+        """Should raise an error if skip_download=True and no local data directory exists."""
+        from src.backtest.main import BacktestRunner
+
+        runner = BacktestRunner()
+
+        with (
+            patch('os.path.isdir', return_value=False),
+            patch('os.listdir', return_value=[]),
+        ):
+            import asyncio
+            with pytest.raises(Exception, match="--skip-download"):
+                asyncio.run(runner.run_full_backtest(
+                    start_date=date(2024, 9, 1),
+                    end_date=date(2024, 9, 30),
+                    skip_download=True,
+                ))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

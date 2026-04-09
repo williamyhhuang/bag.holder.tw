@@ -5,6 +5,7 @@ Simple script to run backtest demo
 import sys
 import os
 import asyncio
+import argparse
 from decimal import Decimal
 
 # Add src directory to path
@@ -22,7 +23,7 @@ except ImportError as e:
 logger = get_logger(__name__)
 
 
-async def run_demo_backtest():
+async def run_demo_backtest(skip_download: bool = False):
     """Run a demonstration backtest"""
     print("🚀 Starting Taiwan Stock Backtesting Demo")
     print("=" * 50)
@@ -33,7 +34,8 @@ async def run_demo_backtest():
         # Dates come from config (BACKTEST_START_DATE / BACKTEST_END_DATE in .env)
         # run_full_backtest() resolves None → config value → fallback
         result, files = await runner.run_full_backtest(
-            initial_capital=Decimal('1000000')
+            initial_capital=Decimal('1000000'),
+            skip_download=skip_download,
         )
 
         # Resolve the actual dates used (for display)
@@ -77,12 +79,16 @@ async def run_demo_backtest():
 
 def main():
     """Main function"""
+    parser = argparse.ArgumentParser(description='Taiwan Stock Backtest')
+    parser.add_argument('--skip-download', action='store_true', help='略過下載資料')
+    args = parser.parse_args()
+
     print("Taiwan Stock Trading Strategy Backtest System")
     print("Powered by YFinance + Technical Analysis")
     print()
 
     # Run the backtest
-    success = asyncio.run(run_demo_backtest())
+    success = asyncio.run(run_demo_backtest(skip_download=args.skip_download))
 
     if success:
         print("\n🎉 Demo completed! Check the generated reports for detailed analysis.")

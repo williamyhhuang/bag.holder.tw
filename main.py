@@ -74,6 +74,8 @@ def run_backtest(args):
         cmd.extend(['--period', args.period])
     if hasattr(args, 'strategy') and args.strategy:
         cmd.extend(['--strategy', args.strategy])
+    if getattr(args, 'skip_download', False):
+        cmd.append('--skip-download')
 
     try:
         result = subprocess.run(cmd, cwd=project_root, check=True)
@@ -119,6 +121,7 @@ def create_parser():
 
   # 執行回測
   python main.py backtest
+  python main.py backtest --skip-download  # 略過下載，直接用本地資料
 
   # 期貨分析
   python main.py futures --send-telegram
@@ -179,6 +182,11 @@ def create_parser():
 
     # Backtest command
     backtest_parser = subparsers.add_parser('backtest', help='執行回測分析')
+    backtest_parser.add_argument(
+        '--skip-download',
+        action='store_true',
+        help='略過下載資料，直接使用本地資料'
+    )
 
     # Futures command
     futures_parser = subparsers.add_parser('futures', help='期貨分析')
