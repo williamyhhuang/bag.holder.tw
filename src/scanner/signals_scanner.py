@@ -29,6 +29,9 @@ logger = get_logger(__name__)
 # P1 策略的賣出訊號名稱（只有這些才是真正的出場訊號）
 P1_SELL_SIGNALS = {"RSI Momentum Loss", "MACD Death Cross", "Death Cross"}
 
+# 流動性過濾門檻：1000 張 × 1000 股/張 = 1,000,000 股
+MIN_VOLUME_SHARES = 1_000_000
+
 
 def _display_symbol(symbol: str) -> str:
     """將內部 symbol 轉成顯示格式（4741O → 4741.TWO，2330 → 2330.TW）"""
@@ -141,7 +144,15 @@ class SignalsScanner:
         )
         stock_data = {s: d for s, d in stock_data.items() if s not in excluded}
 
-        return stock_data, latest
+        # 建立各股票在 target_date 的成交量（股），供流動性過濾使用
+        volume_on_date: Dict[str, int] = {}
+        for symbol, records in stock_data.items():
+            for r in records:
+                if r.date == latest:
+                    volume_on_date[symbol] = r.volume
+                    break
+
+        return stock_data, latest, volume_on_date
 
     def _build_momentum_top_n(
         self,
@@ -184,7 +195,7 @@ class SignalsScanner:
         }
         """
         self.logger.info("載入股票資料...")
-        stock_data, target_date = self._load_stock_data()
+        stock_data, target_date, volume_on_date = self._load_stock_data()
         self.logger.info(f"載入 {len(stock_data)} 支股票，最新交易日 {target_date}")
 
         # 建立動能前 30 名白名單
@@ -206,6 +217,10 @@ class SignalsScanner:
 
         for sig in all_signals:
             if sig.date != target_date:
+                continue
+
+            # 流動性過濾：成交量低於 1000 張略過
+            if volume_on_date.get(sig.symbol, 0) < MIN_VOLUME_SHARES:
                 continue
 
             symbol_display = _display_symbol(sig.symbol)

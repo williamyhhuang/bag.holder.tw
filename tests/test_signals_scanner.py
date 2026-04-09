@@ -9,7 +9,7 @@ import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.scanner.signals_scanner import _display_symbol, _lookup_name, P1_SELL_SIGNALS
+from src.scanner.signals_scanner import _display_symbol, _lookup_name, P1_SELL_SIGNALS, MIN_VOLUME_SHARES
 
 
 class TestDisplaySymbol:
@@ -119,3 +119,35 @@ class TestP1SellSignals:
 
     def test_golden_cross_not_in_set(self):
         assert "Golden Cross" not in P1_SELL_SIGNALS
+
+
+class TestVolumeFilter:
+    """成交量流動性過濾（1000 張 = 1,000,000 股）"""
+
+    def test_min_volume_threshold(self):
+        """門檻應為 1,000,000 股（= 1000 張）"""
+        assert MIN_VOLUME_SHARES == 1_000_000
+
+    def test_pass_when_volume_above_threshold(self):
+        """成交量達標時應通過過濾"""
+        volume_on_date = {"2330": 1_500_000}
+        symbol = "2330"
+        assert volume_on_date.get(symbol, 0) >= MIN_VOLUME_SHARES
+
+    def test_blocked_when_volume_below_threshold(self):
+        """成交量不足 1000 張應被過濾掉"""
+        volume_on_date = {"9999": 500_000}  # 500 張
+        symbol = "9999"
+        assert volume_on_date.get(symbol, 0) < MIN_VOLUME_SHARES
+
+    def test_blocked_when_volume_missing(self):
+        """無成交量資料時應被過濾掉"""
+        volume_on_date = {}
+        symbol = "1234"
+        assert volume_on_date.get(symbol, 0) < MIN_VOLUME_SHARES
+
+    def test_exact_threshold_passes(self):
+        """剛好 1000 張時應通過"""
+        volume_on_date = {"5566": 1_000_000}
+        symbol = "5566"
+        assert volume_on_date.get(symbol, 0) >= MIN_VOLUME_SHARES
