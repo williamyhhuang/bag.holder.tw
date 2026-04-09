@@ -18,6 +18,7 @@ from src.backtest import (
     PerformanceAnalyzer,
     BacktestReporter
 )
+from src.scanner.sector_trend import SectorTrendAnalyzer
 from src.data_downloader.yfinance_client import YFinanceClient
 from src.utils.logger import get_logger
 from config.settings import settings
@@ -261,6 +262,27 @@ class BacktestRunner:
                 )
             else:
                 self.logger.info("Step 5b: Momentum ranking disabled (momentum_top_n=0)")
+
+            # Step 5c: Build sector-trend whitelist (族群強勢過濾)
+            if cfg.enable_sector_trend_filter:
+                self.logger.info(
+                    f"Step 5c: Building sector-trend whitelist "
+                    f"(threshold={cfg.sector_trend_threshold:.0%})..."
+                )
+                sector_analyzer = SectorTrendAnalyzer()
+                sector_whitelist = self.strategy.build_sector_whitelist(
+                    stock_data_dict=stock_data,
+                    sector_analyzer=sector_analyzer,
+                    threshold=cfg.sector_trend_threshold,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                self.engine.set_sector_whitelist(sector_whitelist)
+                self.logger.info(
+                    f"Sector whitelist set for {len(sector_whitelist)} trading dates"
+                )
+            else:
+                self.logger.info("Step 5c: Sector trend filter disabled")
 
             # Step 6: Run backtest (pass benchmark for enhanced market regime filter)
             self.logger.info("Step 6: Running backtest...")

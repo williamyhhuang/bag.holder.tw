@@ -47,6 +47,7 @@ class BacktestEngine:
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
+        self.sector_whitelist: Dict[date, Set[str]] = {}    # date -> set of symbols in strong sectors
         # P3-C: regime-based signal routing
         # None = no restriction (all signals allowed in that regime)
         self.market_regime_strong_rsi = market_regime_strong_rsi
@@ -512,6 +513,14 @@ class BacktestEngine:
         """
         self.momentum_whitelist = whitelist
 
+    def set_sector_whitelist(self, whitelist: Dict[date, Set[str]]):
+        """Set the daily sector-trend whitelist for BUY signal filtering.
+
+        Only symbols that belong to a strong sector on a given date will be
+        allowed to generate BUY orders.  Pass an empty dict to disable.
+        """
+        self.sector_whitelist = whitelist
+
     def _get_momentum_allowed(self, target_date: date) -> Optional[Set[str]]:
         """Return the allowed symbol set for the most recent whitelist date."""
         if not self.momentum_whitelist:
@@ -520,6 +529,15 @@ class BacktestEngine:
         if not available:
             return None
         return self.momentum_whitelist[max(available)]
+
+    def _get_sector_allowed(self, target_date: date) -> Optional[Set[str]]:
+        """Return the sector-allowed symbol set for the most recent whitelist date."""
+        if not self.sector_whitelist:
+            return None
+        available = [d for d in self.sector_whitelist if d <= target_date]
+        if not available:
+            return None
+        return self.sector_whitelist[max(available)]
 
     def process_signals(self, signals: List[TradingSignal], market_bullish: bool = True):
         """Process a list of trading signals for the current date.
@@ -535,6 +553,7 @@ class BacktestEngine:
           WEAK (market_bullish=False): no buys
         """
         momentum_allowed = self._get_momentum_allowed(self.current_date)
+        sector_allowed = self._get_sector_allowed(self.current_date)
         regime = self.get_market_regime(self.current_date) if market_bullish else "WEAK"
 
         for signal in signals:
@@ -565,6 +584,11 @@ class BacktestEngine:
                 if momentum_allowed is not None and signal.symbol not in momentum_allowed:
                     self.logger.debug(
                         f"Skipping BUY {signal.symbol}: not in top-N momentum"
+                    )
+                    continue
+                if sector_allowed is not None and signal.symbol not in sector_allowed:
+                    self.logger.debug(
+                        f"Skipping BUY {signal.symbol}: sector not strong enough"
                     )
                     continue
                 # P5: apply trend signal multiplier in STRONG regime

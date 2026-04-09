@@ -612,3 +612,80 @@ class TechnicalStrategy:
             f"(lookback={lookback_days}d, top_n={top_n})"
         )
         return whitelist
+
+    def build_sector_whitelist(
+        self,
+        stock_data_dict: Dict[str, List[StockData]],
+        sector_analyzer,  # SectorTrendAnalyzer（避免循環 import 用 duck-typing）
+        threshold: float = 0.5,
+        ma_period: int = 20,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[date, Set[str]]:
+        """Build a daily sector-trend whitelist from historical price data.
+
+        For each trading date, computes the sector strength (fraction of stocks
+        in the sector whose close > MA{ma_period}).  Symbols that belong to a
+        strong sector (strength >= threshold) are included in the whitelist for
+        that date.
+
+        Args:
+            stock_data_dict: Symbol → list of StockData (sorted by date ascending).
+            sector_analyzer:  SectorTrendAnalyzer instance (duck-typed to avoid
+                              circular import).
+            threshold:        Minimum fraction of stocks above MA{ma_period} for a
+                              sector to be considered strong (default 0.5 = 50%).
+            ma_period:        Period for the moving average used in sector strength
+                              calculation (default 20).
+            start_date:       First date to include in the output dict.
+            end_date:         Last date to include in the output dict.
+
+        Returns:
+            Dict mapping each trading date to a set of symbol strings that are in
+            strong sectors.  An empty dict means the filter is disabled.
+        """
+        # Pre-build per-symbol price lookup and sector assignment
+        price_lookup: Dict[str, Dict[date, Decimal]] = {}
+        symbol_sector: Dict[str, str] = {}
+        for symbol, records in stock_data_dict.items():
+            price_lookup[symbol] = {r.date: r.close_price for r in records}
+            symbol_sector[symbol] = sector_analyzer.get_stock_sector(symbol)
+
+        # Collect all trading dates in range
+        all_dates: Set[date] = set()
+        for records in stock_data_dict.values():
+            for r in records:
+                all_dates.add(r.date)
+        if start_date:
+            all_dates = {d for d in all_dates if d >= start_date}
+        if end_date:
+            all_dates = {d for d in all_dates if d <= end_date}
+
+        whitelist: Dict[date, Set[str]] = {}
+
+        for target_date in sorted(all_dates):
+            # Compute sector strength for this date
+            sector_strength = sector_analyzer.compute_sector_strength(
+                stock_data_dict, target_date, ma_period=ma_period
+            )
+            strong_sectors = sector_analyzer.get_strong_sectors(sector_strength, threshold)
+
+            # Collect all symbols in strong sectors
+            allowed: Set[str] = set()
+            for symbol in stock_data_dict:
+                sector = symbol_sector[symbol]
+                if sector in strong_sectors:
+                    allowed.add(symbol)
+
+            whitelist[target_date] = allowed
+
+        strong_sector_dates = sum(
+            1 for d, allowed in whitelist.items()
+            if len(allowed) < len(stock_data_dict)
+        )
+        self.logger.info(
+            f"Built sector whitelist for {len(whitelist)} dates "
+            f"(threshold={threshold:.0%}, ma_period={ma_period}); "
+            f"filter active on {strong_sector_dates} dates"
+        )
+        return whitelist
