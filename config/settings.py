@@ -78,7 +78,7 @@ class AppSettings(BaseSettings):
     name: str = Field(default="tw-stock-monitor", env="APP_NAME")
     version: str = Field(default="1.0.0", env="APP_VERSION")
     environment: str = Field(default="development", env="APP_ENV")
-    debug: bool = Field(default=False, env="APP_DEBUG")
+    debug: bool = Field(default=True, env="APP_DEBUG")
     host: str = Field(default="0.0.0.0", env="APP_HOST")
     port: int = Field(default=8000, env="APP_PORT")
 
@@ -153,7 +153,7 @@ class SecuritySettings(BaseSettings):
     """Security configuration"""
     secret_key: str = Field(default="dummy_secret_key", env="SECRET_KEY")
     allowed_hosts: List[str] = Field(default=["localhost", "127.0.0.1"], env="ALLOWED_HOSTS")
-    cors_origins: List[str] = Field(default=[], env="CORS_ORIGINS")
+    cors_origins: List[str] = Field(default=["http://localhost:3000", "http://localhost:8080"], env="CORS_ORIGINS")
 
     @validator('allowed_hosts', 'cors_origins', pre=True)
     def split_hosts(cls, v):
@@ -185,6 +185,13 @@ class PerformanceSettings(BaseSettings):
     memory_limit_mb: int = Field(default=2048, env="MEMORY_LIMIT_MB")
     cpu_limit: float = Field(default=2.0, env="CPU_LIMIT")
     batch_processing_delay: float = Field(default=1.0, env="BATCH_PROCESSING_DELAY")
+
+class DownloadSettings(BaseSettings):
+    """Data download configuration"""
+    batch_size: int = Field(default=200, env="DOWNLOAD_BATCH_SIZE")
+
+    class Config:
+        env_prefix = "DOWNLOAD_"
 
 class DataSettings(BaseSettings):
     """Data storage configuration"""
@@ -259,9 +266,9 @@ class BacktestSettings(BaseSettings):
     )
     # 停損維持 5%
     stop_loss_pct: float = Field(
-        default=0.05,
+        default=0.10,
         env="BACKTEST_STOP_LOSS_PCT",
-        description="停損百分比（0.05 = 5%）",
+        description="停損百分比（0.10 = 10%）",
     )
     # 追蹤停損從 5% 縮至 3%：更早鎖住已實現的利潤
     trailing_stop_pct: float = Field(
@@ -321,7 +328,7 @@ class BacktestSettings(BaseSettings):
     # Filter 6: 最低成交張數門檻（流動性過濾）
     # 1 張 = 1,000 股；設 1000 = 成交量需 >= 1,000,000 股；0 = 停用
     min_volume_lots: int = Field(
-        default=0,
+        default=1000,
         env="BACKTEST_MIN_VOLUME_LOTS",
         description="最低成交張數門檻（1 張=1,000 股；0=停用）",
     )
@@ -462,7 +469,7 @@ class BacktestSettings(BaseSettings):
     # 就自動跳過（降級為 WATCH），避免同一波上漲中反覆進場。
     # 0 = 停用；建議值 10（約 2 個交易週）
     signal_cooldown_days: int = Field(
-        default=10,
+        default=0,
         env="BACKTEST_SIGNAL_COOLDOWN_DAYS",
         description="同股票買入冷卻期（交易日數；0 = 停用）",
     )
@@ -485,7 +492,7 @@ class BacktestSettings(BaseSettings):
     # 格式：YYYY-MM-DD；留空則預設為今天（end_date）或程式預設值（start_date）
     # 欄位名不加 backtest_ 前綴，避免與 env_prefix="BACKTEST_" 疊加成 BACKTEST_BACKTEST_*
     start_date: Optional[date] = Field(
-        default=None,
+        default=date(2024, 9, 1),
         description="回測起始日期（YYYY-MM-DD），留空使用程式預設值",
     )
     end_date: Optional[date] = Field(
@@ -557,6 +564,7 @@ class Settings(BaseSettings):
     futures: FuturesSettings = FuturesSettings()
     performance: PerformanceSettings = PerformanceSettings()
     data: DataSettings = DataSettings()
+    download: DownloadSettings = DownloadSettings()
     strategy: StrategySettings = StrategySettings()
     backtest: BacktestSettings = BacktestSettings()
 

@@ -265,7 +265,7 @@ class YFinanceClient:
         end_date: Optional[datetime] = None,
         markets: List[str] = None,
         limit: Optional[int] = None,
-        batch_size: int = 100,
+        batch_size: Optional[int] = None,
     ) -> int:
         """
         Download data for all listed stocks using batch requests.
@@ -275,7 +275,7 @@ class YFinanceClient:
             end_date: End date for data download
             markets: List of markets to download ("TSE", "OTC")
             limit: Maximum number of stocks to download (for testing)
-            batch_size: Number of symbols per yfinance request (default 100)
+            batch_size: Number of symbols per yfinance request (default: settings.download.batch_size = 200)
 
         Returns:
             Number of stocks successfully downloaded
@@ -303,6 +303,8 @@ class YFinanceClient:
             start_date = self.get_last_trading_date()
         if end_date is None:
             end_date = datetime.now()
+        if batch_size is None:
+            batch_size = settings.download.batch_size
 
         total = len(all_symbols)
         self.logger.info(f"Starting batch download for {total} stocks (batch_size={batch_size})")

@@ -207,21 +207,21 @@ python main.py scan --send-telegram
 - **過濾邏輯**：弱勢族群的買入訊號自動移入觀察清單，標示「族群偏弱（XXX）」
 - **輸出**：買入清單新增族群欄位，底部顯示各族群強弱摘要
 
-**設定方式（`.env`）：**
-```
-BACKTEST_ENABLE_SECTOR_TREND_FILTER=true   # 啟用族群過濾（預設 true）
-BACKTEST_SECTOR_TREND_THRESHOLD=0.5        # 強勢族群門檻（預設 50%）
+**設定方式（`config/settings.py` → `BacktestSettings`）：**
+```python
+enable_sector_trend_filter: bool = True   # 啟用族群過濾
+sector_trend_threshold: float = 0.5       # 強勢族群門檻（50%）
 ```
 
-若希望停用族群過濾，設定 `BACKTEST_ENABLE_SECTOR_TREND_FILTER=false`。
+若希望停用族群過濾，可透過環境變數覆蓋：`BACKTEST_ENABLE_SECTOR_TREND_FILTER=false`。
 
 ### 買入冷卻期（Signal Cooldown）
 
 同一支股票在最近 N 個交易日內已觸發過買入訊號時，後續的買入訊號會自動降級為 WATCH，避免同一波上漲中反覆進場。
 
-**設定方式（`.env`）：**
-```
-BACKTEST_SIGNAL_COOLDOWN_DAYS=10   # 冷卻期交易日數（0 = 停用，預設 10）
+**設定方式（`config/settings.py` → `BacktestSettings`）：**
+```python
+signal_cooldown_days: int = 0   # 冷卻期交易日數（0 = 停用）
 ```
 
 - **預設值 10**：約 2 個交易週
@@ -363,6 +363,11 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v4.2.0 - 2026-04-11
+- ⚡ **下載批次大小從 100 → 200**：`download_all_stocks` 預設 `batch_size` 由 100 提升至 200，減少批次數量加速下載
+- 🗂️ **設定集中管理**：`.env` 僅保留機敏憑證（Fubon API Key/Secret、Telegram Token/Chat ID、Secret Key），所有非機敏參數（策略參數、回測設定、應用程式設定等）改由 `config/settings.py` 管理
+- 🆕 **新增 `DownloadSettings`**：`DOWNLOAD_BATCH_SIZE`（預設 200）可透過環境變數覆蓋
 
 ### v4.1.0 - 2026-04-09
 - ⚡ **`backtest` 新增 `--skip-download` 參數**：略過自動下載資料，直接使用本地 `data/stocks/` 資料，加速重跑回測
