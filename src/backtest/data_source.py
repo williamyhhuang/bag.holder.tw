@@ -291,6 +291,11 @@ class YFinanceDataSource:
             return data
 
         for filepath in csv_files:
+            # Skip test/fixture files that are not real market data
+            filename = os.path.basename(filepath)
+            if filename.upper().startswith('TEST'):
+                self.logger.debug(f"Skipping test file: {filename}")
+                continue
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)

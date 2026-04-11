@@ -349,7 +349,7 @@ class TaiwanFuturesMonitor:
                 ))
 
             # 台指期貨盤中急漲急跌檢測
-            if quote.high_price > 0 and quote.low_price > 0:
+            if quote.high_price is not None and quote.low_price is not None and quote.high_price > 0 and quote.low_price > 0:
                 intraday_range = ((quote.high_price - quote.low_price) / quote.low_price) * 100
                 if intraday_range > Decimal('3.0'):  # 當日振幅超過3%
                     signals.append(FuturesSignal(
