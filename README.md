@@ -518,6 +518,11 @@ docker compose up -d
 - 🔧 三項過濾可透過 `TechnicalStrategy` 建構參數調整（`disabled_signals`、`require_ma60_uptrend`、`require_volume_confirmation`）
 - ✅ 新增 4 個單元測試覆蓋各過濾條件
 
+### v2.2.1 - 2026-04-12
+- 🐛 修正 `load_from_stocks_dir` 讀取 `TEST*.csv` 髒資料，導致 `signals` 最新交易日被拉到非交易日（如周六），產生 0 個買入訊號的問題
+- 🛡️ `_analyze_futures_signals` 修正 `high_price`/`low_price` 為 `None` 時的 `TypeError`
+- 🧪 修正 `test_futures.py` 中對不存在的 `FuturesSignalType` 及已改名欄位的引用
+
 ### v2.2.0 - 2026-04-02
 - 🐛 修正年化報酬率公式運算子優先順序錯誤（`- 1 * 100` → `(- 1) * 100`）
 - 🐛 修正訊號成功率從硬寫 50% 改為依實際交易結果計算，報告中顯示每種訊號的真實勝率與觸發交易次數
