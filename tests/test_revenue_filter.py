@@ -178,3 +178,36 @@ class TestMonthlyRevenueLoader:
         assert "2330" in passing
         assert "6657" in passing
         assert "9999" in failing
+
+
+# ── OTC symbol 正規化（signals_scanner 邏輯） ─────────────────────────────────
+
+class TestOtcSymbolLookup:
+    """驗證 signals_scanner 的 OTC symbol 正規化：4741O → 4741"""
+
+    def _revenue_ok(self, internal_symbol: str, revenue_map: dict, min_revenue: float) -> bool:
+        """複製 signals_scanner 的月營收過濾邏輯"""
+        revenue_key = internal_symbol[:-1] if internal_symbol.endswith('O') else internal_symbol
+        rev = revenue_map.get(revenue_key)
+        return not (rev is None or rev < min_revenue)
+
+    def test_otc_symbol_strips_O(self):
+        revenue_map = {"4741": 200.0}  # API key 無 O 後綴
+        assert self._revenue_ok("4741O", revenue_map, 100.0) is True
+
+    def test_otc_low_revenue_filtered(self):
+        revenue_map = {"4741": 50.0}
+        assert self._revenue_ok("4741O", revenue_map, 100.0) is False
+
+    def test_tse_symbol_unaffected(self):
+        revenue_map = {"2330": 200_000.0}
+        assert self._revenue_ok("2330", revenue_map, 100.0) is True
+
+    def test_missing_from_map_is_filtered(self):
+        """revenue_map 查無資料 → revenue_ok = False（不讓來源不明的股票通過）"""
+        revenue_map = {}
+        assert self._revenue_ok("9999", revenue_map, 100.0) is False
+
+    def test_missing_otc_from_map_is_filtered(self):
+        revenue_map = {}
+        assert self._revenue_ok("4741O", revenue_map, 100.0) is False

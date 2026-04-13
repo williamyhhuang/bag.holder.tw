@@ -283,13 +283,21 @@ class SignalsScanner:
                 )
 
                 # 月營收過濾
+                # OTC 內部 symbol 帶 'O' 後綴（4741O），API key 只有數字（4741）
                 revenue_ok = True
                 if min_revenue > 0 and revenue_map:
-                    rev = revenue_map.get(sig.symbol)
-                    if rev is not None and rev < min_revenue:
+                    revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
+                    rev = revenue_map.get(revenue_key)
+                    if rev is None or rev < min_revenue:
                         revenue_ok = False
-                        entry["reason"] = f"月營收 {rev:.0f}M < {min_revenue:.0f}M"
-                        entry["revenue_million"] = rev
+                        reason = (
+                            f"月營收 {rev:.0f}M < {min_revenue:.0f}M"
+                            if rev is not None
+                            else "月營收資料不足"
+                        )
+                        entry["reason"] = reason
+                        if rev is not None:
+                            entry["revenue_million"] = rev
 
                 if not in_top30:
                     entry["reason"] = "動能排名不在前30"
