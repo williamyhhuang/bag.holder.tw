@@ -223,14 +223,9 @@ sector_trend_threshold: float = 0.5       # 強勢族群門檻（50%）
 - **過濾邏輯**：月營收低於門檻的股票買入訊號自動移入觀察清單，標示「月營收 XXM < 100M」
 - **單位**：百萬元（NTD million）；1 億元 = 100
 
-**設定方式：**
+**設定方式：** 直接編輯 `config/settings.py` 中的 `BacktestSettings`：
 ```python
-# config/settings.py → BacktestSettings
-min_monthly_revenue_million: float = 100.0  # 預設 1 億元；0 = 停用
-
-# 或透過環境變數
-BACKTEST_MIN_MONTHLY_REVENUE_MILLION=200  # 調整為 2 億元
-BACKTEST_MIN_MONTHLY_REVENUE_MILLION=0   # 停用過濾
+min_monthly_revenue_million: float = 100.0  # 1 億元；改為 0 可停用
 ```
 
 若 API 無法連線（非交易時間或網路問題），過濾器自動略過，不影響其他訊號輸出。

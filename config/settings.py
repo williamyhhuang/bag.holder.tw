@@ -466,13 +466,9 @@ class BacktestSettings(BaseSettings):
 
     # ── 月營收門檻 ───────────────────────────────────────────────────
     # 過濾每月營收過低的股票（資料來自 TWSE / TPEX OpenAPI，當日快取）
-    # 單位：百萬元（NTD million）；0 = 停用
+    # 單位：百萬元（NTD million）；0 = 停用；直接在此修改數值即可
     # 1 億元 = 100 百萬元
-    min_monthly_revenue_million: float = Field(
-        default=100.0,
-        env="BACKTEST_MIN_MONTHLY_REVENUE_MILLION",
-        description="最低每月營收門檻（百萬元；0 = 停用；100 = 1億元）",
-    )
+    min_monthly_revenue_million: float = 100.0
 
     # ── 同股票買入冷卻期 ──────────────────────────────────────────────
     # 同一支股票在最近 signal_cooldown_days 個交易日內已觸發過買入訊號，
