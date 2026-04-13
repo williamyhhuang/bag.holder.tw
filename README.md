@@ -196,7 +196,7 @@ python main.py scan --send-telegram
 - **oversold**: 超賣股（RSI < 30、跌幅 > 2%、成交量 > 30萬）
 - **breakout**: 突破股（成交量 > 100萬、收盤 > MA20）
 
-> **signals vs scan 的差異**: `signals` 使用 P1 完整策略（含 6 道進場過濾），輸出可直接參考的進出場建議；`scan` 使用簡單閾值，僅作為觀察清單。
+> **signals vs scan 的差異**: `signals` 使用 P1 完整策略（含 7 道進場過濾），輸出可直接參考的進出場建議；`scan` 使用簡單閾值，僅作為觀察清單。
 
 #### 族群趨勢過濾
 
@@ -214,6 +214,26 @@ sector_trend_threshold: float = 0.5       # 強勢族群門檻（50%）
 ```
 
 若希望停用族群過濾，可透過環境變數覆蓋：`BACKTEST_ENABLE_SECTOR_TREND_FILTER=false`。
+
+#### 月營收過濾
+
+`signals` 指令新增第 7 道進場過濾，自動排除月營收過低的股票：
+
+- **資料來源**：即時從證交所（TSE）/ 櫃買中心（OTC）OpenAPI 取得最新月營收，當日快取至 `data/revenue_cache.json`
+- **過濾邏輯**：月營收低於門檻的股票買入訊號自動移入觀察清單，標示「月營收 XXM < 100M」
+- **單位**：百萬元（NTD million）；1 億元 = 100
+
+**設定方式：**
+```python
+# config/settings.py → BacktestSettings
+min_monthly_revenue_million: float = 100.0  # 預設 1 億元；0 = 停用
+
+# 或透過環境變數
+BACKTEST_MIN_MONTHLY_REVENUE_MILLION=200  # 調整為 2 億元
+BACKTEST_MIN_MONTHLY_REVENUE_MILLION=0   # 停用過濾
+```
+
+若 API 無法連線（非交易時間或網路問題），過濾器自動略過，不影響其他訊號輸出。
 
 ### 買入冷卻期（Signal Cooldown）
 
@@ -455,6 +475,12 @@ docker compose up -d
 - 🔄 **P1：恢復 Golden Cross + MACD Golden Cross**：過濾器診斷顯示停用這兩個訊號讓報酬率 -5.90%，儘管勝率低（22-32%），其進場時機對組合有正向錨定效果
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
 - ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
+
+### v2.11.0 - 2026-04-14
+- 💰 **新增月營收過濾（第 7 道進場過濾）**：`signals` 指令自動排除每月營收低於門檻的股票，預設 1 億元（`BACKTEST_MIN_MONTHLY_REVENUE_MILLION=100`）
+- 🌐 **新增 `src/scanner/revenue_filter.py`**：從 TWSE / TPEX OpenAPI 取得最新月營收，帶當日磁碟快取（`data/revenue_cache.json`），API 失敗時自動降級略過
+- ⚙️ **新增 config 參數 `min_monthly_revenue_million`**：單位百萬元，0 = 停用；透過 env `BACKTEST_MIN_MONTHLY_REVENUE_MILLION` 覆蓋
+- ✅ **新增 `tests/test_revenue_filter.py`**（8 tests）：覆蓋 TSE/OTC 解析、HTML 降級、快取讀寫、過期快取更新、API 失敗容錯
 
 ### v2.10.0 - 2026-04-09
 - 🏷️ **`python main.py scan` 顯示股票名稱**：選股結果除股票代號外，同時顯示中文公司名稱（如「2330.TW 台積電」）

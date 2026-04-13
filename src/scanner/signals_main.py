@@ -112,7 +112,7 @@ def display_signals(result: dict, show_watch: bool = False):
     print(f"\n{'='*60}")
     print("  說明：")
     print("  • 買入訊號需同時通過：MA60上方、均線排列(MA5>MA10>MA20)、")
-    print("    RSI≥50、動能排名前30、成交量≥1000張、族群強勢（P1生產策略）")
+    print("    RSI≥50、動能排名前30、成交量≥1000張、族群強勢、月營收≥門檻（P1生產策略）")
     print("  • 賣出警示為參考，不代表強制出場")
     print(f"{'='*60}\n")
 

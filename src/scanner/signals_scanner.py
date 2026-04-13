@@ -21,6 +21,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.backtest import YFinanceDataSource, TechnicalStrategy
 from src.backtest.models import StockData, TradingSignal, SignalType, TechnicalIndicators
 from src.scanner.sector_trend import SectorTrendAnalyzer
+from src.scanner.revenue_filter import MonthlyRevenueLoader
 from src.utils.logger import get_logger
 from src.utils.stock_name_mapper import get_stock_names
 from config.settings import settings
@@ -201,6 +202,16 @@ class SignalsScanner:
         stock_data, target_date, volume_on_date = self._load_stock_data()
         self.logger.info(f"載入 {len(stock_data)} 支股票，最新交易日 {target_date}")
 
+        # 載入月營收資料（若 min_monthly_revenue_million > 0 才啟用）
+        revenue_map: Dict[str, float] = {}
+        min_revenue = self.cfg.min_monthly_revenue_million
+        if min_revenue > 0:
+            revenue_map = MonthlyRevenueLoader().load()
+            self.logger.info(
+                f"月營收過濾啟用：門檻 {min_revenue:.0f} 百萬元（{min_revenue/100:.1f}億），"
+                f"已載入 {len(revenue_map)} 支"
+            )
+
         # 建立動能前 30 名白名單
         top30 = self._build_momentum_top_n(stock_data, target_date)
         self.logger.info(f"動能前30名: {len(top30) if top30 else '停用'}")
@@ -271,11 +282,22 @@ class SignalsScanner:
                     strong_sectors is None or stock_sector in strong_sectors
                 )
 
+                # 月營收過濾
+                revenue_ok = True
+                if min_revenue > 0 and revenue_map:
+                    rev = revenue_map.get(sig.symbol)
+                    if rev is not None and rev < min_revenue:
+                        revenue_ok = False
+                        entry["reason"] = f"月營收 {rev:.0f}M < {min_revenue:.0f}M"
+                        entry["revenue_million"] = rev
+
                 if not in_top30:
                     entry["reason"] = "動能排名不在前30"
                     watch_list.append(entry)
                 elif not in_strong_sector:
                     entry["reason"] = f"族群偏弱（{stock_sector}）"
+                    watch_list.append(entry)
+                elif not revenue_ok:
                     watch_list.append(entry)
                 else:
                     buy_list.append(entry)
