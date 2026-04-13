@@ -379,6 +379,9 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v4.3.0 - 2026-04-14
+- 🔍 **賣出警示新增月營收過濾**：`signals` 指令的賣出清單現在也會套用 `min_monthly_revenue_million` 門檻，只顯示通過營收門檻股票的賣出訊號（與買入過濾邏輯一致）
+
 ### v4.2.0 - 2026-04-11
 - ⚡ **下載批次大小從 100 → 200**：`download_all_stocks` 預設 `batch_size` 由 100 提升至 200，減少批次數量加速下載
 - 🗂️ **設定集中管理**：`.env` 僅保留機敏憑證（Fubon API Key/Secret、Telegram Token/Chat ID、Secret Key），所有非機敏參數（策略參數、回測設定、應用程式設定等）改由 `config/settings.py` 管理

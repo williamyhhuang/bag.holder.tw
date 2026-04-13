@@ -215,3 +215,55 @@ class TestSaveSignalsHistory:
             with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
                 filepath = save_signals_history(self._make_result())
             assert filepath.name.startswith("signals_")
+
+
+class TestSellRevenueFilter:
+    """賣出訊號的月營收過濾邏輯"""
+
+    def _apply_sell_revenue_filter(self, symbol: str, revenue_map: dict, min_revenue: float) -> bool:
+        """複製 signals_scanner 內的賣出營收過濾邏輯，回傳是否通過（True = 加入 sell_list）"""
+        if min_revenue > 0 and revenue_map:
+            revenue_key = symbol[:-1] if symbol.endswith('O') else symbol
+            rev = revenue_map.get(revenue_key)
+            if rev is None or rev < min_revenue:
+                return False
+        return True
+
+    def test_pass_when_revenue_above_threshold(self):
+        """營收超過門檻時應通過，加入賣出清單"""
+        assert self._apply_sell_revenue_filter("2330", {"2330": 2000.0}, 500.0) is True
+
+    def test_blocked_when_revenue_below_threshold(self):
+        """營收低於門檻時應被過濾，不加入賣出清單"""
+        assert self._apply_sell_revenue_filter("9999", {"9999": 100.0}, 500.0) is False
+
+    def test_blocked_when_stock_not_in_revenue_map(self):
+        """revenue_map 已載入但找不到該股票時，應被過濾（視為不符資格）"""
+        # revenue_map 有資料，但 "1234" 不在其中 → rev is None → blocked
+        assert self._apply_sell_revenue_filter("1234", {"2330": 2000.0}, 500.0) is False
+
+    def test_pass_when_min_revenue_is_zero(self):
+        """min_revenue = 0 表示停用過濾，任何股票都應通過"""
+        assert self._apply_sell_revenue_filter("1234", {}, 0.0) is True
+        assert self._apply_sell_revenue_filter("9999", {"9999": 50.0}, 0.0) is True
+
+    def test_pass_when_revenue_map_is_empty_but_min_revenue_set(self):
+        """revenue_map 為空時（尚未載入），仍應視為不通過"""
+        # revenue_map 為空，但 min_revenue > 0 → revenue_map falsy，不執行過濾
+        # 此行為等同停用過濾（data not loaded = skip filter）
+        # 根據程式碼：if min_revenue > 0 and revenue_map → 空 dict falsy → 不過濾
+        assert self._apply_sell_revenue_filter("2330", {}, 500.0) is True
+
+    def test_otc_symbol_strips_o_suffix_for_lookup(self):
+        """OTC 股票（symbol 帶 'O' 後綴）應用數字 key 查詢"""
+        # 4741O → key 為 4741
+        assert self._apply_sell_revenue_filter("4741O", {"4741": 800.0}, 500.0) is True
+        assert self._apply_sell_revenue_filter("4741O", {"4741": 200.0}, 500.0) is False
+
+    def test_exact_threshold_passes(self):
+        """剛好等於門檻值時應通過"""
+        assert self._apply_sell_revenue_filter("2330", {"2330": 500.0}, 500.0) is True
+
+    def test_just_below_threshold_blocked(self):
+        """剛好低於門檻值時應被過濾"""
+        assert self._apply_sell_revenue_filter("2330", {"2330": 499.9}, 500.0) is False

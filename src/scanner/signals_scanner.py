@@ -313,6 +313,12 @@ class SignalsScanner:
             elif sig.signal_type == SignalType.SELL:
                 # 只保留 P1 策略定義的出場訊號，過濾掉 RSI Overbought 等雜訊
                 if sig.signal_name in P1_SELL_SIGNALS:
+                    # 月營收過濾：賣出警示也只針對通過營收門檻的股票
+                    if min_revenue > 0 and revenue_map:
+                        revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
+                        rev = revenue_map.get(revenue_key)
+                        if rev is None or rev < min_revenue:
+                            continue
                     sell_list.append(entry)
 
             elif sig.signal_type == SignalType.WATCH:
