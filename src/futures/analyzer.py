@@ -144,7 +144,7 @@ class FuturesAnalyzer:
     def get_taiex_index_data(self) -> Optional[Dict]:
         """
         Get TAIEX index data for comparison.
-        Tries TWSE public API first, then falls back to yfinance.
+        Tries TWSE public API first, then yfinance, then Fubon SDK.
 
         Returns:
             Dict with TAIEX data or None
@@ -155,7 +155,12 @@ class FuturesAnalyzer:
             return result
 
         # Fallback to yfinance
-        return self._get_taiex_from_yfinance()
+        result = self._get_taiex_from_yfinance()
+        if result:
+            return result
+
+        # Last resort: Fubon SDK (IR0001 = TAIEX)
+        return self._get_taiex_from_fubon()
 
     def _get_taiex_from_twse(self) -> Optional[Dict]:
         """Get TAIEX data from TWSE public API"""
@@ -225,6 +230,74 @@ class FuturesAnalyzer:
 
         except Exception as e:
             self.logger.error(f"Error getting TAIEX data: {e}")
+            return None
+
+    def _get_taiex_from_fubon(self) -> Optional[Dict]:
+        """
+        Get TAIEX index data from Fubon SDK using symbol IR0001.
+        Used as last-resort fallback when TWSE API and yfinance are both unavailable.
+
+        Returns:
+            Dict with TAIEX data or None
+        """
+        try:
+            fubon_cfg = settings.fubon
+            if not (fubon_cfg.has_api_key_auth() or fubon_cfg.has_cert_auth()):
+                self.logger.debug("No Fubon credentials configured, skipping Fubon TAIEX fallback")
+                return None
+
+            from fubon_neo.sdk import FubonSDK
+
+            sdk = FubonSDK()
+            if fubon_cfg.has_api_key_auth():
+                accounts = sdk.apikey_login(
+                    fubon_cfg.user_id,
+                    fubon_cfg.api_key,
+                    fubon_cfg.cert_path,
+                    fubon_cfg.cert_password or fubon_cfg.user_id,
+                )
+            else:
+                accounts = sdk.login(
+                    fubon_cfg.user_id,
+                    fubon_cfg.password,
+                    fubon_cfg.cert_path,
+                    fubon_cfg.cert_password or fubon_cfg.user_id,
+                )
+
+            if not accounts.is_success:
+                self.logger.warning(f"Fubon login failed for TAIEX fallback: {accounts.message}")
+                return None
+
+            sdk.init_realtime()
+            reststock = sdk.marketdata.rest_client.stock
+            result = reststock.intraday.quote(symbol='IR0001')
+
+            if not result or not hasattr(result, 'data') or not result.data:
+                self.logger.warning("Fubon returned no data for IR0001")
+                return None
+
+            d = result.data if isinstance(result.data, dict) else vars(result.data)
+            price = float(d.get('lastPrice') or d.get('closePrice') or 0)
+            if price <= 0:
+                return None
+
+            change = float(d.get('change') or 0)
+            change_pct = float(d.get('changePercent') or 0)
+
+            self.logger.info(f"TAIEX from Fubon SDK: {price} ({change_pct:+.2f}%)")
+            return {
+                'symbol': 'TAIEX',
+                'current_price': price,
+                'change': change,
+                'change_percent': change_pct,
+                'volume': 0,
+                'high': float(d.get('highPrice') or price),
+                'low': float(d.get('lowPrice') or price),
+                'timestamp': datetime.now(),
+            }
+
+        except Exception as e:
+            self.logger.warning(f"Fubon TAIEX fallback failed: {e}")
             return None
 
     def calculate_technical_analysis(self, price_data: List[float]) -> Dict:

@@ -464,3 +464,120 @@ def test_txf_mxf_mtx_contract_sizes():
     assert monitor.futures_contracts['TXF'].contract_size == 200
     assert monitor.futures_contracts['MXF'].contract_size == 50
     assert monitor.futures_contracts['MTX'].contract_size == 10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FuturesAnalyzer._get_taiex_from_fubon 測試
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetTaiexFromFubon:
+    """測試 FuturesAnalyzer._get_taiex_from_fubon Fubon SDK fallback"""
+
+    @pytest.fixture
+    def analyzer(self):
+        from src.futures.analyzer import FuturesAnalyzer
+        return FuturesAnalyzer()
+
+    def _make_mock_sdk(self, price=37000.0, change=150.0, change_pct=0.41):
+        """建立模擬 FubonSDK，回傳 IR0001 行情"""
+        mock_sdk = MagicMock()
+        mock_accounts = MagicMock()
+        mock_accounts.is_success = True
+        mock_sdk.apikey_login.return_value = mock_accounts
+        mock_sdk.login.return_value = mock_accounts
+
+        mock_result = MagicMock()
+        mock_result.data = {
+            'lastPrice': price,
+            'closePrice': price,
+            'change': change,
+            'changePercent': change_pct,
+            'highPrice': price + 200,
+            'lowPrice': price - 300,
+        }
+        mock_sdk.marketdata.rest_client.stock.intraday.quote.return_value = mock_result
+        return mock_sdk
+
+    def test_returns_taiex_data_when_fubon_succeeds(self, analyzer):
+        """Fubon SDK 成功時應回傳 TAIEX 資料"""
+        mock_sdk = self._make_mock_sdk(price=37000.0, change=150.0, change_pct=0.41)
+
+        with patch('src.futures.analyzer.settings') as mock_settings, \
+             patch('fubon_neo.sdk.FubonSDK', return_value=mock_sdk):
+            mock_settings.fubon.has_api_key_auth.return_value = True
+            mock_settings.fubon.user_id = 'A123456789'
+            mock_settings.fubon.api_key = 'testkey'
+            mock_settings.fubon.cert_path = '/tmp/test.p12'
+            mock_settings.fubon.cert_password = 'A123456789'
+
+            result = analyzer._get_taiex_from_fubon()
+
+        assert result is not None
+        assert result['symbol'] == 'TAIEX'
+        assert result['current_price'] == 37000.0
+        assert result['change'] == 150.0
+        assert result['change_percent'] == 0.41
+
+    def test_returns_none_when_no_credentials(self, analyzer):
+        """未設定 Fubon 憑證時應回傳 None"""
+        with patch('src.futures.analyzer.settings') as mock_settings:
+            mock_settings.fubon.has_api_key_auth.return_value = False
+            mock_settings.fubon.has_cert_auth.return_value = False
+
+            result = analyzer._get_taiex_from_fubon()
+
+        assert result is None
+
+    def test_returns_none_when_login_fails(self, analyzer):
+        """Fubon 登入失敗時應回傳 None"""
+        mock_sdk = MagicMock()
+        mock_accounts = MagicMock()
+        mock_accounts.is_success = False
+        mock_accounts.message = 'Login failed'
+        mock_sdk.apikey_login.return_value = mock_accounts
+
+        with patch('src.futures.analyzer.settings') as mock_settings, \
+             patch('fubon_neo.sdk.FubonSDK', return_value=mock_sdk):
+            mock_settings.fubon.has_api_key_auth.return_value = True
+            mock_settings.fubon.user_id = 'A123456789'
+            mock_settings.fubon.api_key = 'testkey'
+            mock_settings.fubon.cert_path = '/tmp/test.p12'
+            mock_settings.fubon.cert_password = 'A123456789'
+
+            result = analyzer._get_taiex_from_fubon()
+
+        assert result is None
+
+    def test_returns_none_when_api_raises(self, analyzer):
+        """SDK 拋出例外時應回傳 None 而不是拋出"""
+        with patch('src.futures.analyzer.settings') as mock_settings, \
+             patch('fubon_neo.sdk.FubonSDK', side_effect=Exception("SDK error")):
+            mock_settings.fubon.has_api_key_auth.return_value = True
+            mock_settings.fubon.user_id = 'A123456789'
+            mock_settings.fubon.api_key = 'testkey'
+            mock_settings.fubon.cert_path = '/tmp/test.p12'
+            mock_settings.fubon.cert_password = 'A123456789'
+
+            result = analyzer._get_taiex_from_fubon()
+
+        assert result is None
+
+    def test_get_taiex_index_data_falls_back_to_fubon(self, analyzer):
+        """TWSE 和 yfinance 都失敗時，應 fallback 到 Fubon SDK"""
+        with patch.object(analyzer, '_get_taiex_from_twse', return_value=None), \
+             patch.object(analyzer, '_get_taiex_from_yfinance', return_value=None), \
+             patch.object(analyzer, '_get_taiex_from_fubon', return_value={
+                 'symbol': 'TAIEX',
+                 'current_price': 37000.0,
+                 'change': 150.0,
+                 'change_percent': 0.41,
+                 'volume': 0,
+                 'high': 37200.0,
+                 'low': 36700.0,
+                 'timestamp': datetime.now(),
+             }) as mock_fubon:
+            result = analyzer.get_taiex_index_data()
+
+        assert result is not None
+        assert result['symbol'] == 'TAIEX'
+        mock_fubon.assert_called_once()
