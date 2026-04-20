@@ -75,7 +75,9 @@ class FuturesCLI:
             change_pct = futures_data.get('change_percent', 0)
             volume = futures_data.get('volume', 0)
 
-            print("市場數據:")
+            data_date = futures_data.get('data_date', '')
+            symbol = futures_data.get('symbol', 'MTX')
+            print(f"市場數據: {symbol}{f' ({data_date})' if data_date else ''}")
             print(f"  目前價位: {price:,.0f}")
             print(f"  漲跌: {change:+.0f} ({change_pct:+.2f}%)")
             print(f"  成交量: {volume:,.0f}")

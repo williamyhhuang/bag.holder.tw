@@ -30,34 +30,115 @@ class FuturesAnalyzer:
 
     def get_futures_data_from_fubon(self) -> Optional[Dict]:
         """
-        Get futures data from Fubon API
-        Note: This is a placeholder - actual implementation would use Fubon SDK
+        Get MTX futures data.
+        Tries TAIFEX public CSV endpoint first; Fubon SDK integration is a future enhancement.
+
+        Returns:
+            Dict with futures data or None
+        """
+        result = self._get_mtx_from_taifex()
+        if result:
+            return result
+
+        self.logger.warning("Fubon API integration not fully implemented, TAIFEX fetch also failed")
+        return None
+
+    def _get_mtx_from_taifex(self) -> Optional[Dict]:
+        """
+        Fetch MTX near-month futures data from TAIFEX public CSV download API.
+        Tries today and up to 5 previous calendar days to handle weekends/holidays.
 
         Returns:
             Dict with futures data or None
         """
         try:
-            # Placeholder implementation
-            # In real implementation, this would use Fubon API client
-            self.logger.warning("Fubon API integration not fully implemented")
+            import io, csv as csvmod
+            today = datetime.now().date()
 
-            # Mock data for demonstration
-            mock_data = {
-                'symbol': 'MTX',
-                'current_price': 17800,
-                'change': -50,
-                'change_percent': -0.28,
-                'volume': 125000,
-                'open_interest': 89000,
-                'high': 17900,
-                'low': 17750,
-                'timestamp': datetime.now()
-            }
+            for offset in range(6):
+                query_date = today - timedelta(days=offset)
+                # Skip weekends
+                if query_date.weekday() >= 5:
+                    continue
+                date_str = query_date.strftime('%Y/%m/%d')
+                r = requests.post(
+                    'https://www.taifex.com.tw/cht/3/futDataDown',
+                    data={
+                        'down_type': '1',
+                        'commodity_id': 'MTX',
+                        'queryStartDate': date_str,
+                        'queryEndDate': date_str,
+                    },
+                    headers={
+                        'User-Agent': 'Mozilla/5.0',
+                        'Referer': 'https://www.taifex.com.tw/cht/3/futDataDown',
+                    },
+                    timeout=10
+                )
+                r.raise_for_status()
+                text = r.content.decode('big5', errors='replace')
+                rows = list(csvmod.reader(io.StringIO(text)))
 
-            return mock_data
+                # Filter: regular session only, standard monthly contracts (no 'W' in expiry)
+                regular_monthly = [
+                    row for row in rows[1:]
+                    if len(row) > 11
+                    and (len(row) <= 17 or row[17].strip() == '一般')
+                    and 'W' not in row[2]
+                    and '/' not in row[2]
+                    and row[6].strip() not in ('', '-')
+                ]
+
+                if not regular_monthly:
+                    continue
+
+                # Pick near-month contract (earliest expiry with highest volume)
+                def sort_key(row):
+                    try:
+                        vol = int(row[9].replace(',', '')) if row[9].strip() not in ('', '-') else 0
+                    except ValueError:
+                        vol = 0
+                    return (row[2], -vol)
+
+                regular_monthly.sort(key=sort_key)
+                best = regular_monthly[0]
+
+                def to_float(s):
+                    try:
+                        return float(s.replace(',', '').replace('+', '').replace('%', ''))
+                    except (ValueError, AttributeError):
+                        return 0.0
+
+                close_price = to_float(best[6])
+                change = to_float(best[7])
+                change_pct_str = best[8].strip().replace('%', '').replace('+', '')
+                try:
+                    change_pct = float(change_pct_str)
+                except ValueError:
+                    change_pct = (change / (close_price - change) * 100) if (close_price - change) else 0.0
+                volume = int(best[9].replace(',', '')) if best[9].strip() not in ('', '-') else 0
+                open_interest = int(best[11].replace(',', '')) if len(best) > 11 and best[11].strip() not in ('', '-') else 0
+
+                self.logger.info(f"MTX data from TAIFEX ({date_str}): {best[2]} close={close_price}")
+                return {
+                    'symbol': f"MTX {best[2]}",
+                    'current_price': close_price,
+                    'change': change,
+                    'change_percent': change_pct,
+                    'volume': volume,
+                    'open_interest': open_interest,
+                    'high': to_float(best[4]),
+                    'low': to_float(best[5]),
+                    'open': to_float(best[3]),
+                    'data_date': date_str,
+                    'timestamp': datetime.now(),
+                }
+
+            self.logger.warning("No MTX data found from TAIFEX for recent trading days")
+            return None
 
         except Exception as e:
-            self.logger.error(f"Error getting futures data from Fubon: {e}")
+            self.logger.error(f"Error fetching MTX data from TAIFEX: {e}")
             return None
 
     def get_taiex_index_data(self) -> Optional[Dict]:
