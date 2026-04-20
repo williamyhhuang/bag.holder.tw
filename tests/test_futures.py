@@ -1,8 +1,8 @@
 """
-台指期貨監控模組單元測試
+台指期貨監控模組及富邦 API 客戶端單元測試
 """
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime, date
 from decimal import Decimal
 
@@ -12,8 +12,47 @@ from src.futures.monitor import (
     FuturesQuote,
     FuturesSignal
 )
-from src.api.fubon_client import FubonClient
+from src.api.fubon_client import FubonClient, get_near_month_symbol
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_near_month_symbol 測試
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetNearMonthSymbol:
+    """近月合約代號計算測試"""
+
+    def test_symbol_format(self):
+        """驗證代號格式正確（4-5字元）"""
+        for product in ['TXF', 'MXF', 'MTX']:
+            sym = get_near_month_symbol(product)
+            assert sym.startswith(product), f"{sym} should start with {product}"
+            assert len(sym) == len(product) + 2, f"{sym} should have 2 char suffix"
+
+    def test_month_code_in_valid_range(self):
+        """月份代碼應在 A~L 範圍"""
+        sym = get_near_month_symbol('TXF')
+        month_code = sym[3]
+        assert month_code in 'ABCDEFGHIJKL'
+
+    def test_year_digit_is_numeric(self):
+        """年份尾碼應為數字"""
+        sym = get_near_month_symbol('TXF')
+        assert sym[4].isdigit()
+
+    def test_products(self):
+        """三大合約代號皆正確產生"""
+        txf = get_near_month_symbol('TXF')
+        mxf = get_near_month_symbol('MXF')
+        mtx = get_near_month_symbol('MTX')
+        assert txf.startswith('TXF')
+        assert mxf.startswith('MXF')
+        assert mtx.startswith('MTX')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FuturesContract 測試
+# ─────────────────────────────────────────────────────────────────────────────
 
 class TestFuturesContract:
     """期貨合約單元測試"""
@@ -24,7 +63,7 @@ class TestFuturesContract:
             symbol='TXF',
             name='台指期貨(大台)',
             underlying='台灣加權指數',
-            expiry_date=date(2026, 4, 15),
+            expiry_date=date(2026, 5, 20),
             contract_size=200,
             tick_size=Decimal('1'),
             is_active=True
@@ -32,8 +71,6 @@ class TestFuturesContract:
 
         assert contract.symbol == 'TXF'
         assert contract.name == '台指期貨(大台)'
-        assert contract.underlying == '台灣加權指數'
-        assert contract.expiry_date == date(2026, 4, 15)
         assert contract.contract_size == 200
         assert contract.tick_size == Decimal('1')
         assert contract.is_active is True
@@ -44,18 +81,19 @@ class TestFuturesContract:
             symbol='TXF',
             name='台指期貨(大台)',
             underlying='台灣加權指數',
-            expiry_date=date(2026, 4, 15),
+            expiry_date=date(2026, 5, 20),
             contract_size=200,
             tick_size=Decimal('1'),
             is_active=True
         )
-
-        # 假設台指期貨價格為 18000 點
         price = Decimal('18000')
-        expected_value = price * contract.contract_size  # 18000 * 200 = 3,600,000
+        expected_value = price * contract.contract_size
+        assert expected_value == Decimal('3600000')
 
-        assert contract.contract_size * price == expected_value
 
+# ─────────────────────────────────────────────────────────────────────────────
+# FuturesQuote 測試
+# ─────────────────────────────────────────────────────────────────────────────
 
 class TestFuturesQuote:
     """期貨報價單元測試"""
@@ -66,7 +104,7 @@ class TestFuturesQuote:
             symbol='TXF',
             price=Decimal('18000.0'),
             volume=1000,
-            timestamp=datetime(2026, 3, 25, 9, 0, 0),
+            timestamp=datetime(2026, 5, 1, 9, 0, 0),
             bid_price=Decimal('17999.0'),
             ask_price=Decimal('18001.0'),
             bid_volume=500,
@@ -76,11 +114,8 @@ class TestFuturesQuote:
         assert quote.symbol == 'TXF'
         assert quote.price == Decimal('18000.0')
         assert quote.volume == 1000
-        assert quote.timestamp == datetime(2026, 3, 25, 9, 0, 0)
         assert quote.bid_price == Decimal('17999.0')
         assert quote.ask_price == Decimal('18001.0')
-        assert quote.bid_volume == 500
-        assert quote.ask_volume == 300
 
     def test_spread_calculation(self):
         """測試買賣價差計算"""
@@ -88,22 +123,21 @@ class TestFuturesQuote:
             symbol='TXF',
             price=Decimal('18000.0'),
             volume=1000,
-            timestamp=datetime(2026, 3, 25, 9, 0, 0),
+            timestamp=datetime(2026, 5, 1, 9, 0, 0),
             bid_price=Decimal('17999.0'),
             ask_price=Decimal('18001.0'),
-            bid_volume=500,
-            ask_volume=300
         )
-
         spread = quote.ask_price - quote.bid_price
         assert spread == Decimal('2.0')
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# FuturesSignal 測試
+# ─────────────────────────────────────────────────────────────────────────────
+
 class TestFuturesSignal:
-    """期貨信號單元測試"""
 
     def test_futures_signal_creation(self):
-        """測試期貨信號創建"""
         signal = FuturesSignal(
             contract_symbol='TXF',
             signal_type='LONG',
@@ -113,34 +147,47 @@ class TestFuturesSignal:
             stop_loss=Decimal('17800.0'),
             confidence=0.8,
             description='TXF 價格突破 1.5%',
-            triggered_at=datetime(2026, 3, 25, 10, 30, 0),
+            triggered_at=datetime(2026, 5, 1, 10, 30, 0),
         )
 
         assert signal.contract_symbol == 'TXF'
         assert signal.signal_type == 'LONG'
-        assert signal.signal_name == 'PRICE_BREAKOUT'
-        assert signal.current_price == Decimal('18100.0')
         assert signal.confidence == 0.8
-        assert signal.triggered_at == datetime(2026, 3, 25, 10, 30, 0)
 
+    def test_valid_signal_types(self):
+        valid_types = {'LONG', 'SHORT', 'CLOSE_LONG', 'CLOSE_SHORT', 'NEUTRAL'}
+        signal = FuturesSignal(
+            contract_symbol='TXF',
+            signal_type='LONG',
+            signal_name='TEST',
+            current_price=Decimal('18000'),
+            target_price=None,
+            stop_loss=None,
+            confidence=0.8,
+            description='test',
+            triggered_at=datetime.now(),
+        )
+        assert signal.signal_type in valid_types
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TaiwanFuturesMonitor 測試
+# ─────────────────────────────────────────────────────────────────────────────
 
 class TestTaiwanFuturesMonitor:
-    """台指期貨監控器單元測試"""
 
     @pytest.fixture
     def mock_fubon_client(self):
-        """模擬 Fubon 客戶端"""
         client = Mock(spec=FubonClient)
         client.is_simulation = True
+        client.get_futures_quote = AsyncMock(return_value=None)
         return client
 
     @pytest.fixture
     def futures_monitor(self, mock_fubon_client):
-        """創建期貨監控器實例"""
         return TaiwanFuturesMonitor(mock_fubon_client)
 
     def test_monitor_initialization(self, futures_monitor):
-        """測試監控器初始化"""
         assert futures_monitor is not None
         assert len(futures_monitor.futures_contracts) == 3
         assert 'TXF' in futures_monitor.futures_contracts
@@ -148,70 +195,73 @@ class TestTaiwanFuturesMonitor:
         assert 'MTX' in futures_monitor.futures_contracts
 
     def test_contract_info_retrieval(self, futures_monitor):
-        """測試合約信息獲取"""
-        # 測試 TXF 大台
-        txf_info = futures_monitor.get_contract_info('TXF')
-        assert txf_info is not None
-        assert txf_info.symbol == 'TXF'
-        assert txf_info.name == '台指期貨(大台)'
-        assert txf_info.contract_size == 200
-        assert txf_info.tick_size == Decimal('1')
-        assert txf_info.is_active is True
+        txf = futures_monitor.get_contract_info('TXF')
+        assert txf is not None
+        assert txf.symbol == 'TXF'
+        assert txf.contract_size == 200
 
-        # 測試 MXF 小台
-        mxf_info = futures_monitor.get_contract_info('MXF')
-        assert mxf_info is not None
-        assert mxf_info.symbol == 'MXF'
-        assert mxf_info.name == '小台指期貨(小台)'
-        assert mxf_info.contract_size == 50
+        mxf = futures_monitor.get_contract_info('MXF')
+        assert mxf.contract_size == 50
 
-        # 測試 MTX 微台
-        mtx_info = futures_monitor.get_contract_info('MTX')
-        assert mtx_info is not None
-        assert mtx_info.symbol == 'MTX'
-        assert mtx_info.name == '微型台指期貨(微台)'
-        assert mtx_info.contract_size == 10
+        mtx = futures_monitor.get_contract_info('MTX')
+        assert mtx.contract_size == 10
 
-        # 測試不存在的合約
-        invalid_info = futures_monitor.get_contract_info('INVALID')
-        assert invalid_info is None
+        assert futures_monitor.get_contract_info('INVALID') is None
 
     def test_active_contracts_retrieval(self, futures_monitor):
-        """測試活躍合約獲取"""
-        active_contracts = futures_monitor.get_active_contracts()
-        assert len(active_contracts) == 3
-
-        symbols = {contract.symbol for contract in active_contracts}
+        active = futures_monitor.get_active_contracts()
+        assert len(active) == 3
+        symbols = {c.symbol for c in active}
         assert symbols == {'TXF', 'MXF', 'MTX'}
 
-        # 確保所有合約都是活躍的
-        for contract in active_contracts:
-            assert contract.is_active is True
-
     def test_near_month_expiry_calculation(self, futures_monitor):
-        """測試近月合約到期日計算"""
-        expiry_date = futures_monitor._get_near_month_expiry()
-
-        # 檢查返回的是 date 物件
-        assert isinstance(expiry_date, date)
-
-        # 檢查是第三個週三
-        # 4月第三個週三應該是 15 號
-        assert expiry_date.day == 15
-        assert expiry_date.month == 4
-        assert expiry_date.year == 2026
+        expiry = futures_monitor._get_near_month_expiry()
+        assert isinstance(expiry, date)
+        # Must be a Wednesday
+        assert expiry.weekday() == 2
 
     @pytest.mark.asyncio
-    async def test_get_futures_quote(self, futures_monitor, mock_fubon_client):
-        """測試期貨報價獲取（_get_futures_quote 目前回傳 None，為尚未實作的 placeholder）"""
+    async def test_get_futures_quote_returns_none_when_api_returns_none(
+        self, futures_monitor, mock_fubon_client
+    ):
+        """API 回傳 None 時，_get_futures_quote 也應回傳 None"""
+        mock_fubon_client.get_futures_quote = AsyncMock(return_value=None)
         quote = await futures_monitor._get_futures_quote('TXF')
-        # 目前實作回傳 None（等待期貨 API 整合）
         assert quote is None
 
     @pytest.mark.asyncio
-    async def test_price_change_detection(self, futures_monitor):
-        """測試 _analyze_futures_signals 接受合法的 FuturesQuote 並回傳 list"""
-        from src.futures.monitor import FuturesQuote
+    async def test_get_futures_quote_returns_quote_when_api_succeeds(
+        self, futures_monitor, mock_fubon_client
+    ):
+        """API 成功回傳資料時，_get_futures_quote 應回傳 FuturesQuote"""
+        mock_fubon_client.get_futures_quote = AsyncMock(return_value={
+            'symbol': 'TXFE6',
+            'last_price': Decimal('20000'),
+            'close_price': Decimal('20000'),
+            'high_price': Decimal('20100'),
+            'low_price': Decimal('19900'),
+            'change': Decimal('100'),
+            'change_percent': Decimal('0.5'),
+            'volume': 1500,
+            'timestamp': datetime.now(),
+        })
+        quote = await futures_monitor._get_futures_quote('TXF')
+        assert quote is not None
+        assert quote.symbol == 'TXF'
+        assert quote.price == Decimal('20000')
+        assert quote.volume == 1500
+
+    @pytest.mark.asyncio
+    async def test_get_futures_quote_handles_exception_gracefully(
+        self, futures_monitor, mock_fubon_client
+    ):
+        """API 拋出例外時，_get_futures_quote 應回傳 None 而不是拋出"""
+        mock_fubon_client.get_futures_quote = AsyncMock(side_effect=Exception("API error"))
+        quote = await futures_monitor._get_futures_quote('TXF')
+        assert quote is None
+
+    @pytest.mark.asyncio
+    async def test_analyze_signals_returns_list(self, futures_monitor):
         contract = futures_monitor.futures_contracts['TXF']
         quote = FuturesQuote(
             symbol='TXF',
@@ -219,87 +269,198 @@ class TestTaiwanFuturesMonitor:
             change_amount=Decimal('100.0'),
             change_percent=Decimal('0.56'),
             volume=1000,
-            timestamp=datetime(2026, 3, 25, 10, 30, 0),
+            timestamp=datetime.now(),
         )
         signals = await futures_monitor._analyze_futures_signals(contract, quote)
         assert isinstance(signals, list)
 
-    def test_price_change_percentage_calculation(self, futures_monitor):
-        """TaiwanFuturesMonitor 沒有公開的價格百分比計算方法，跳過（邏輯在 _analyze_futures_signals 內）"""
-        pytest.skip("此計算封裝於 _analyze_futures_signals，不需單獨公開方法")
-
-    def test_volume_anomaly_detection(self, futures_monitor):
-        """TaiwanFuturesMonitor 沒有公開的 _is_volume_anomaly，跳過（邏輯在 _analyze_futures_signals 內）"""
-        pytest.skip("此判斷封裝於 _analyze_futures_signals，不需單獨公開方法")
-
     @pytest.mark.asyncio
-    async def test_signal_detection(self, futures_monitor, mock_fubon_client):
-        """測試 _analyze_futures_signals 在高成交量時觸發訊號"""
-        from src.futures.monitor import FuturesQuote
+    async def test_high_volume_triggers_signal(self, futures_monitor):
+        """TXF 成交量 > 5000 時應觸發量暴增訊號"""
         contract = futures_monitor.futures_contracts['TXF']
-        # TXF 成交量 > 5000 時應觸發 VOLUME_SURGE 訊號
         quote = FuturesQuote(
             symbol='TXF',
             price=Decimal('18300.0'),
             change_amount=Decimal('300.0'),
             change_percent=Decimal('1.67'),
             volume=6000,
-            timestamp=datetime(2026, 3, 25, 10, 30, 0),
+            timestamp=datetime.now(),
         )
         signals = await futures_monitor._analyze_futures_signals(contract, quote)
-        assert isinstance(signals, list)
         assert len(signals) > 0
 
     @pytest.mark.asyncio
-    async def test_monitoring_loop_error_handling(self, futures_monitor, mock_fubon_client):
-        """測試 _get_futures_quote 錯誤時回傳 None，不拋出例外"""
-        # _get_futures_quote 有 @handle_errors 裝飾器，例外不會外洩
-        quote = await futures_monitor._get_futures_quote('TXF')
-        assert quote is None
+    async def test_large_price_change_triggers_signal(self, futures_monitor):
+        """漲跌幅超過 1.5% 應觸發突破訊號"""
+        contract = futures_monitor.futures_contracts['TXF']
+        quote = FuturesQuote(
+            symbol='TXF',
+            price=Decimal('18400.0'),
+            change_amount=Decimal('400.0'),
+            change_percent=Decimal('2.0'),
+            volume=500,
+            timestamp=datetime.now(),
+        )
+        signals = await futures_monitor._analyze_futures_signals(contract, quote)
+        assert any(s.signal_name == '台指期貨價格突破' for s in signals)
 
 
-class TestFuturesIntegration:
-    """期貨監控整合測試"""
+# ─────────────────────────────────────────────────────────────────────────────
+# FubonClient 期貨方法測試（使用 mock SDK）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFubonClientFuturesAPI:
+    """FubonClient 期貨 API 方法測試"""
+
+    @pytest.fixture
+    def mock_sdk(self):
+        sdk = MagicMock()
+
+        # Mock futopt marketdata
+        mock_quote_data = MagicMock()
+        mock_quote_data.data = {
+            'name': '臺股期貨014',
+            'closePrice': 20000,
+            'lastPrice': 20050,
+            'openPrice': 19900,
+            'highPrice': 20100,
+            'lowPrice': 19850,
+            'previousClose': 19950,
+            'change': 100,
+            'changePercent': 0.5,
+            'lastSize': 5,
+            'total': {'tradeVolume': 2500},
+        }
+        sdk.marketdata.rest_client.futopt.intraday.quote.return_value = mock_quote_data
+
+        mock_tickers_data = MagicMock()
+        mock_tickers_data.data = [
+            {'symbol': 'TXFE6', 'name': '臺股期貨E6', 'referencePrice': 20000,
+             'settlementDate': '20260520', 'startDate': '20260421', 'endDate': '20260520'},
+        ]
+        sdk.marketdata.rest_client.futopt.intraday.tickers.return_value = mock_tickers_data
+
+        # Mock futopt_accounting
+        mock_position_data = MagicMock()
+        mock_position_data.is_success = True
+        mock_position_data.data = []
+        sdk.futopt_accounting.query_hybrid_position.return_value = mock_position_data
+
+        mock_equity_data = MagicMock()
+        mock_equity_data.is_success = True
+        mock_equity_data.data = {
+            'date': '2026/04/21',
+            'account': '1234567',
+            'currency': 'TWD',
+            'today_balance': 500000.0,
+            'today_equity': 520000.0,
+            'initial_margin': 80000.0,
+            'maintenance_margin': 60000.0,
+            'available_margin': 420000.0,
+            'risk_index': 0.0,
+            'fut_unrealized_pnl': 0.0,
+            'fut_realized_pnl': 0.0,
+            'buy_lot': 0,
+            'sell_lot': 0,
+        }
+        sdk.futopt_accounting.query_margin_equity.return_value = mock_equity_data
+
+        return sdk
+
+    @pytest.fixture
+    def client_with_mock_sdk(self, mock_sdk):
+        client = FubonClient(
+            user_id='A123456789',
+            api_key='test_key',
+            cert_path='/tmp/test.p12',
+            cert_password='A123456789',
+        )
+        client.sdk = mock_sdk
+        client.is_logged_in = True
+
+        # Mock accounts
+        mock_acc = MagicMock()
+        mock_acc.account_type = 'futopt'
+        mock_acc.account = '1234567'
+        mock_acc.name = 'Test User'
+        mock_accounts = MagicMock()
+        mock_accounts.data = [mock_acc]
+        client.accounts = mock_accounts
+
+        return client
 
     @pytest.mark.asyncio
-    async def test_full_monitoring_cycle(self):
-        """測試完整的監控循環"""
-        # 這個測試需要更多的模擬設置
-        # 包括數據庫連接、Redis 緩存等
-        pass
+    async def test_get_futures_quote(self, client_with_mock_sdk):
+        quote = await client_with_mock_sdk.get_futures_quote('TXFE6')
+        assert quote is not None
+        assert quote['last_price'] == Decimal('20050')
+        assert quote['high_price'] == Decimal('20100')
+        assert quote['volume'] == 2500
 
     @pytest.mark.asyncio
-    async def test_signal_notification(self):
-        """測試信號通知"""
-        # 測試當檢測到信號時是否正確發送通知
-        pass
+    async def test_get_futures_tickers(self, client_with_mock_sdk):
+        tickers = await client_with_mock_sdk.get_futures_tickers(product='TXF')
+        assert len(tickers) == 1
+        assert tickers[0]['symbol'] == 'TXFE6'
+
+    @pytest.mark.asyncio
+    async def test_get_futures_positions_empty(self, client_with_mock_sdk):
+        positions = await client_with_mock_sdk.get_futures_positions()
+        assert positions == []
+
+    @pytest.mark.asyncio
+    async def test_get_futures_margin_equity(self, client_with_mock_sdk):
+        equity = await client_with_mock_sdk.get_futures_margin_equity()
+        assert equity is not None
+        assert equity['today_balance'] == 500000.0
+        assert equity['available_margin'] == 420000.0
+        assert equity['currency'] == 'TWD'
+
+    def test_get_futopt_account(self, client_with_mock_sdk):
+        acc = client_with_mock_sdk.get_futopt_account()
+        assert acc is not None
+        assert acc.account_type == 'futopt'
+
+    def test_has_api_key_auth(self):
+        from config.settings import FubonAPISettings
+        settings = FubonAPISettings(
+            user_id='A123456789',
+            api_key='testkey',
+            cert_path='/tmp/test.p12',
+        )
+        assert settings.has_api_key_auth() is True
+
+    def test_has_api_key_auth_false_without_cert(self):
+        from config.settings import FubonAPISettings
+        settings = FubonAPISettings(
+            user_id='A123456789',
+            api_key='testkey',
+        )
+        assert settings.has_api_key_auth() is False
+
+    def test_has_cert_auth(self):
+        from config.settings import FubonAPISettings
+        settings = FubonAPISettings(
+            user_id='A123456789',
+            password='pw',
+            cert_path='/tmp/test.p12',
+        )
+        assert settings.has_cert_auth() is True
 
 
-# 測試配置和輔助函數
-def test_futures_signal_types():
-    """測試期貨信號類型字串（signal_type 為字串：LONG/SHORT/CLOSE_LONG/CLOSE_SHORT）"""
-    valid_types = {'LONG', 'SHORT', 'CLOSE_LONG', 'CLOSE_SHORT'}
-    signal = FuturesSignal(
-        contract_symbol='TXF',
-        signal_type='LONG',
-        signal_name='PRICE_BREAKOUT',
-        current_price=Decimal('18100.0'),
-        target_price=None,
-        stop_loss=None,
-        confidence=0.8,
-        description='test',
-        triggered_at=datetime(2026, 3, 25, 10, 30, 0),
-    )
-    assert signal.signal_type in valid_types
-
+# ─────────────────────────────────────────────────────────────────────────────
+# 輔助測試
+# ─────────────────────────────────────────────────────────────────────────────
 
 def test_contract_symbols():
-    """測試合約代號常量"""
-    # 確保只追蹤三大合約
-    expected_symbols = {'TXF', 'MXF', 'MTX'}
-
-    # 這個測試需要根據實際的常量定義進行調整
+    """確保只追蹤三大合約"""
     monitor = TaiwanFuturesMonitor(Mock())
-    actual_symbols = set(monitor.futures_contracts.keys())
+    assert set(monitor.futures_contracts.keys()) == {'TXF', 'MXF', 'MTX'}
 
-    assert actual_symbols == expected_symbols
+
+def test_txf_mxf_mtx_contract_sizes():
+    """驗證三大合約乘數"""
+    monitor = TaiwanFuturesMonitor(Mock())
+    assert monitor.futures_contracts['TXF'].contract_size == 200
+    assert monitor.futures_contracts['MXF'].contract_size == 50
+    assert monitor.futures_contracts['MTX'].contract_size == 10

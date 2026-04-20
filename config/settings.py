@@ -53,12 +53,12 @@ class FubonAPISettings(BaseSettings):
         return v
 
     def has_api_key_auth(self) -> bool:
-        """Check if API key authentication is configured"""
-        return bool(self.api_key and self.api_secret)
+        """Check if API key authentication is configured (apikey_login: user_id + api_key + cert)"""
+        return bool(self.api_key and self.user_id and self.cert_path)
 
     def has_cert_auth(self) -> bool:
-        """Check if certificate authentication is configured"""
-        return bool(self.user_id and self.cert_path)
+        """Check if certificate + password authentication is configured"""
+        return bool(self.user_id and self.password and self.cert_path)
 
     class Config:
         env_prefix = "FUBON_"

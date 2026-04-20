@@ -228,41 +228,35 @@ class TaiwanFuturesMonitor:
     @handle_errors()
     async def _get_futures_quote(self, contract_symbol: str) -> Optional[FuturesQuote]:
         """
-        Get futures real-time quote
-
-        Note: This is a placeholder implementation.
-        Actual implementation would depend on futures API availability.
+        Get futures real-time quote using Fubon API.
+        Computes the current near-month symbol automatically.
         """
         try:
-            # Rate limiting
+            from ..api.fubon_client import get_near_month_symbol
+
+            # Compute near-month symbol e.g. 'TXFE6'
+            near_month = get_near_month_symbol(contract_symbol)
+
             await rate_limit_manager.acquire("fubon_db", f"futures_{contract_symbol}")
 
-            # Simulate futures quote (replace with actual API call)
-            # In practice, you'd call something like:
-            # quote_data = await self.fubon_client.get_futures_quote(contract_symbol)
+            quote_data = await self.fubon_client.get_futures_quote(near_month)
 
-            # For now, return None to indicate no data
-            # TODO: Implement actual futures API integration
-            return None
+            if not quote_data:
+                self.logger.debug(f"No quote data for {near_month}")
+                return None
 
-            # Example of what the implementation might look like:
-            """
-            quote_data = await self.fubon_client.get_futures_quote(contract_symbol)
+            price = quote_data.get('last_price') or quote_data.get('close_price') or Decimal('0')
 
-            if quote_data:
-                return FuturesQuote(
-                    symbol=contract_symbol,
-                    current_price=Decimal(str(quote_data['price'])),
-                    change_amount=Decimal(str(quote_data['change'])),
-                    change_percent=Decimal(str(quote_data['changePercent'])),
-                    volume=int(quote_data['volume']),
-                    open_interest=int(quote_data['openInterest']),
-                    high_price=Decimal(str(quote_data['high'])),
-                    low_price=Decimal(str(quote_data['low'])),
-                    settlement_price=Decimal(str(quote_data['settlement'])),
-                    timestamp=datetime.now()
-                )
-            """
+            return FuturesQuote(
+                symbol=contract_symbol,
+                price=price,
+                volume=int(quote_data.get('volume', 0)),
+                timestamp=quote_data.get('timestamp', datetime.now()),
+                change_amount=quote_data.get('change'),
+                change_percent=quote_data.get('change_percent'),
+                high_price=quote_data.get('high_price'),
+                low_price=quote_data.get('low_price'),
+            )
 
         except Exception as e:
             self.logger.error(f"Error getting futures quote for {contract_symbol}: {e}")

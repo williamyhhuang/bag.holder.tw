@@ -387,6 +387,56 @@ docker compose up -d
 - 🗂️ **設定集中管理**：`.env` 僅保留機敏憑證（Fubon API Key/Secret、Telegram Token/Chat ID、Secret Key），所有非機敏參數（策略參數、回測設定、應用程式設定等）改由 `config/settings.py` 管理
 - 🆕 **新增 `DownloadSettings`**：`DOWNLOAD_BATCH_SIZE`（預設 200）可透過環境變數覆蓋
 
+### v5.0.0 - 2026-04-21
+- 🚀 **富邦 e01 期貨 API 完整串接**
+  - 安裝 `fubon_neo` SDK v2.2.8 (macOS ARM64)
+  - 登入方式改為正確的 `apikey_login(user_id, api_key, cert_path, cert_password)`
+  - `FubonClient` 新增期貨行情方法：`get_futures_quote()`, `get_futures_tickers()`, `get_futures_candles()`
+  - `FubonClient` 新增期貨下單方法：`place_futures_order()`, `cancel_futures_order()`, `get_futures_orders()`
+  - `FubonClient` 新增期貨帳務方法：`get_futures_positions()`, `get_futures_margin_equity()`
+  - `TaiwanFuturesMonitor._get_futures_quote()` 改為呼叫真實 API（自動計算近月合約代號 e.g. TXFE6）
+  - 新增 `get_near_month_symbol(product)` 工具函式自動計算近月合約代號
+  - 新增 `scripts/test_fubon_futures.py` 完整測試腳本（連線、報價、部位、下單）
+  - 更新 `.env` 模板並填入 API Key、憑證路徑
+  - 更新 `config/settings.py` 中 `has_api_key_auth()` 邏輯
+  - 新增 30 個期貨 API 單元測試（含 `get_near_month_symbol` 和 `FubonClient` mock 測試）
+
+#### 期貨 API 使用方式
+
+```python
+from src.api.fubon_client import FubonClient, get_near_month_symbol
+
+async with FubonClient(
+    user_id="身分證字號",
+    api_key="API_KEY",
+    cert_path="/path/to/cert.p12",
+    cert_password="憑證密碼",  # 預設與身分證字號相同
+) as client:
+    # 查詢近月合約代號
+    symbol = get_near_month_symbol('TXF')  # e.g. 'TXFE6'
+
+    # 查詢期貨報價
+    quote = await client.get_futures_quote(symbol)
+
+    # 查詢期貨部位
+    positions = await client.get_futures_positions()
+
+    # 查詢帳戶權益
+    equity = await client.get_futures_margin_equity()
+
+    # 期貨下單（限價委託）
+    result = await client.place_futures_order(
+        symbol=symbol, buy_sell='Buy', price='20000', lot=1
+    )
+```
+
+#### 測試腳本
+
+```bash
+source venv/bin/activate
+python scripts/test_fubon_futures.py --user-id A123456789 --no-trade
+```
+
 ### v4.1.0 - 2026-04-09
 - ⚡ **`backtest` 新增 `--skip-download` 參數**：略過自動下載資料，直接使用本地 `data/stocks/` 資料，加速重跑回測
 
