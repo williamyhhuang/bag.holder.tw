@@ -29,7 +29,7 @@ from config.settings import settings
 logger = get_logger(__name__)
 
 # P1 策略的賣出訊號名稱（只有這些才是真正的出場訊號）
-P1_SELL_SIGNALS = {"RSI Momentum Loss", "MACD Death Cross", "Death Cross", "高乖離率"}
+P1_SELL_SIGNALS = {"RSI Momentum Loss", "MACD Death Cross", "Death Cross"}
 
 # 流動性過濾門檻：1000 張 × 1000 股/張 = 1,000,000 股
 MIN_VOLUME_SHARES = 1_000_000
@@ -95,12 +95,6 @@ def _watch_reason_with_price(
     if rsi is not None and strategy.rsi_min_entry > 0:
         if rsi < Decimal(str(strategy.rsi_min_entry)):
             return f"RSI {float(rsi):.1f} < {strategy.rsi_min_entry:.0f}"
-    if strategy.stock_bias_buy_max_pct > 0:
-        ma_val = getattr(indicators, f'ma{strategy.bias_ma_period}', None)
-        if ma_val is not None and ma_val > 0:
-            bias_pct = float((price - ma_val) / ma_val * 100)
-            if bias_pct > float(strategy.stock_bias_buy_max_pct):
-                return f"乖離率 {bias_pct:.1f}% > MA{strategy.bias_ma_period} 上限 {float(strategy.stock_bias_buy_max_pct):.0f}%"
     return "未達進場條件"
 
 
@@ -123,9 +117,6 @@ class SignalsScanner:
             rsi_min_entry=cfg.rsi_min_entry,
             donchian_period=cfg.donchian_period,
             signal_cooldown_days=cfg.signal_cooldown_days,
-            stock_bias_buy_max_pct=cfg.stock_bias_buy_max_pct,
-            stock_bias_sell_pct=cfg.stock_bias_sell_pct,
-            bias_ma_period=cfg.bias_ma_period,
         )
         self.cfg = cfg
 
@@ -197,39 +188,6 @@ class SignalsScanner:
         ranked = sorted(scores, key=lambda s: scores[s], reverse=True)
         return set(ranked[:top_n])
 
-    def _compute_market_bias(self, target_date: date) -> Optional[float]:
-        """計算大盤 (TAIEX ^TWII) 對 MA{bias_ma_period} 的乖離率。
-
-        乖離率 = (收盤 - MA_n) / MA_n × 100%
-        正值表示大盤高於均線（過熱風險），負值表示低於均線（偏弱）。
-        回傳 None 表示資料不足無法計算。
-        """
-        period = self.cfg.bias_ma_period
-        try:
-            taiex = self.data_source.get_market_index_data(
-                start_date=target_date - timedelta(days=120),
-                end_date=target_date,
-            )
-            if not taiex:
-                self.logger.warning("無法取得 TAIEX 資料，略過大盤乖離率計算")
-                return None
-
-            taiex.sort(key=lambda x: x.date)
-            closes = [d.close_price for d in taiex if d.date <= target_date]
-
-            if len(closes) < period:
-                self.logger.warning(f"TAIEX 資料不足 {period} 筆，無法計算 MA{period}")
-                return None
-
-            latest = closes[-1]
-            ma = sum(closes[-period:]) / Decimal(str(period))
-            if ma == 0:
-                return None
-            return float((latest - ma) / ma * 100)
-        except Exception as e:
-            self.logger.warning(f"大盤乖離率計算失敗: {e}")
-            return None
-
     def scan_today(self) -> Dict:
         """
         掃描今日訊號，回傳：
@@ -279,32 +237,6 @@ class SignalsScanner:
                 f"（門檻 {self.cfg.sector_trend_threshold:.0%}）"
             )
 
-        # 計算大盤乖離率（若相關設定 > 0 才執行）
-        market_bias_pct: Optional[float] = None
-        market_bias_warning: Optional[str] = None
-        market_bias_blocks_buy = False
-        if self.cfg.market_bias_buy_max_pct > 0 or self.cfg.market_bias_sell_pct > 0:
-            self.logger.info("計算大盤 (TAIEX) 乖離率...")
-            market_bias_pct = self._compute_market_bias(target_date)
-            if market_bias_pct is not None:
-                self.logger.info(
-                    f"TAIEX MA{self.cfg.bias_ma_period} 乖離率：{market_bias_pct:+.2f}%"
-                )
-                if (self.cfg.market_bias_sell_pct > 0
-                        and market_bias_pct > self.cfg.market_bias_sell_pct):
-                    market_bias_warning = (
-                        f"大盤過熱警示：TAIEX 乖離 MA{self.cfg.bias_ma_period} 達 "
-                        f"{market_bias_pct:+.1f}%（門檻 {self.cfg.market_bias_sell_pct:.0f}%）"
-                    )
-                    self.logger.warning(market_bias_warning)
-                if (self.cfg.market_bias_buy_max_pct > 0
-                        and market_bias_pct > self.cfg.market_bias_buy_max_pct):
-                    market_bias_blocks_buy = True
-                    self.logger.warning(
-                        f"大盤乖離率 {market_bias_pct:+.1f}% 超過買入門檻 "
-                        f"{self.cfg.market_bias_buy_max_pct:.0f}%，暫停所有新買入"
-                    )
-
         # 只針對最新交易日產生訊號（傳入全量歷史資料供指標計算，僅輸出 target_date 的訊號）
         self.logger.info("產生技術訊號...")
         all_signals = self.strategy.generate_signals_for_multiple_stocks(
@@ -340,15 +272,6 @@ class SignalsScanner:
             }
 
             if sig.signal_type == SignalType.BUY:
-                # 大盤乖離率過大：暫停所有新買入，降級為 WATCH
-                if market_bias_blocks_buy:
-                    entry["reason"] = (
-                        f"大盤過熱（乖離率 {market_bias_pct:+.1f}% > "
-                        f"{self.cfg.market_bias_buy_max_pct:.0f}%）"
-                    )
-                    watch_list.append(entry)
-                    continue
-
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
 
@@ -444,6 +367,4 @@ class SignalsScanner:
             "sell": sell_list,
             "watch": watch_list,
             "sector_summary": sector_summary,
-            "market_bias_pct": market_bias_pct,
-            "market_bias_warning": market_bias_warning,
         }

@@ -230,30 +230,6 @@ min_monthly_revenue_million: float = 100.0  # 1 億元；改為 0 可停用
 
 若 API 無法連線（非交易時間或網路問題），過濾器自動略過，不影響其他訊號輸出。
 
-### 乖離率過濾（Bias Rate Filter）
-
-乖離率 = (收盤價 − MA_n) / MA_n × 100%。正乖離表示價格高於均線（過熱）；過高時追高風險大。
-
-**三層判斷邏輯：**
-
-1. **個股買入阻擋**：乖離率超過 `stock_bias_buy_max_pct`（預設 10%）時，BUY 訊號降為 WATCH，原因欄顯示「乖離率 XX% > MA20 上限 10%」
-2. **個股賣出警示**：乖離率超過 `stock_bias_sell_pct`（預設 20%）時，產生「高乖離率」賣出訊號，加入賣出清單
-3. **大盤過熱封鎖**：TAIEX 對 MA20 乖離率超過 `market_bias_buy_max_pct`（預設 8%）時，暫停當日**所有**新買入；超過 `market_bias_sell_pct`（預設 12%）時顯示大盤過熱警訊
-
-**設定方式（`config/settings.py` → `BacktestSettings`）：**
-
-```python
-bias_ma_period: int = 20            # 計算乖離率的均線（5/10/20/60）
-stock_bias_buy_max_pct: float = 10.0 # 個股買入乖離率上限 (%)；0 = 停用
-stock_bias_sell_pct: float = 20.0   # 個股賣出乖離率門檻 (%)；0 = 停用
-market_bias_buy_max_pct: float = 8.0 # 大盤買入乖離率上限 (%)；0 = 停用
-market_bias_sell_pct: float = 12.0  # 大盤過熱警示門檻 (%)；0 = 停用
-```
-
-- 所有門檻設為 `0` 可完全停用對應過濾
-- 大盤乖離率透過 yfinance 即時抓取 `^TWII` 資料計算；網路異常時自動略過
-- 回測與即時掃描（`signals`）皆套用相同設定
-
 ### 買入冷卻期（Signal Cooldown）
 
 同一支股票在最近 N 個交易日內已觸發過買入訊號時，後續的買入訊號會自動降級為 WATCH，避免同一波上漲中反覆進場。
@@ -497,16 +473,6 @@ docker compose up -d
 - 🔄 **P1：恢復 Golden Cross + MACD Golden Cross**：過濾器診斷顯示停用這兩個訊號讓報酬率 -5.90%，儘管勝率低（22-32%），其進場時機對組合有正向錨定效果
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
 - ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
-
-### v2.12.0 - 2026-04-20
-- 📐 **新增乖離率過濾（第 8 道進場過濾 + 賣出警示）**：個股與大盤乖離率過大時自動阻擋買入或建議賣出
-  - **個股買入乖離率上限** (`stock_bias_buy_max_pct=10.0`)：個股收盤超過 MA20 的 10% 時，BUY 訊號降級為 WATCH（避免追高）
-  - **個股乖離率賣出警示** (`stock_bias_sell_pct=20.0`)：個股乖離率超過 20% 時，即使無其他訊號也生成「高乖離率」賣出警示
-  - **大盤乖離率買入封鎖** (`market_bias_buy_max_pct=8.0`)：TAIEX 大盤乖離 MA20 超過 8% 時，暫停當日所有新買入（降級為 WATCH）
-  - **大盤乖離率過熱警示** (`market_bias_sell_pct=12.0`)：TAIEX 乖離率超過 12% 時，在掃描結果中顯示大盤過熱警訊
-  - **均線週期可設定** (`bias_ma_period=20`)：預設 MA20，可切換為 MA5/MA10/MA60
-- ⚙️ **新增 5 個 `config/settings.py` 參數**：`bias_ma_period`、`stock_bias_buy_max_pct`、`stock_bias_sell_pct`、`market_bias_buy_max_pct`、`market_bias_sell_pct`，全部支援 0 停用
-- ✅ **新增 `tests/test_bias_rate.py`**（17 tests）：覆蓋 Filter 8 邏輯、賣出訊號生成、負乖離不阻擋、停用條件、MA 資料不足降級
 
 ### v2.11.0 - 2026-04-14
 - 💰 **新增月營收過濾（第 7 道進場過濾）**：`signals` 指令自動排除每月營收低於門檻的股票，預設 1 億元（`BACKTEST_MIN_MONTHLY_REVENUE_MILLION=100`）
