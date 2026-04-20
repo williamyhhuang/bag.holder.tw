@@ -96,7 +96,7 @@ async def test_futures_positions(client: FubonClient):
     try:
         acc = client.get_futopt_account()
         if acc is None:
-            print("  ⚠ 無期貨帳號")
+            print("  ⚠ 無期貨帳號（帳號類型為 stock，尚未開通期貨帳號或 API 未包含期貨帳號）")
             return
 
         positions = await client.get_futures_positions(acc)

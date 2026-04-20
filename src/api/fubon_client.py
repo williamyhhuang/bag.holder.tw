@@ -188,8 +188,7 @@ class FubonClient:
         for acc in self.accounts.data:
             if hasattr(acc, 'account_type') and acc.account_type == 'futopt':
                 return acc
-        # Fallback to first account if no explicit futopt account found
-        return self.accounts.data[0]
+        return None  # No futopt account; do not fall back to stock account
 
     def get_stock_account(self):
         """Get the stock account from the logged-in accounts"""
@@ -246,7 +245,11 @@ class FubonClient:
         except FubonAPIError:
             raise
         except Exception as e:
-            logger.error(f"Failed to get futures quote for {symbol}: {e}")
+            err_str = str(e)
+            if '404' in err_str or 'Resource Not Found' in err_str:
+                logger.debug(f"Futures quote not available for {symbol} (404 - product may not be supported by API)")
+            else:
+                logger.error(f"Failed to get futures quote for {symbol}: {e}")
             return None
 
     async def get_futures_tickers(
