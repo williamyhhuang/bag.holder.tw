@@ -64,17 +64,31 @@ class TestBiasRateBuyFilter:
         assert result == SignalType.BUY
 
     def test_buy_blocked_when_bias_exceeds_limit(self):
-        """乖離率超過門檻時，BUY 訊號應降為 WATCH"""
+        """乖離率超過門檻時，非趨勢 BUY 訊號應降為 WATCH"""
         strategy = self._make_strategy(buy_max=10.0)
-        # MA20=100, price=115 → bias=15% > 10%
+        # MA20=100, price=115 → bias=15% > 10%；BB Squeeze Break 非趨勢訊號，應被阻擋
         indicators = _make_indicators(ma5=112, ma10=108, ma20=100, ma60=90)
         result = strategy._apply_buy_filters(
-            signal_name="Golden Cross",
+            signal_name="BB Squeeze Break",
             price=Decimal('115'),
             volume=2_000_000,
             indicators=indicators,
         )
         assert result == SignalType.WATCH
+
+    def test_buy_trend_signal_exempt_from_bias_filter(self):
+        """趨勢訊號（Donchian Breakout / Golden Cross / MACD Golden Cross）應豁免乖離率過濾"""
+        strategy = self._make_strategy(buy_max=10.0)
+        # MA20=100, price=130 → bias=30% > 10%；但趨勢訊號突破本身代表新高，不應被阻擋
+        indicators = _make_indicators(ma5=125, ma10=118, ma20=100, ma60=90)
+        for trend_signal in ("Donchian Breakout", "Golden Cross", "MACD Golden Cross"):
+            result = strategy._apply_buy_filters(
+                signal_name=trend_signal,
+                price=Decimal('130'),
+                volume=2_000_000,
+                indicators=indicators,
+            )
+            assert result == SignalType.BUY, f"{trend_signal} 應豁免乖離率過濾但被降為 WATCH"
 
     def test_buy_at_exact_limit_passes(self):
         """乖離率剛好等於門檻時應通過（> 才阻擋）"""

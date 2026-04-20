@@ -513,7 +513,7 @@ class BacktestSettings(BaseSettings):
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
     # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break
     momentum_top_n: int = Field(
-        default=5,
+        default=30,
         env="BACKTEST_MOMENTUM_TOP_N",
         description="每日動能排名篩選，只交易前 N 名（0 = 停用；30 = 回測最佳值）",
     )

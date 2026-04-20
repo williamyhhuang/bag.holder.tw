@@ -463,7 +463,8 @@ class TechnicalStrategy:
         # Filter 8: 個股乖離率過濾（追高保護）
         # 乖離率 = (price - MA_n) / MA_n × 100%；正值表示價格高於均線
         # 過高的乖離率表示股票短期漲幅過大，追高風險高，降級為 WATCH
-        if self.stock_bias_buy_max_pct > 0:
+        # 趨勢訊號（Donchian Breakout 等）豁免：突破本身即代表新高，乖離率天生偏高
+        if self.stock_bias_buy_max_pct > 0 and signal_name not in self.TREND_SIGNAL_NAMES:
             ma_val = getattr(indicators, f'ma{self.bias_ma_period}', None)
             if ma_val is not None and ma_val > 0:
                 bias_pct = (price - ma_val) / ma_val * Decimal('100')
