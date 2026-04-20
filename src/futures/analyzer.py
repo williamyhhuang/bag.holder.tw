@@ -62,21 +62,67 @@ class FuturesAnalyzer:
 
     def get_taiex_index_data(self) -> Optional[Dict]:
         """
-        Get TAIEX index data for comparison
-        Using YFinance as a fallback
+        Get TAIEX index data for comparison.
+        Tries TWSE public API first, then falls back to yfinance.
 
         Returns:
             Dict with TAIEX data or None
         """
+        # Try TWSE public API first
+        result = self._get_taiex_from_twse()
+        if result:
+            return result
+
+        # Fallback to yfinance
+        return self._get_taiex_from_yfinance()
+
+    def _get_taiex_from_twse(self) -> Optional[Dict]:
+        """Get TAIEX data from TWSE public API"""
+        try:
+            today = datetime.now().strftime('%Y%m%d')
+            url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={today}&type=MS"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            # Look for TAIEX in the stat table (index code 0001)
+            for table in data.get('tables', []):
+                for row in table.get('data', []):
+                    if len(row) >= 5 and '加權股價指數' in str(row[0]):
+                        try:
+                            close_price = float(str(row[1]).replace(',', ''))
+                            change_str = str(row[3]).replace(',', '').replace('+', '')
+                            change = float(change_str) if change_str not in ('', '--') else 0.0
+                            prev_close = close_price - change
+                            change_pct = (change / prev_close * 100) if prev_close else 0.0
+                            return {
+                                'symbol': 'TAIEX',
+                                'current_price': close_price,
+                                'change': change,
+                                'change_percent': change_pct,
+                                'volume': 0,
+                                'high': close_price,
+                                'low': close_price,
+                                'timestamp': datetime.now()
+                            }
+                        except (ValueError, IndexError):
+                            continue
+            return None
+        except Exception as e:
+            self.logger.warning(f"TWSE API unavailable: {e}")
+            return None
+
+    def _get_taiex_from_yfinance(self) -> Optional[Dict]:
+        """Get TAIEX data from yfinance"""
         try:
             import yfinance as yf
 
-            # Get TAIEX index data
             taiex = yf.Ticker("^TWII")
             hist = taiex.history(period="5d")
 
             if hist.empty:
-                self.logger.warning("No TAIEX data available")
+                self.logger.warning("No TAIEX data available from yfinance")
                 return None
 
             latest = hist.iloc[-1]
@@ -155,7 +201,7 @@ class FuturesAnalyzer:
             self.logger.error(f"Error calculating technical analysis: {e}")
             return {}
 
-    def generate_trading_recommendation(self, futures_data: Dict, taiex_data: Dict) -> Dict:
+    def generate_trading_recommendation(self, futures_data: Dict, taiex_data: Optional[Dict]) -> Dict:
         """
         Generate trading recommendation based on analysis
 
@@ -173,11 +219,11 @@ class FuturesAnalyzer:
 
             # Get current prices
             futures_price = futures_data.get('current_price', 0)
-            taiex_price = taiex_data.get('current_price', 0)
+            taiex_price = taiex_data.get('current_price', 0) if taiex_data else 0
 
             # Price change analysis
             futures_change = futures_data.get('change_percent', 0)
-            taiex_change = taiex_data.get('change_percent', 0)
+            taiex_change = taiex_data.get('change_percent', 0) if taiex_data else None
 
             # Volume analysis
             volume = futures_data.get('volume', 0)
@@ -193,10 +239,12 @@ class FuturesAnalyzer:
                 confidence += 0.2
                 reasoning.append("期貨價格下跌且成交量充足")
 
-            # TAIEX correlation
-            if abs(futures_change - taiex_change) < 0.5:
+            # TAIEX correlation (only when TAIEX data is available)
+            if taiex_change is not None and abs(futures_change - taiex_change) < 0.5:
                 confidence += 0.1
                 reasoning.append("期貨與現貨走勢一致")
+            elif taiex_change is None:
+                reasoning.append("現貨指數資料暫時無法取得")
 
             # Risk factors
             if volume < 50000:
@@ -244,12 +292,15 @@ class FuturesAnalyzer:
             futures_data = self.get_futures_data_from_fubon()
             taiex_data = self.get_taiex_index_data()
 
-            if not futures_data or not taiex_data:
-                self.logger.error("Failed to get market data")
+            if not futures_data:
+                self.logger.error("Failed to get futures data")
                 return {
                     'success': False,
-                    'error': 'Unable to fetch market data'
+                    'error': 'Unable to fetch futures data'
                 }
+
+            if not taiex_data:
+                self.logger.warning("TAIEX data unavailable, proceeding without it")
 
             # Generate recommendation
             recommendation = self.generate_trading_recommendation(futures_data, taiex_data)
