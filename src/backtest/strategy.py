@@ -45,6 +45,9 @@ class TechnicalStrategy:
         donchian_period: int = 20,
         min_volume_lots: int = 0,
         signal_cooldown_days: int = 0,
+        stock_bias_buy_max_pct: float = 0.0,
+        stock_bias_sell_pct: float = 0.0,
+        bias_ma_period: int = 20,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -69,6 +72,11 @@ class TechnicalStrategy:
         self.min_volume_lots = min_volume_lots
         # Filter 7: cooldown — skip BUY if same symbol triggered BUY within N trading days; 0 = disabled
         self.signal_cooldown_days = signal_cooldown_days
+        # Filter 8: 乖離率過濾 — 個股偏離 MA_n 超過門檻時不買；0 = 停用
+        self.stock_bias_buy_max_pct = Decimal(str(stock_bias_buy_max_pct))
+        # Sell signal: 乖離率過大時發出賣出警示；0 = 停用
+        self.stock_bias_sell_pct = Decimal(str(stock_bias_sell_pct))
+        self.bias_ma_period = bias_ma_period
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -290,6 +298,23 @@ class TechnicalStrategy:
                             'price': current_price_data.close_price,
                         })
 
+                # 乖離率賣出警示（個股收盤遠超均線，過熱建議出場）
+                if self.stock_bias_sell_pct > 0:
+                    ma_val = getattr(current_indicators, f'ma{self.bias_ma_period}', None)
+                    if ma_val is not None and ma_val > 0:
+                        bias_pct = (current_price_data.close_price - ma_val) / ma_val * Decimal('100')
+                        if bias_pct > self.stock_bias_sell_pct:
+                            detected_signals.append({
+                                'type': 'SELL',
+                                'name': '高乖離率',
+                                'description': (
+                                    f'收盤乖離 MA{self.bias_ma_period} 達 {float(bias_pct):.1f}%'
+                                    f'（門檻 {float(self.stock_bias_sell_pct):.0f}%）'
+                                ),
+                                'strength': 'MEDIUM',
+                                'price': current_price_data.close_price,
+                            })
+
                 # Convert to TradingSignal objects, applying buy-quality filters
                 for signal_data in detected_signals:
                     signal_type = self.map_signal_type(signal_data['type'])
@@ -434,6 +459,20 @@ class TechnicalStrategy:
                     f"min {min_shares} ({self.min_volume_lots} lots) → WATCH"
                 )
                 return SignalType.WATCH
+
+        # Filter 8: 個股乖離率過濾（追高保護）
+        # 乖離率 = (price - MA_n) / MA_n × 100%；正值表示價格高於均線
+        # 過高的乖離率表示股票短期漲幅過大，追高風險高，降級為 WATCH
+        if self.stock_bias_buy_max_pct > 0:
+            ma_val = getattr(indicators, f'ma{self.bias_ma_period}', None)
+            if ma_val is not None and ma_val > 0:
+                bias_pct = (price - ma_val) / ma_val * Decimal('100')
+                if bias_pct > self.stock_bias_buy_max_pct:
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: bias {float(bias_pct):.1f}% > "
+                        f"max {float(self.stock_bias_buy_max_pct):.0f}% from MA{self.bias_ma_period} → WATCH"
+                    )
+                    return SignalType.WATCH
 
         return SignalType.BUY
 

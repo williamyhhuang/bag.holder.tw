@@ -480,11 +480,40 @@ class BacktestSettings(BaseSettings):
         description="同股票買入冷卻期（交易日數；0 = 停用）",
     )
 
+    # ── 乖離率過濾 (Bias Rate / Price Deviation Filter) ──────────────────────
+    # 乖離率 = (收盤價 - MA_n) / MA_n × 100%
+    # 正乖離（Price > MA）表示漲幅超前均線，可能已過熱；負乖離表示落後均線
+    # bias_ma_period：計算乖離率所用的均線週期，需為已計算的 MA（5/10/20/60）
+    bias_ma_period: int = Field(
+        default=20,
+        description="計算乖離率使用的均線週期（預設 MA20，可選 5/10/20/60）",
+    )
+    # 個股最大買入乖離率：超過此值的 BUY 訊號降級為 WATCH（避免追高）；0 = 停用
+    stock_bias_buy_max_pct: float = Field(
+        default=10.0,
+        description="個股最大買入乖離率 (%)；超過此值 BUY 降為 WATCH；0 = 停用",
+    )
+    # 個股乖離率賣出警示門檻：超過此值時即使無其他賣出訊號也列入賣出警示；0 = 停用
+    stock_bias_sell_pct: float = Field(
+        default=20.0,
+        description="個股乖離率賣出警示門檻 (%)；超過此值列入賣出警示；0 = 停用",
+    )
+    # 大盤最大買入乖離率：大盤過熱時暫停所有新買入；0 = 停用
+    market_bias_buy_max_pct: float = Field(
+        default=8.0,
+        description="大盤最大買入乖離率 (%)；大盤過熱暫停所有新買入；0 = 停用",
+    )
+    # 大盤乖離率警示門檻：超過此值在報表中標示大盤過熱警訊；0 = 停用
+    market_bias_sell_pct: float = Field(
+        default=12.0,
+        description="大盤乖離率警示門檻 (%)；超過此值標示大盤過熱；0 = 停用",
+    )
+
     # ── 動能排名過濾 ─────────────────────────────────────────────────
     # 每個交易日，只允許近 N 日動能排名前 top_n 的股票發出買進訊號
     # 避免進場動能不足的股票，即使它們觸發了 BB Squeeze Break
     momentum_top_n: int = Field(
-        default=30,
+        default=5,
         env="BACKTEST_MOMENTUM_TOP_N",
         description="每日動能排名篩選，只交易前 N 名（0 = 停用；30 = 回測最佳值）",
     )

@@ -46,6 +46,9 @@ class BacktestRunner:
             donchian_period=cfg.donchian_period,
             min_volume_lots=cfg.min_volume_lots,
             signal_cooldown_days=cfg.signal_cooldown_days,
+            stock_bias_buy_max_pct=cfg.stock_bias_buy_max_pct,
+            stock_bias_sell_pct=cfg.stock_bias_sell_pct,
+            bias_ma_period=cfg.bias_ma_period,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
