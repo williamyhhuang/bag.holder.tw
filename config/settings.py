@@ -592,9 +592,9 @@ class Settings(BaseSettings):
         log_dir = Path(self.logging.file_path).parent
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create data directory
-        data_dir = PROJECT_ROOT / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
+        # Create data directories
+        for subdir in ["data", "data/backtest", "data/cache", "data/stocks", "data/signals_log"]:
+            (PROJECT_ROOT / subdir).mkdir(parents=True, exist_ok=True)
 
         # Create config directory
         config_dir = PROJECT_ROOT / "config"

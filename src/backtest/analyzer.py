@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 class PerformanceAnalyzer:
     """Analyze and compare backtesting performance"""
 
-    def __init__(self, output_dir: str = "data"):
+    def __init__(self, output_dir: str = "data/backtest"):
         self.output_dir = output_dir
         self.logger = get_logger(self.__class__.__name__)
 

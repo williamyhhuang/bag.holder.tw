@@ -16,7 +16,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-CACHE_FILE = project_root / "data" / "stock_names.json"
+CACHE_FILE = project_root / "data" / "cache" / "stock_names.json"
 CACHE_TTL_HOURS = 24
 
 

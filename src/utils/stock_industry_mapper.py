@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 # ── 快取設定 ──────────────────────────────────────────────────────────────────
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
-CACHE_FILE = _PROJECT_ROOT / "data" / "stock_industries.json"
+CACHE_FILE = _PROJECT_ROOT / "data" / "cache" / "stock_industries.json"
 CACHE_TTL_HOURS = 24
 
 # ── TWSE / TPEX 官方產業別代碼 → 族群名稱 ────────────────────────────────────

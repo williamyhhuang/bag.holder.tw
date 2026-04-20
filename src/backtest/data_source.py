@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 class YFinanceDataSource:
     """YFinance data source for Taiwan stock market"""
 
-    def __init__(self, cache_dir: str = "data"):
+    def __init__(self, cache_dir: str = "data/backtest"):
         self.cache_dir = cache_dir
         self.logger = get_logger(self.__class__.__name__)
 

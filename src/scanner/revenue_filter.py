@@ -26,7 +26,7 @@ _TSE_URL = "https://openapi.twse.com.tw/v1/opendata/t187ap05_L"
 _OTC_URL = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap05_O"
 
 # 預設快取路徑
-_DEFAULT_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "revenue_cache.json"
+_DEFAULT_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "cache" / "revenue_cache.json"
 
 
 def _fetch_revenue_from_api() -> Dict[str, float]:
