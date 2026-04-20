@@ -95,13 +95,8 @@ dmypy.json
 htmlcov/
 .tox/
 
-# Data files (but keep sample data)
-data/*.csv
-data/*.json
-data/backups/
-data/stocks/*
-!data/init.sql
-!data/sample/
+# Data files
+data/
 
 # Temporary files
 tmp/
