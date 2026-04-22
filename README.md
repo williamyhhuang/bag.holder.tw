@@ -168,6 +168,13 @@ python main.py signals --send-telegram
 3. 均線多頭排列：MA5 > MA10 > MA20
 4. RSI ≥ 50（具備上漲動能）
 5. 近 20 日動能排名前 30（避免動能衰退的假突破）
+6. 成交量 ≥ 1000 張（流動性過濾）
+7. 族群強勢（族群內 > 50% 股票收盤在 MA20 上方）
+8. 月營收 ≥ 門檻（預設 1 億元，可設年增率門檻）
+9. **排除處置股/注意股**：自動從 TWSE 每日更新排除，無法進場（硬過濾）
+10. 三大法人買超（選用，預設停用；啟用後不足者降級至觀察清單）
+
+> **注意**：買入過濾器只影響「建議買入」和「觀察清單」，不影響賣出警示。
 
 **訊號歷史記錄：**
 每次執行 `python main.py signals` 會自動將結果存為 JSON 至 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比較。
@@ -176,6 +183,8 @@ python main.py signals --send-telegram
 - MACD Death Cross（最嚴重）
 - Death Cross（MA5 跌破 MA20）
 - RSI Momentum Loss（RSI 跌破 50）
+
+> **設計原則**：賣出警示**不受**月營收、處置股等買入過濾器限制。若持有的股票變成處置股並觸發賣出訊號，仍會正常顯示並標記「⚠️處置股」提醒優先處理。
 
 ### 股票觀察清單 (scan)
 寬鬆條件篩選，適合找尋潛力標的，不代表可直接進場。
@@ -229,6 +238,50 @@ min_monthly_revenue_million: float = 100.0  # 1 億元；改為 0 可停用
 ```
 
 若 API 無法連線（非交易時間或網路問題），過濾器自動略過，不影響其他訊號輸出。
+
+#### 月營收年增率門檻（選用）
+
+同時可設定年增率過濾，排除月營收金額達標但成長動能不足的股票：
+
+```python
+min_revenue_yoy_pct: float = 0.0   # 0 = 停用；20.0 = 需年增率 ≥ 20%
+```
+
+#### 處置股/注意股過濾
+
+`signals` 指令自動排除目前受 TWSE 處置措施或列為注意股的標的：
+
+- **資料來源（雙來源）**：
+  - 主要：富邦 SDK `intraday.tickers(isDisposition=True / isAttention=True)`（需登入）
+  - Fallback：TWSE OpenAPI `/announcement/punish` + `/announcement/notetrans`（免登入）
+- **快取**：每日更新至 `data/cache/disposal_cache.json`
+- **過濾邏輯**：處置/注意股**完全不進**買入或觀察清單（硬過濾）
+- **賣出例外**：若持有股票變成處置股仍會顯示賣出警示，並標記「⚠️處置股」
+
+**設定方式（`config/settings.py` → `BacktestSettings`）：**
+```python
+enable_disposal_filter: bool = True   # 預設啟用
+filter_attention_stocks: bool = False  # 是否也過濾注意股（比處置股寬鬆）
+```
+
+#### 三大法人籌碼過濾（選用）
+
+法人買超通常比散戶早 3-10 天，可作為早期信號確認指標：
+
+- **資料來源**：TWSE T86 API（每交易日更新，免費）
+- **欄位**：外資買賣超、投信買賣超、自營商買賣超（單位：股）
+- **過濾邏輯**：法人買超不足者降級至觀察清單（非硬過濾），標示法人張數
+- **非交易日**：API 無資料時自動 fail-open，不阻斷掃描
+
+**設定方式：**
+```python
+enable_institutional_filter: bool = False          # 預設停用（建議先觀察數週）
+institutional_min_foreign_net_shares: int = 500_000  # 外資門檻 500 張
+institutional_min_trust_net_shares: int = 200_000    # 投信門檻 200 張
+institutional_require_any: bool = True               # OR 邏輯（外資或投信擇一達標即可）
+```
+
+> **建議**：先以 `enable_institutional_filter=False` 跑 1-2 週觀察法人數字分佈，再決定門檻。
 
 ### 買入冷卻期（Signal Cooldown）
 

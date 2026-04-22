@@ -288,10 +288,9 @@ class SignalsScanner:
             # OTC 內部 symbol 帶 'O' 後綴（4741O），API key 只有數字（4741）
             revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
 
-            # 處置股硬過濾：直接跳過，不進任何清單
-            if disposal_set and revenue_key in disposal_set:
-                self.logger.debug(f"[disposal] 跳過處置股 {sig.symbol}")
-                continue
+            # 處置股硬過濾：只過濾買入/觀察，賣出警示不過濾
+            # （持有中的處置股出現賣出訊號，持有人更需要看到）
+            is_disposal = disposal_set and revenue_key in disposal_set
 
             symbol_display = _display_symbol(sig.symbol)
             name = _lookup_name(sig.symbol, self._stock_names)
@@ -307,6 +306,10 @@ class SignalsScanner:
             }
 
             if sig.signal_type == SignalType.BUY:
+                if is_disposal:
+                    self.logger.debug(f"[disposal] 跳過處置股買入 {sig.symbol}")
+                    continue
+
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
 
@@ -388,15 +391,16 @@ class SignalsScanner:
 
             elif sig.signal_type == SignalType.SELL:
                 # 只保留 P1 策略定義的出場訊號，過濾掉 RSI Overbought 等雜訊
+                # 注意：賣出不套用處置股/月營收/法人過濾——持倉出場訊號必須顯示
                 if sig.signal_name in P1_SELL_SIGNALS:
-                    # 月營收過濾：賣出警示也只針對通過營收門檻的股票
-                    if min_revenue > 0 and revenue_map:
-                        rev = get_revenue_million(revenue_map, revenue_key)
-                        if rev is None or rev < min_revenue:
-                            continue
+                    if is_disposal:
+                        entry["disposal"] = True  # 標記：該股為處置股
                     sell_list.append(entry)
 
             elif sig.signal_type == SignalType.WATCH:
+                if is_disposal:
+                    self.logger.debug(f"[disposal] 跳過處置股觀察 {sig.symbol}")
+                    continue
                 entry["sector"] = self.sector_analyzer.get_stock_sector(sig.symbol)
                 entry["reason"] = _watch_reason_with_price(
                     sig.signal_name, sig.price, sig.indicators, self.strategy

@@ -67,13 +67,14 @@ def display_signals(result: dict, show_watch: bool = False):
     print(f"\n⚠️  賣出警示 ({len(sell_list)} 支)  [若持有以下個股，請留意出場]")
     if sell_list:
         shown = sell_list[:SELL_DISPLAY_LIMIT]
-        print(f"  {'代號':<16} {'名稱':<10} {'訊號':<26} {'價格':>8} {'RSI':>6}")
-        print("  " + "-" * 70)
+        print(f"  {'代號':<16} {'名稱':<10} {'訊號':<26} {'價格':>8} {'RSI':>6}  備註")
+        print("  " + "-" * 80)
         for s in shown:
             name = (s["name"] or "")[:8]
             signal = s["signal"][:24]
             rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
-            print(f"  {s['symbol']:<16} {name:<10} {signal:<26} {s['price']:>8.2f} {rsi_str:>6}")
+            note = "⚠️處置股" if s.get("disposal") else ""
+            print(f"  {s['symbol']:<16} {name:<10} {signal:<26} {s['price']:>8.2f} {rsi_str:>6}  {note}")
         if len(sell_list) > SELL_DISPLAY_LIMIT:
             print(f"  ... 另有 {len(sell_list) - SELL_DISPLAY_LIMIT} 支（使用 --watch 查看觀察清單）")
     else:
@@ -111,9 +112,14 @@ def display_signals(result: dict, show_watch: bool = False):
 
     print(f"\n{'='*60}")
     print("  說明：")
-    print("  • 買入訊號需同時通過：MA60上方、均線排列(MA5>MA10>MA20)、")
-    print("    RSI≥50、動能排名前30、成交量≥1000張、族群強勢、月營收≥門檻（P1生產策略）")
-    print("  • 賣出警示為參考，不代表強制出場")
+    print("  • 買入訊號需同時通過（P1生產策略）：")
+    print("    ① 技術面：MA60上方、均線排列(MA5>MA10>MA20)、RSI≥50")
+    print("    ② 動能：成交量≥1000張、動能排名前30")
+    print("    ③ 基本面：月營收≥門檻（可設年增率門檻）")
+    print("    ④ 籌碼面：三大法人買超≥門檻（預設停用）")
+    print("    ⑤ 排除：處置股/注意股（TWSE 每日更新）、族群偏弱")
+    print("  • 賣出警示：持有股出場訊號，不受買入過濾限制")
+    print("    （含處置股賣出警示，標記「⚠️處置股」供注意）")
     print(f"{'='*60}\n")
 
 
@@ -143,7 +149,8 @@ def format_for_telegram(result: dict) -> list[str]:
         for s in sell_list:
             name = s["name"] or ""
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
-            lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}")
+            disposal_tag = " 🚨處置股" if s.get("disposal") else ""
+            lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}{disposal_tag}")
 
     if not buy_list and not sell_list:
         lines.append("今日無買賣訊號")
