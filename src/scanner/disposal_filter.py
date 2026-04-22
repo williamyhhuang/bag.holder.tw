@@ -6,8 +6,9 @@ Disposal Stock Filter (處置股/注意股過濾器)
 資料來源（雙來源，優先序）：
   1. 富邦 API intraday.tickers(isDisposition=True / isAttention=True)
      ── 需已登入 SDK；回傳最即時、最準確的清單
-  2. TWSE 公告 API（fallback，無需登入）
-     ── https://www.twse.com.tw/rwd/zh/announce/dispose?response=json
+  2. TWSE OpenAPI（fallback，無需登入）
+     ── https://openapi.twse.com.tw/v1/announcement/punish  (處置股)
+     ── https://openapi.twse.com.tw/v1/announcement/notetrans (注意股)
 
 任一來源失敗時 fail-open（回空集合），不阻斷掃描流程。
 """
@@ -22,7 +23,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_TWSE_DISPOSE_URL = "https://www.twse.com.tw/rwd/zh/announce/dispose?response=json"
+_TWSE_PUNISH_URL = "https://openapi.twse.com.tw/v1/announcement/punish"
+_TWSE_NOTETRANS_URL = "https://openapi.twse.com.tw/v1/announcement/notetrans"
 
 _DEFAULT_CACHE_PATH = (
     Path(__file__).parent.parent.parent / "data" / "cache" / "disposal_cache.json"
@@ -65,39 +67,46 @@ def _fetch_from_fubon(sdk) -> Optional[Set[str]]:
 
 def _fetch_from_twse() -> Set[str]:
     """
-    透過 TWSE 公告 API 取得目前處置股清單（fallback）。
+    透過 TWSE OpenAPI 取得目前處置股與注意股清單（fallback）。
+
+    回傳格式：list of dict，每筆含 ``Code`` 欄位（股票代號）。
 
     Returns:
         股票代碼集合，失敗時回傳空集合。
     """
     symbols: Set[str] = set()
-    try:
-        resp = requests.get(_TWSE_DISPOSE_URL, timeout=15)
-        resp.raise_for_status()
 
-        text = resp.text.strip()
-        if not text.startswith("{"):
-            logger.warning("[disposal] TWSE 公告 API 回傳非 JSON，略過")
-            return symbols
+    for url, label in [
+        (_TWSE_PUNISH_URL, "處置股"),
+        (_TWSE_NOTETRANS_URL, "注意股"),
+    ]:
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
 
-        data = resp.json()
-        rows = data.get("data", [])
-        for row in rows:
-            # 每列格式通常是 [代號, 名稱, 原因, ...]
-            if isinstance(row, list) and row:
-                code = str(row[0]).strip()
-                if code and code.isdigit():
-                    symbols.add(code)
-            elif isinstance(row, dict):
-                code = str(row.get("code", row.get("symbol", ""))).strip()
-                if code:
-                    symbols.add(code)
+            text = resp.text.strip()
+            if not text.startswith("[") and not text.startswith("{"):
+                logger.warning(f"[disposal] TWSE {label} API 回傳非 JSON，略過")
+                continue
 
-        logger.info(f"[disposal] TWSE 公告 API 取得 {len(symbols)} 支處置股")
+            data = resp.json()
+            rows = data if isinstance(data, list) else data.get("data", [])
+            before = len(symbols)
+            for row in rows:
+                if isinstance(row, dict):
+                    code = str(row.get("Code", row.get("code", row.get("symbol", "")))).strip()
+                    if code:
+                        symbols.add(code)
+                elif isinstance(row, list) and row:
+                    code = str(row[0]).strip()
+                    if code and code.isdigit():
+                        symbols.add(code)
+            logger.info(f"[disposal] TWSE {label}: {len(symbols) - before} 支")
 
-    except Exception as exc:
-        logger.warning(f"[disposal] TWSE 公告 API 失敗: {exc}")
+        except Exception as exc:
+            logger.warning(f"[disposal] TWSE {label} API 失敗: {exc}")
 
+    logger.info(f"[disposal] TWSE OpenAPI 合計取得 {len(symbols)} 支")
     return symbols
 
 

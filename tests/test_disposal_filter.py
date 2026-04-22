@@ -16,11 +16,9 @@ from src.scanner.disposal_filter import DisposalStockFilter, _fetch_from_fubon, 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _make_twse_response(codes):
-    """TWSE JSON 格式：data 為二維陣列，第一欄為代號"""
-    return {
-        "stat": "ok",
-        "data": [[code, f"公司{code}", "處置原因"] for code in codes],
-    }
+    """TWSE OpenAPI punish 格式：list of dict with Code field"""
+    return [{"Code": code, "Name": f"公司{code}", "ReasonsOfDisposition": "處置原因",
+             "DispositionPeriod": "115/04/17～115/04/30"} for code in codes]
 
 
 def _make_fubon_sdk(disposition_codes, attention_codes=None):
@@ -84,30 +82,43 @@ class TestFetchFromTwse:
         mock_resp.json.return_value = data
         return mock_resp
 
-    def test_parses_list_format(self):
-        payload = _make_twse_response(["2330", "4741"])
+    def test_parses_punish_format(self):
+        """TWSE OpenAPI /announcement/punish 格式：list of dict with Code field"""
+        punish_payload = _make_twse_response(["2330", "4741"])
+        notetrans_payload = []
         with patch("src.scanner.disposal_filter.requests") as mock_req:
-            mock_req.get.return_value = self._mock_resp(payload)
+            mock_req.get.side_effect = [
+                self._mock_resp(punish_payload),
+                self._mock_resp(notetrans_payload),
+            ]
             result = _fetch_from_twse()
         assert "2330" in result
         assert "4741" in result
 
-    def test_parses_dict_format(self):
-        payload = {"stat": "ok", "data": [{"code": "6657"}, {"symbol": "3037"}]}
+    def test_includes_attention_from_notetrans(self):
+        """TWSE OpenAPI /announcement/notetrans 也包含在結果中"""
+        punish_payload = _make_twse_response(["2330"])
+        notetrans_payload = [{"Code": "6657", "Name": "OTC股"}]
         with patch("src.scanner.disposal_filter.requests") as mock_req:
-            mock_req.get.return_value = self._mock_resp(payload)
+            mock_req.get.side_effect = [
+                self._mock_resp(punish_payload),
+                self._mock_resp(notetrans_payload),
+            ]
             result = _fetch_from_twse()
+        assert "2330" in result
         assert "6657" in result
-        assert "3037" in result
 
-    def test_non_json_response_returns_empty(self):
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status.return_value = None
-        mock_resp.text = "<html>error</html>"
+    def test_non_json_response_skips_that_source(self):
+        """非 JSON 回應略過該來源，其他來源仍正常"""
+        html_resp = MagicMock()
+        html_resp.raise_for_status.return_value = None
+        html_resp.text = "<html>error</html>"
+        notetrans_payload = [{"Code": "9999"}]
+        notetrans_resp = self._mock_resp(notetrans_payload)
         with patch("src.scanner.disposal_filter.requests") as mock_req:
-            mock_req.get.return_value = mock_resp
+            mock_req.get.side_effect = [html_resp, notetrans_resp]
             result = _fetch_from_twse()
-        assert result == set()
+        assert "9999" in result
 
     def test_api_exception_returns_empty(self):
         with patch("src.scanner.disposal_filter.requests") as mock_req:
@@ -126,14 +137,19 @@ class TestDisposalStockFilter:
         assert "2330" in result
 
     def test_falls_back_to_twse_when_sdk_none(self, tmp_path):
-        payload = _make_twse_response(["9999"])
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status.return_value = None
-        mock_resp.text = json.dumps(payload)
-        mock_resp.json.return_value = payload
+        punish_payload = _make_twse_response(["9999"])
+        notetrans_payload = []
+        mock_punish = MagicMock()
+        mock_punish.raise_for_status.return_value = None
+        mock_punish.text = json.dumps(punish_payload)
+        mock_punish.json.return_value = punish_payload
+        mock_notetrans = MagicMock()
+        mock_notetrans.raise_for_status.return_value = None
+        mock_notetrans.text = json.dumps(notetrans_payload)
+        mock_notetrans.json.return_value = notetrans_payload
 
         with patch("src.scanner.disposal_filter.requests") as mock_req:
-            mock_req.get.return_value = mock_resp
+            mock_req.get.side_effect = [mock_punish, mock_notetrans]
             f = DisposalStockFilter(sdk=None, cache_path=tmp_path / "disposal.json")
             result = f.load()
         assert "9999" in result
