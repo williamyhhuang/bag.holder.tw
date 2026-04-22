@@ -10,6 +10,11 @@ from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
+
+# Allow PostgreSQL UUID type to render in SQLite as VARCHAR for testing
+if not hasattr(SQLiteTypeCompiler, 'visit_UUID'):
+    SQLiteTypeCompiler.visit_UUID = lambda self, type_, **kw: 'VARCHAR(36)'
 
 import sys
 from pathlib import Path

@@ -3,7 +3,7 @@ Tests for telegram module
 """
 import pytest
 from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 from src.telegram.simple_notifier import TelegramNotifier
 from src.telegram.trade_bot import TradingBot
@@ -151,24 +151,22 @@ class TestTradingBot:
         assert '做空' in help_msg
         assert '/stats' in help_msg
 
-    @patch.object(TradingBot, 'trade_recorder')
-    def test_handle_trade_input_success(self, mock_recorder):
+    def test_handle_trade_input_success(self):
         """Test successful trade input handling"""
-        # Mock successful recording
-        mock_recorder.record_trade.return_value = True
+        # Mock successful recording on the instance
+        self.trading_bot.trade_recorder.record_trade = MagicMock(return_value=True)
 
         response = self.trading_bot.handle_trade_input("做多 2330 580", "test_chat")
 
         assert isinstance(response, str)
         assert '交易記錄已確認' in response
         assert '2330' in response
-        mock_recorder.record_trade.assert_called_once()
+        self.trading_bot.trade_recorder.record_trade.assert_called_once()
 
-    @patch.object(TradingBot, 'trade_recorder')
-    def test_handle_trade_input_failure(self, mock_recorder):
+    def test_handle_trade_input_failure(self):
         """Test failed trade input handling"""
-        # Mock failed recording
-        mock_recorder.record_trade.return_value = False
+        # Mock failed recording on the instance
+        self.trading_bot.trade_recorder.record_trade = MagicMock(return_value=False)
 
         response = self.trading_bot.handle_trade_input("做多 2330 580", "test_chat")
 
