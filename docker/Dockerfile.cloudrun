@@ -1,0 +1,59 @@
+# Cloud Run production image
+# Differences from Dockerfile.optimized:
+#   - No --build=aarch64 flag (Cloud Run runs x86_64)
+#   - Adds google-cloud-cli for gsutil (GCS sync)
+#   - Copies entrypoint scripts
+
+FROM python:3.11-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
+    tar -xzf ta-lib-0.4.0-src.tar.gz && \
+    cd ta-lib/ && \
+    ./configure --prefix=/usr && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf ta-lib*
+
+COPY requirements-prod.txt .
+RUN pip install --no-cache-dir --prefix=/usr/local -r requirements-prod.txt
+
+# Final stage
+FROM python:3.11-slim
+
+# Install google-cloud-cli (provides gsutil)
+RUN apt-get update && apt-get install -y curl gnupg && \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+      > /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+      | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+    apt-get update && apt-get install -y google-cloud-cli && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local /usr/local
+COPY --from=builder /usr/lib/libta_lib* /usr/lib/
+COPY --from=builder /usr/include/ta-lib /usr/include/ta-lib
+
+WORKDIR /app
+
+COPY src/ ./src/
+COPY main.py ./
+COPY run_backtest.py ./
+COPY config/ ./config/
+COPY docker/entrypoint-download.sh /entrypoint-download.sh
+COPY docker/entrypoint-signals.sh /entrypoint-signals.sh
+
+RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh && \
+    mkdir -p /app/data /app/logs /app/reports /app/data/stocks
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "main.py", "--help"]

@@ -97,6 +97,8 @@ htmlcov/
 
 # Data files
 data/
+docs/
+log/
 
 # Temporary files
 tmp/
