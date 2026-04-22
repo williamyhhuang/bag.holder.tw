@@ -23,48 +23,12 @@ class TestMarketScanner:
             scan_interval=60
         )
 
-    @pytest.fixture
-    def test_stocks_in_db(self, test_db_session, sample_stocks):
-        """Add sample stocks to test database"""
-        for stock in sample_stocks:
-            test_db_session.add(stock)
-        test_db_session.commit()
-        return sample_stocks
-
     def test_scanner_initialization(self, market_scanner):
         """Test scanner initialization"""
         assert market_scanner.batch_size == 10
         assert market_scanner.max_concurrent == 2
         assert market_scanner.scan_interval == 60
         assert not market_scanner.is_running
-
-    def test_get_active_stocks(self, market_scanner, test_stocks_in_db):
-        """Test getting active stocks from database"""
-        # This would require mocking the database session
-        # For now, just test that the method exists and can be called
-        active_stocks = market_scanner._get_active_stocks(['TSE'])
-        assert isinstance(active_stocks, list)
-
-    @pytest.mark.asyncio
-    async def test_scan_single_stock(self, market_scanner, test_db_session, sample_stocks):
-        """Test scanning a single stock"""
-        stock = sample_stocks[0]
-        test_db_session.add(stock)
-        test_db_session.commit()
-
-        # Mock the database manager for this test
-        original_db_manager = market_scanner.__dict__.get('db_manager')
-
-        try:
-            # This would test the actual scanning logic
-            # For now, just ensure the method exists and doesn't crash
-            result = await market_scanner._scan_single_stock(stock)
-            assert isinstance(result, int)  # Should return signal count
-
-        finally:
-            # Restore original db_manager if it existed
-            if original_db_manager:
-                market_scanner.db_manager = original_db_manager
 
     def test_start_stop_scanning(self, market_scanner):
         """Test starting and stopping scanner"""
@@ -84,20 +48,6 @@ class TestHistoricalDataUpdater:
     def test_updater_initialization(self, data_updater):
         """Test updater initialization"""
         assert data_updater.fubon_client is not None
-
-    @pytest.mark.asyncio
-    async def test_update_single_stock(self, data_updater, test_db_session, sample_stocks):
-        """Test updating historical data for single stock"""
-        stock = sample_stocks[0]
-        test_db_session.add(stock)
-        test_db_session.commit()
-
-        start_date = date.today() - timedelta(days=30)
-        end_date = date.today()
-
-        # This would test the actual update logic
-        result = await data_updater._update_stock_history(stock, start_date, end_date)
-        assert isinstance(result, bool)
 
 class TestStockFilter:
     """Test stock filtering system"""

@@ -33,7 +33,12 @@ class RateLimiter:
         self.max_requests = max_requests
         self.time_window = time_window
         self.requests: list = []
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = None  # type: ignore
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def acquire(self) -> bool:
         """
@@ -42,7 +47,7 @@ class RateLimiter:
         Returns:
             True if request is allowed, raises RateLimitExceeded if not
         """
-        async with self._lock:
+        async with self._get_lock():
             now = time.time()
 
             # Remove requests outside the time window
