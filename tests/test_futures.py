@@ -1,6 +1,7 @@
 """
 台指期貨監控模組及富邦 API 客戶端單元測試
 """
+import sys
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime, date
@@ -502,8 +503,10 @@ class TestGetTaiexFromFubon:
         """Fubon SDK 成功時應回傳 TAIEX 資料"""
         mock_sdk = self._make_mock_sdk(price=37000.0, change=150.0, change_pct=0.41)
 
-        with patch('src.futures.analyzer.settings') as mock_settings, \
-             patch('fubon_neo.sdk.FubonSDK', return_value=mock_sdk):
+        mock_fubon_neo_sdk = MagicMock()
+        mock_fubon_neo_sdk.FubonSDK = MagicMock(return_value=mock_sdk)
+        with patch.dict(sys.modules, {'fubon_neo': MagicMock(), 'fubon_neo.sdk': mock_fubon_neo_sdk}), \
+             patch('src.futures.analyzer.settings') as mock_settings:
             mock_settings.fubon.has_api_key_auth.return_value = True
             mock_settings.fubon.user_id = 'A123456789'
             mock_settings.fubon.api_key = 'testkey'
@@ -536,8 +539,10 @@ class TestGetTaiexFromFubon:
         mock_accounts.message = 'Login failed'
         mock_sdk.apikey_login.return_value = mock_accounts
 
-        with patch('src.futures.analyzer.settings') as mock_settings, \
-             patch('fubon_neo.sdk.FubonSDK', return_value=mock_sdk):
+        mock_fubon_neo_sdk = MagicMock()
+        mock_fubon_neo_sdk.FubonSDK = MagicMock(return_value=mock_sdk)
+        with patch.dict(sys.modules, {'fubon_neo': MagicMock(), 'fubon_neo.sdk': mock_fubon_neo_sdk}), \
+             patch('src.futures.analyzer.settings') as mock_settings:
             mock_settings.fubon.has_api_key_auth.return_value = True
             mock_settings.fubon.user_id = 'A123456789'
             mock_settings.fubon.api_key = 'testkey'
@@ -550,8 +555,10 @@ class TestGetTaiexFromFubon:
 
     def test_returns_none_when_api_raises(self, analyzer):
         """SDK 拋出例外時應回傳 None 而不是拋出"""
-        with patch('src.futures.analyzer.settings') as mock_settings, \
-             patch('fubon_neo.sdk.FubonSDK', side_effect=Exception("SDK error")):
+        mock_fubon_neo_sdk = MagicMock()
+        mock_fubon_neo_sdk.FubonSDK = MagicMock(side_effect=Exception("SDK error"))
+        with patch.dict(sys.modules, {'fubon_neo': MagicMock(), 'fubon_neo.sdk': mock_fubon_neo_sdk}), \
+             patch('src.futures.analyzer.settings') as mock_settings:
             mock_settings.fubon.has_api_key_auth.return_value = True
             mock_settings.fubon.user_id = 'A123456789'
             mock_settings.fubon.api_key = 'testkey'
