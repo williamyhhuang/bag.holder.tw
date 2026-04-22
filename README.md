@@ -514,6 +514,23 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🔬 以下方向實測無效（恢復原設定）：停用 Golden Cross、NEUTRAL 開放 Donchian、縮 BB 倉位增趨勢倍率、移除停利限制
 - ✅ 更新單元測試與 diagnose_filters.py 的生產配置（87 tests pass）
 
+### v3.5.0 - 2026-04-22
+- 🚫 **新增處置股/注意股過濾器**（`src/scanner/disposal_filter.py`）：硬過濾，處置/注意股不進 buy/watch 清單
+  - 主要來源：富邦 SDK `intraday.tickers(isDisposition=True / isAttention=True)`
+  - 備用來源：TWSE OpenAPI `/announcement/punish` + `/announcement/notetrans`（免登入，自動 fallback）
+  - 每日磁碟快取 `data/cache/disposal_cache.json`；失敗時 fail-open 不阻斷掃描
+- 📊 **新增三大法人籌碼過濾器**（`src/scanner/institutional_filter.py`）：外資/投信法人買超是領先 3-10 天的早期信號
+  - 資料來源：TWSE T86 API（`/rwd/zh/fund/T86?response=json&date=YYYYMMDD&selectType=ALLBUT0999`）
+  - `InstitutionalFlow` dataclass：外資/投信/自營商/合計買賣超（張數）
+  - 支援 OR/AND 邏輯過濾；法人不足時降級至 WATCH（非硬過濾）
+  - 每日磁碟快取；非交易日 fail-open
+- 📈 **月營收升級**（`src/scanner/revenue_filter.py`）：新增 YoY 年增率、MoM 月增率
+  - `get_revenue_yoy()` / `get_revenue_mom()` helper functions
+  - 快取 schema_version=2；舊版 float 格式自動視為過期重抓
+  - 新設定 `BACKTEST_MIN_REVENUE_YOY_PCT`（預設 0=停用）
+- ⚙️ **新增 settings.py 參數**（共 7 個）：`enable_disposal_filter`、`filter_attention_stocks`、`enable_institutional_filter`、`institutional_min_foreign_net_shares`、`institutional_min_trust_net_shares`、`institutional_require_any`、`min_revenue_yoy_pct`
+- ✅ **新增 65 個單元測試**：`test_disposal_filter.py`（18）、`test_institutional_filter.py`（18）、`test_revenue_filter.py` 擴增（29 → 29）
+
 ### v3.4.0 - 2026-04-10
 - 📁 **signals 歷史記錄自動儲存**：每次執行 `python main.py signals` 自動將結果（買入、賣出、族群摘要）存為 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比對
 - 🐛 **修正 TEST_TW.csv 汙染 latest date 偵測的 bug**：測試遺留的 `data/stocks/TEST_TW.csv` 含有未來日期 timestamp，導致 scanner 誤判最新交易日，造成無訊號輸出；已刪除該檔案
