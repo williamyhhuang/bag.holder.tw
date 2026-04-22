@@ -83,10 +83,12 @@ jobs:
       - name: Deploy bag-holder-download job
         run: |
           gcloud run jobs update bag-holder-download \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
           || \
           gcloud run jobs create bag-holder-download \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --service-account=bag-holder-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
@@ -101,10 +103,12 @@ jobs:
       - name: Deploy bag-holder-signals job
         run: |
           gcloud run jobs update bag-holder-signals \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
           || \
           gcloud run jobs create bag-holder-signals \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --service-account=bag-holder-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
