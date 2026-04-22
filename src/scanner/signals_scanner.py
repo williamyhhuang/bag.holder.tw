@@ -217,16 +217,15 @@ class SignalsScanner:
                 + (f"，年增率門檻 {min_yoy:.0f}%" if min_yoy > 0 else "")
             )
 
-        # 處置股/注意股過濾
-        disposal_set: Set[str] = set()
+        # 處置股/注意股標記（不排除，僅於訊號備註中顯示）
+        disposal_labeled: Dict[str, str] = {}
         if self.cfg.enable_disposal_filter:
-            disposal_set = DisposalStockFilter(
+            disposal_labeled = DisposalStockFilter(
                 sdk=self._fubon_sdk,
                 filter_attention=self.cfg.filter_attention_stocks,
-            ).load()
+            ).load_labeled()
             self.logger.info(
-                f"處置股過濾啟用：{len(disposal_set)} 支"
-                + ("（含注意股）" if self.cfg.filter_attention_stocks else "")
+                f"處置股/注意股標記啟用：{len(disposal_labeled)} 支"
             )
 
         # 三大法人資料（若啟用）
@@ -288,9 +287,8 @@ class SignalsScanner:
             # OTC 內部 symbol 帶 'O' 後綴（4741O），API key 只有數字（4741）
             revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
 
-            # 處置股硬過濾：只過濾買入/觀察，賣出警示不過濾
-            # （持有中的處置股出現賣出訊號，持有人更需要看到）
-            is_disposal = disposal_set and revenue_key in disposal_set
+            # 取得處置/注意標籤（空字串代表正常股票）
+            disposal_note = disposal_labeled.get(revenue_key, "") if disposal_labeled else ""
 
             symbol_display = _display_symbol(sig.symbol)
             name = _lookup_name(sig.symbol, self._stock_names)
@@ -306,9 +304,8 @@ class SignalsScanner:
             }
 
             if sig.signal_type == SignalType.BUY:
-                if is_disposal:
-                    self.logger.debug(f"[disposal] 跳過處置股買入 {sig.symbol}")
-                    continue
+                if disposal_note:
+                    entry["note"] = disposal_note  # "處置股" 或 "注意股"
 
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
@@ -391,16 +388,16 @@ class SignalsScanner:
 
             elif sig.signal_type == SignalType.SELL:
                 # 只保留 P1 策略定義的出場訊號，過濾掉 RSI Overbought 等雜訊
-                # 注意：賣出不套用處置股/月營收/法人過濾——持倉出場訊號必須顯示
+                # 注意：賣出不套用月營收/法人過濾——持倉出場訊號必須顯示
                 if sig.signal_name in P1_SELL_SIGNALS:
-                    if is_disposal:
-                        entry["disposal"] = True  # 標記：該股為處置股
+                    if disposal_note:
+                        entry["disposal"] = True
+                        entry["note"] = disposal_note
                     sell_list.append(entry)
 
             elif sig.signal_type == SignalType.WATCH:
-                if is_disposal:
-                    self.logger.debug(f"[disposal] 跳過處置股觀察 {sig.symbol}")
-                    continue
+                if disposal_note:
+                    entry["note"] = disposal_note
                 entry["sector"] = self.sector_analyzer.get_stock_sector(sig.symbol)
                 entry["reason"] = _watch_reason_with_price(
                     sig.signal_name, sig.price, sig.indicators, self.strategy

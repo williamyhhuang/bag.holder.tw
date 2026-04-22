@@ -51,14 +51,16 @@ def display_signals(result: dict, show_watch: bool = False):
     # ── 建議買入 ──
     print(f"\n✅ 建議買入 ({len(buy_list)} 支)  [P1 策略完整過濾通過]")
     if buy_list:
-        print(f"  {'代號':<16} {'名稱':<10} {'族群':<10} {'觸發訊號':<30} {'價格':>9} {'RSI':>6}")
-        print("  " + "-" * 95)
+        print(f"  {'代號':<16} {'名稱':<10} {'族群':<10} {'觸發訊號':<30} {'價格':>9} {'RSI':>6}  備註")
+        print("  " + "-" * 106)
         for s in buy_list:
             name = (s["name"] or "")[:8]
             sector = (s.get("sector") or "")[:8]
             signal = s["signal"][:30]
             rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
-            print(f"  {s['symbol']:<16} {name:<10} {sector:<10} {signal:<30} {s['price']:>9.2f} {rsi_str:>6}")
+            note = s.get("note", "")
+            note_str = f"⚠️{note}" if note else ""
+            print(f"  {s['symbol']:<16} {name:<10} {sector:<10} {signal:<30} {s['price']:>9.2f} {rsi_str:>6}  {note_str}")
     else:
         print("  （今日無 P1 買入訊號）")
 
@@ -117,9 +119,10 @@ def display_signals(result: dict, show_watch: bool = False):
     print("    ② 動能：成交量≥1000張、動能排名前30")
     print("    ③ 基本面：月營收≥門檻（可設年增率門檻）")
     print("    ④ 籌碼面：三大法人買超≥門檻（預設停用）")
-    print("    ⑤ 排除：處置股/注意股（TWSE 每日更新）、族群偏弱")
+    print("    ⑤ 處置/注意股：不排除，備註欄標記「⚠️處置股」或「⚠️注意股」供參考")
+    print("    ⑥ 排除：族群偏弱（排入觀察清單）")
     print("  • 賣出警示：持有股出場訊號，不受買入過濾限制")
-    print("    （含處置股賣出警示，標記「⚠️處置股」供注意）")
+    print("    （處置/注意股賣出警示標記「⚠️處置股」或「⚠️注意股」）")
     print(f"{'='*60}\n")
 
 
@@ -141,7 +144,9 @@ def format_for_telegram(result: dict) -> list[str]:
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
             sector = s.get("sector") or ""
             sector_tag = f"[{sector}] " if sector else ""
-            lines.append(f"  {s['symbol']} {name} {sector_tag}| {s['signal']} | {s['price']:.2f} {rsi_str}")
+            note = s.get("note", "")
+            note_tag = f" ⚠️{note}" if note else ""
+            lines.append(f"  {s['symbol']} {name} {sector_tag}| {s['signal']} | {s['price']:.2f} {rsi_str}{note_tag}")
         lines.append("")
 
     if sell_list:

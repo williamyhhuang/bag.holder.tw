@@ -43,21 +43,27 @@ class TestFetchFromFubon:
     def test_returns_disposition_codes(self):
         sdk = _make_fubon_sdk(["2330", "3008"])
         result = _fetch_from_fubon(sdk)
-        assert "2330" in result
-        assert "3008" in result
+        assert result["2330"] == "處置股"
+        assert result["3008"] == "處置股"
 
     def test_includes_attention_when_called(self):
         sdk = _make_fubon_sdk(["2330"], attention_codes=["9999"])
         result = _fetch_from_fubon(sdk)
-        assert "2330" in result
-        assert "9999" in result  # _fetch_from_fubon 總是同時抓 attention
+        assert result["2330"] == "處置股"
+        assert result["9999"] == "注意股"
 
-    def test_sdk_tickers_exception_returns_empty_set(self):
-        """tickers() 呼叫失敗但 SDK 可存取 → 回傳空集合（繼續運作）"""
+    def test_disposition_takes_priority_over_attention(self):
+        """同一支股票同時出現在處置和注意清單時，標記為處置股"""
+        sdk = _make_fubon_sdk(["2330"], attention_codes=["2330"])
+        result = _fetch_from_fubon(sdk)
+        assert result["2330"] == "處置股"
+
+    def test_sdk_tickers_exception_returns_empty_dict(self):
+        """tickers() 呼叫失敗但 SDK 可存取 → 回傳空字典（繼續運作）"""
         sdk = MagicMock()
         sdk.marketdata.rest_client.stock.intraday.tickers.side_effect = Exception("conn error")
         result = _fetch_from_fubon(sdk)
-        assert result == set()
+        assert result == {}
 
     def test_sdk_access_exception_returns_none(self):
         """SDK 根本無法存取（如未登入）→ 回傳 None，由 DisposalStockFilter fallback"""
@@ -66,10 +72,10 @@ class TestFetchFromFubon:
         result = _fetch_from_fubon(sdk)
         assert result is None
 
-    def test_empty_list_returns_empty_set(self):
+    def test_empty_list_returns_empty_dict(self):
         sdk = _make_fubon_sdk([])
         result = _fetch_from_fubon(sdk)
-        assert result == set()
+        assert result == {}
 
 
 # ── _fetch_from_twse ──────────────────────────────────────────────────────────
@@ -92,11 +98,11 @@ class TestFetchFromTwse:
                 self._mock_resp(notetrans_payload),
             ]
             result = _fetch_from_twse()
-        assert "2330" in result
-        assert "4741" in result
+        assert result["2330"] == "處置股"
+        assert result["4741"] == "處置股"
 
     def test_includes_attention_from_notetrans(self):
-        """TWSE OpenAPI /announcement/notetrans 也包含在結果中"""
+        """TWSE OpenAPI /announcement/notetrans 也包含在結果中，標記為注意股"""
         punish_payload = _make_twse_response(["2330"])
         notetrans_payload = [{"Code": "6657", "Name": "OTC股"}]
         with patch("src.scanner.disposal_filter.requests") as mock_req:
@@ -105,8 +111,8 @@ class TestFetchFromTwse:
                 self._mock_resp(notetrans_payload),
             ]
             result = _fetch_from_twse()
-        assert "2330" in result
-        assert "6657" in result
+        assert result["2330"] == "處置股"
+        assert result["6657"] == "注意股"
 
     def test_non_json_response_skips_that_source(self):
         """非 JSON 回應略過該來源，其他來源仍正常"""
@@ -118,23 +124,30 @@ class TestFetchFromTwse:
         with patch("src.scanner.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = [html_resp, notetrans_resp]
             result = _fetch_from_twse()
-        assert "9999" in result
+        assert result["9999"] == "注意股"
 
     def test_api_exception_returns_empty(self):
         with patch("src.scanner.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = Exception("timeout")
             result = _fetch_from_twse()
-        assert result == set()
+        assert result == {}
 
 
 # ── DisposalStockFilter ───────────────────────────────────────────────────────
 
 class TestDisposalStockFilter:
-    def test_uses_fubon_when_sdk_provided(self, tmp_path):
+    def test_load_labeled_uses_fubon_when_sdk_provided(self, tmp_path):
         sdk = _make_fubon_sdk(["2330"])
+        f = DisposalStockFilter(sdk=sdk, cache_path=tmp_path / "disposal.json")
+        result = f.load_labeled()
+        assert result["2330"] == "處置股"
+
+    def test_load_returns_set_of_symbols(self, tmp_path):
+        sdk = _make_fubon_sdk(["2330"], attention_codes=["9999"])
         f = DisposalStockFilter(sdk=sdk, cache_path=tmp_path / "disposal.json")
         result = f.load()
         assert "2330" in result
+        assert "9999" in result
 
     def test_falls_back_to_twse_when_sdk_none(self, tmp_path):
         punish_payload = _make_twse_response(["9999"])
@@ -151,70 +164,78 @@ class TestDisposalStockFilter:
         with patch("src.scanner.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = [mock_punish, mock_notetrans]
             f = DisposalStockFilter(sdk=None, cache_path=tmp_path / "disposal.json")
-            result = f.load()
-        assert "9999" in result
+            result = f.load_labeled()
+        assert result["9999"] == "處置股"
 
     def test_uses_cache_on_second_call(self, tmp_path):
         sdk = _make_fubon_sdk(["2330"])
         cache_file = tmp_path / "disposal.json"
         f = DisposalStockFilter(sdk=sdk, cache_path=cache_file)
-        f.load()  # writes cache
+        f.load_labeled()  # writes cache
 
         # Second call: SDK should NOT be called again
         sdk2 = MagicMock()
         f2 = DisposalStockFilter(sdk=sdk2, cache_path=cache_file)
-        result = f2.load()
+        result = f2.load_labeled()
         sdk2.marketdata.rest_client.stock.intraday.tickers.assert_not_called()
-        assert "2330" in result
+        assert result["2330"] == "處置股"
 
     def test_stale_cache_triggers_refresh(self, tmp_path):
         cache_file = tmp_path / "disposal.json"
         yesterday = (date.today() - timedelta(days=1)).isoformat()
-        cache_file.write_text(json.dumps({"date": yesterday, "data": ["OLD"]}))
+        cache_file.write_text(json.dumps({"date": yesterday, "labeled": {"OLD": "處置股"}}))
 
         sdk = _make_fubon_sdk(["NEW"])
         f = DisposalStockFilter(sdk=sdk, cache_path=cache_file)
-        result = f.load()
+        result = f.load_labeled()
         assert "NEW" in result
         assert "OLD" not in result
+
+    def test_old_cache_format_backward_compat(self, tmp_path):
+        """舊格式 {"data": [...]} 向後相容，全視為處置股"""
+        cache_file = tmp_path / "disposal.json"
+        cache_file.write_text(json.dumps({"date": date.today().isoformat(), "data": ["2330", "4741"]}))
+        f = DisposalStockFilter(sdk=None, cache_path=cache_file)
+        result = f.load_labeled()
+        assert result["2330"] == "處置股"
+        assert result["4741"] == "處置股"
 
     def test_fail_open_when_all_sources_fail(self, tmp_path):
         sdk = MagicMock()
         sdk.marketdata.rest_client.stock.intraday.tickers.side_effect = Exception("fail")
-        with patch("src.scanner.disposal_filter._fetch_from_twse", return_value=set()):
+        with patch("src.scanner.disposal_filter._fetch_from_twse", return_value={}):
             f = DisposalStockFilter(sdk=sdk, cache_path=tmp_path / "disposal.json")
-            result = f.load()
-        assert result == set()  # fail-open
+            result = f.load_labeled()
+        assert result == {}  # fail-open
 
-    def test_saves_cache_after_api_success(self, tmp_path):
+    def test_saves_cache_in_new_format(self, tmp_path):
         sdk = _make_fubon_sdk(["2330", "3008"])
         cache_file = tmp_path / "disposal.json"
         f = DisposalStockFilter(sdk=sdk, cache_path=cache_file)
-        f.load()
+        f.load_labeled()
         assert cache_file.exists()
         payload = json.loads(cache_file.read_text())
         assert payload["date"] == date.today().isoformat()
-        assert "2330" in payload["data"]
+        assert "labeled" in payload
+        assert payload["labeled"]["2330"] == "處置股"
 
 
-# ── Integration: disposal 股票不進任何清單 ─────────────────────────────────────
+# ── Integration: 處置/注意股出現在買入清單中並標記備註 ─────────────────────────
 
 class TestDisposalFilterIntegration:
-    """驗證 signals_scanner 整合：處置股被硬過濾，不進 buy/watch。"""
+    """驗證 signals_scanner 整合：處置/注意股不排除，改以 note 欄位標記。"""
 
-    def test_disposal_symbol_excluded_from_revenue_key(self):
-        """OTC 股票 4741O → revenue_key = 4741，disposal set 用 4741 即可排除"""
-        disposal_set = {"4741"}
+    def test_disposal_symbol_revenue_key(self):
+        """OTC 股票 4741O → revenue_key = 4741，disposal labeled 用 4741 即可查到"""
+        disposal_labeled = {"4741": "處置股"}
         internal_symbol = "4741O"
         revenue_key = internal_symbol[:-1] if internal_symbol.endswith("O") else internal_symbol
-        assert revenue_key in disposal_set
+        assert disposal_labeled.get(revenue_key) == "處置股"
 
-    def test_tse_symbol_excluded(self):
-        disposal_set = {"2330"}
-        internal_symbol = "2330"
-        revenue_key = internal_symbol[:-1] if internal_symbol.endswith("O") else internal_symbol
-        assert revenue_key in disposal_set
+    def test_attention_symbol_revenue_key(self):
+        disposal_labeled = {"2330": "注意股"}
+        assert disposal_labeled.get("2330") == "注意股"
 
-    def test_normal_symbol_not_excluded(self):
-        disposal_set = {"2330"}
-        assert "9999" not in disposal_set
+    def test_normal_symbol_not_labeled(self):
+        disposal_labeled = {"2330": "處置股"}
+        assert disposal_labeled.get("9999", "") == ""
