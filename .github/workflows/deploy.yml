@@ -9,6 +9,7 @@ on:
 env:
   REGION: asia-east1
   IMAGE: asia-east1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/bag-holder-repo/bag-holder
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test:
