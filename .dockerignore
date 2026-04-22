@@ -96,6 +96,7 @@ reports/
 # Deploy and scripts (not needed in container)
 deploy/
 scripts/
+!scripts/run_backtest.py
 
 # Backup files
 *.backup
