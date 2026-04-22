@@ -37,7 +37,7 @@ WORKDIR /app
 # Copy only necessary source code (no tests, no dev files)
 COPY src/ ./src/
 COPY main.py ./
-COPY run_backtest.py ./
+COPY scripts/run_backtest.py ./
 COPY config/ ./config/
 
 # Create necessary directories

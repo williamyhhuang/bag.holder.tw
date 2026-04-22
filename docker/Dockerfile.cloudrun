@@ -45,7 +45,7 @@ WORKDIR /app
 
 COPY src/ ./src/
 COPY main.py ./
-COPY run_backtest.py ./
+COPY scripts/run_backtest.py ./
 COPY config/ ./config/
 COPY docker/entrypoint-download.sh /entrypoint-download.sh
 COPY docker/entrypoint-signals.sh /entrypoint-signals.sh
