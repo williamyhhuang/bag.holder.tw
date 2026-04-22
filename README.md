@@ -487,6 +487,25 @@ python scripts/test_fubon_futures.py --user-id A123456789 --no-trade
 - ✅ **結論**：P1 動能 top30 精選是三者中績效最佳的篩選機制；掃描類型可作為參考但不適合直接接入 P1 策略
 - ✅ 新增 17 個單元測試覆蓋 RSI 計算、MA 計算與白名單建立邏輯
 
+### v3.5.0 - 2026-04-22
+- 🚫 **處置股/注意股過濾**：新增 `DisposalStockFilter`，優先使用富邦 SDK `intraday.tickers(isDisposition=True)`，fallback 至 TWSE 公告 API；處置股被硬排除，不進任何清單
+- 📊 **三大法人籌碼過濾**：新增 `InstitutionalFlowLoader`，從 TWSE T86 API 取得每日外資、投信、自營商買賣超；法人買超比散戶早 3-10 天，預設 `enable_institutional_filter=False` 觀察模式（啟用後降級至 watch）
+- 📈 **月營收年增率**：`revenue_filter.py` 新增 `yoy_pct`（年增率）、`mom_pct`（月增率）欄位，buy 清單顯示 YoY；新設定 `min_revenue_yoy_pct`（預設 0 = 停用）
+- ⚙️ **新增 6 個 settings.py 可調參數**：`enable_disposal_filter`、`filter_attention_stocks`、`enable_institutional_filter`、`institutional_min_foreign_net_shares`、`institutional_min_trust_net_shares`、`institutional_require_any`、`min_revenue_yoy_pct`
+- ✅ 新增 65 個單元測試覆蓋三個新模組
+
+**使用方式**：
+```bash
+# 處置股過濾預設啟用，無需額外設定
+python main.py signals
+
+# 啟用三大法人過濾（先觀察數週，設門檻前保持 False）
+BACKTEST_ENABLE_INSTITUTIONAL_FILTER=true python main.py signals
+
+# 加入月營收年增率門檻（需年增率 >= 20%）
+BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
+```
+
 ### v3.4.0 - 2026-04-09
 - 🎯 **Donchian 週期從 20 天調整至 50 天**：更長週期過濾假突破，勝率維持 53%，夏普顯著提升
 - 📊 **動能排名 top_n 從 50 縮至 30**：更精選動能最強的 30 支，報酬 +7%、回撤大幅下降
