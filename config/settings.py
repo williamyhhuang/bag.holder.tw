@@ -470,6 +470,55 @@ class BacktestSettings(BaseSettings):
     # 1 億元 = 100 百萬元
     min_monthly_revenue_million: float = 100.0
 
+    # 月營收年增率門檻（%）；0 = 停用；20 = 需年增率 >= 20%
+    # 建議先設 0 觀察數週後再依實際分布調整
+    min_revenue_yoy_pct: float = Field(
+        default=0.0,
+        env="BACKTEST_MIN_REVENUE_YOY_PCT",
+        description="月營收年增率最低門檻（%；0=停用；設 20 表需年增率>=20%）",
+    )
+
+    # ── 處置股/注意股過濾 ────────────────────────────────────────────
+    # 排除目前處於「處置」狀態的股票（資料來自富邦 API 或 TWSE 公告，當日快取）
+    enable_disposal_filter: bool = Field(
+        default=True,
+        env="BACKTEST_ENABLE_DISPOSAL_FILTER",
+        description="啟用處置股過濾（True = 排除處置中的股票）",
+    )
+    # 是否同時過濾注意股（比處置股寬鬆，建議觀察後決定）
+    filter_attention_stocks: bool = Field(
+        default=False,
+        env="BACKTEST_FILTER_ATTENTION_STOCKS",
+        description="是否同時過濾注意股（False = 只過濾處置股）",
+    )
+
+    # ── 三大法人籌碼過濾 ─────────────────────────────────────────────
+    # 只允許有法人買超的股票進入 buy list（三大法人是比散戶早的早期信號）
+    # 資料來自 TWSE T86 API（僅涵蓋上市股票），上櫃股票不受限制
+    enable_institutional_filter: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_INSTITUTIONAL_FILTER",
+        description="啟用三大法人過濾（True = 需法人買超達門檻）；建議先設 False 觀察",
+    )
+    # 外資單日淨買超最低股數；0 = 停用外資條件
+    institutional_min_foreign_net_shares: int = Field(
+        default=500_000,
+        env="BACKTEST_INSTITUTIONAL_MIN_FOREIGN_NET",
+        description="外資單日淨買超最低股數（500000=500張；0=停用外資條件）",
+    )
+    # 投信單日淨買超最低股數；0 = 停用投信條件
+    institutional_min_trust_net_shares: int = Field(
+        default=200_000,
+        env="BACKTEST_INSTITUTIONAL_MIN_TRUST_NET",
+        description="投信單日淨買超最低股數（200000=200張；0=停用投信條件）",
+    )
+    # True = 外資或投信任一達標即通過；False = 兩者都需達標
+    institutional_require_any: bool = Field(
+        default=True,
+        env="BACKTEST_INSTITUTIONAL_REQUIRE_ANY",
+        description="True=外資或投信任一達標通過；False=兩者都需達標",
+    )
+
     # ── 同股票買入冷卻期 ──────────────────────────────────────────────
     # 同一支股票在最近 signal_cooldown_days 個交易日內已觸發過買入訊號，
     # 就自動跳過（降級為 WATCH），避免同一波上漲中反覆進場。

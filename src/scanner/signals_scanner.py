@@ -21,7 +21,9 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.backtest import YFinanceDataSource, TechnicalStrategy
 from src.backtest.models import StockData, TradingSignal, SignalType, TechnicalIndicators
 from src.scanner.sector_trend import SectorTrendAnalyzer
-from src.scanner.revenue_filter import MonthlyRevenueLoader
+from src.scanner.revenue_filter import MonthlyRevenueLoader, get_revenue_million, get_revenue_yoy
+from src.scanner.disposal_filter import DisposalStockFilter
+from src.scanner.institutional_filter import InstitutionalFlowLoader, InstitutionalFlow
 from src.utils.logger import get_logger
 from src.utils.stock_name_mapper import get_stock_names
 from config.settings import settings
@@ -101,11 +103,12 @@ def _watch_reason_with_price(
 class SignalsScanner:
     """今日 P1 策略訊號掃描器"""
 
-    def __init__(self):
+    def __init__(self, fubon_sdk=None):
         self.logger = get_logger(self.__class__.__name__)
         self.data_source = YFinanceDataSource()
         self._stock_names = get_stock_names()
         self.sector_analyzer = SectorTrendAnalyzer()
+        self._fubon_sdk = fubon_sdk
 
         cfg = settings.backtest
         disabled = [s.strip() for s in cfg.disabled_signals.split(",") if s.strip()]
@@ -203,13 +206,37 @@ class SignalsScanner:
         self.logger.info(f"載入 {len(stock_data)} 支股票，最新交易日 {target_date}")
 
         # 載入月營收資料（若 min_monthly_revenue_million > 0 才啟用）
-        revenue_map: Dict[str, float] = {}
+        revenue_map: Dict[str, dict] = {}
         min_revenue = self.cfg.min_monthly_revenue_million
+        min_yoy = self.cfg.min_revenue_yoy_pct
         if min_revenue > 0:
             revenue_map = MonthlyRevenueLoader().load()
             self.logger.info(
                 f"月營收過濾啟用：門檻 {min_revenue:.0f} 百萬元（{min_revenue/100:.1f}億），"
                 f"已載入 {len(revenue_map)} 支"
+                + (f"，年增率門檻 {min_yoy:.0f}%" if min_yoy > 0 else "")
+            )
+
+        # 處置股/注意股過濾
+        disposal_set: Set[str] = set()
+        if self.cfg.enable_disposal_filter:
+            disposal_set = DisposalStockFilter(
+                sdk=self._fubon_sdk,
+                filter_attention=self.cfg.filter_attention_stocks,
+            ).load()
+            self.logger.info(
+                f"處置股過濾啟用：{len(disposal_set)} 支"
+                + ("（含注意股）" if self.cfg.filter_attention_stocks else "")
+            )
+
+        # 三大法人資料（若啟用）
+        institutional_map: Dict[str, InstitutionalFlow] = {}
+        if self.cfg.enable_institutional_filter:
+            institutional_map = InstitutionalFlowLoader().load(target_date)
+            self.logger.info(
+                f"三大法人過濾啟用：已載入 {len(institutional_map)} 支"
+                f"（外資門檻 {self.cfg.institutional_min_foreign_net_shares//1000}張，"
+                f"投信門檻 {self.cfg.institutional_min_trust_net_shares//1000}張）"
             )
 
         # 建立動能前 30 名白名單
@@ -258,6 +285,14 @@ class SignalsScanner:
             if volume_on_date.get(sig.symbol, 0) < MIN_VOLUME_SHARES:
                 continue
 
+            # OTC 內部 symbol 帶 'O' 後綴（4741O），API key 只有數字（4741）
+            revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
+
+            # 處置股硬過濾：直接跳過，不進任何清單
+            if disposal_set and revenue_key in disposal_set:
+                self.logger.debug(f"[disposal] 跳過處置股 {sig.symbol}")
+                continue
+
             symbol_display = _display_symbol(sig.symbol)
             name = _lookup_name(sig.symbol, self._stock_names)
             rsi = float(sig.indicators.rsi14) if sig.indicators.rsi14 else None
@@ -282,22 +317,56 @@ class SignalsScanner:
                     strong_sectors is None or stock_sector in strong_sectors
                 )
 
-                # 月營收過濾
-                # OTC 內部 symbol 帶 'O' 後綴（4741O），API key 只有數字（4741）
+                # 月營收過濾（含年增率）
                 revenue_ok = True
                 if min_revenue > 0 and revenue_map:
-                    revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
-                    rev = revenue_map.get(revenue_key)
+                    rev = get_revenue_million(revenue_map, revenue_key)
                     if rev is None or rev < min_revenue:
                         revenue_ok = False
-                        reason = (
+                        entry["reason"] = (
                             f"月營收 {rev:.0f}M < {min_revenue:.0f}M"
                             if rev is not None
                             else "月營收資料不足"
                         )
-                        entry["reason"] = reason
                         if rev is not None:
                             entry["revenue_million"] = rev
+                    elif min_yoy > 0:
+                        yoy = get_revenue_yoy(revenue_map, revenue_key)
+                        if yoy < min_yoy:
+                            revenue_ok = False
+                            entry["reason"] = f"年增率 {yoy:.1f}% < {min_yoy:.0f}%"
+                            entry["revenue_yoy_pct"] = yoy
+                        else:
+                            entry["revenue_yoy_pct"] = yoy
+
+                # 三大法人過濾（次要過濾，失敗降至 watch）
+                inst_ok = True
+                if self.cfg.enable_institutional_filter and institutional_map:
+                    flow = institutional_map.get(revenue_key)
+                    # 上櫃股票 T86 無資料 → fail-open，不過濾
+                    if flow is not None:
+                        foreign_ok = (
+                            self.cfg.institutional_min_foreign_net_shares <= 0
+                            or flow.foreign_net >= self.cfg.institutional_min_foreign_net_shares
+                        )
+                        trust_ok = (
+                            self.cfg.institutional_min_trust_net_shares <= 0
+                            or flow.trust_net >= self.cfg.institutional_min_trust_net_shares
+                        )
+                        inst_ok = foreign_ok or trust_ok if self.cfg.institutional_require_any else foreign_ok and trust_ok
+                        if not inst_ok:
+                            entry["reason"] = (
+                                f"法人籌碼不足（外資 {flow.foreign_net//1000:+.0f}張"
+                                f" 投信 {flow.trust_net//1000:+.0f}張）"
+                            )
+                        entry["institutional"] = {
+                            "foreign_lots": flow.foreign_net // 1000,
+                            "trust_lots": flow.trust_net // 1000,
+                            "total_lots": flow.total_net // 1000,
+                        }
+                    else:
+                        # 有啟用但無資料（如上櫃股票）→ 顯示法人數據欄位留空
+                        entry["institutional"] = None
 
                 if not in_top30:
                     entry["reason"] = "動能排名不在前30"
@@ -307,7 +376,14 @@ class SignalsScanner:
                     watch_list.append(entry)
                 elif not revenue_ok:
                     watch_list.append(entry)
+                elif not inst_ok:
+                    watch_list.append(entry)
                 else:
+                    # 通過所有過濾：加入月營收 YoY 顯示（若有）
+                    if min_revenue > 0 and revenue_map:
+                        yoy = get_revenue_yoy(revenue_map, revenue_key)
+                        if yoy != 0.0:
+                            entry["revenue_yoy_pct"] = yoy
                     buy_list.append(entry)
 
             elif sig.signal_type == SignalType.SELL:
@@ -315,8 +391,7 @@ class SignalsScanner:
                 if sig.signal_name in P1_SELL_SIGNALS:
                     # 月營收過濾：賣出警示也只針對通過營收門檻的股票
                     if min_revenue > 0 and revenue_map:
-                        revenue_key = sig.symbol[:-1] if sig.symbol.endswith('O') else sig.symbol
-                        rev = revenue_map.get(revenue_key)
+                        rev = get_revenue_million(revenue_map, revenue_key)
                         if rev is None or rev < min_revenue:
                             continue
                     sell_list.append(entry)

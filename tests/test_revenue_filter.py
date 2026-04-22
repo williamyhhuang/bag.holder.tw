@@ -10,7 +10,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.scanner.revenue_filter import MonthlyRevenueLoader, _fetch_revenue_from_api
+from src.scanner.revenue_filter import (
+    MonthlyRevenueLoader,
+    _fetch_revenue_from_api,
+    get_revenue_million,
+    get_revenue_yoy,
+    get_revenue_mom,
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -21,11 +27,15 @@ def _make_tse_rows():
             "公司代號": "2330",
             "公司名稱": "台積電",
             "營業收入-當月營收": "200000000",  # 200,000,000 千元 → 200,000 百萬元
+            "營業收入-去年同月增減(%)": "35.2",
+            "營業收入-上月比較增減(%)": "5.1",
         },
         {
             "公司代號": "9999",
             "公司名稱": "小公司",
             "營業收入-當月營收": "50000",  # 50,000 千元 → 50 百萬元
+            "營業收入-去年同月增減(%)": "-10.5",
+            "營業收入-上月比較增減(%)": "2.3",
         },
         {
             "公司代號": "BAD",
@@ -41,6 +51,8 @@ def _make_otc_rows():
             "公司代號": "6657",
             "公司名稱": "OTC股",
             "營業收入-當月營收": "150000",  # 150,000 千元 → 150 百萬元
+            "營業收入-去年同月增減(%)": "20.0",
+            "營業收入-上月比較增減(%)": "0.0",
         },
     ]
 
@@ -67,11 +79,15 @@ class TestFetchRevenueFromApi:
             result = _fetch_revenue_from_api()
 
         # 2330: 200,000,000 / 1000 = 200,000 百萬元
-        assert result["2330"] == pytest.approx(200_000.0)
-        # 9999: 50,000 / 1000 = 50 百萬元
-        assert result["9999"] == pytest.approx(50.0)
-        # OTC 6657: 150,000 / 1000 = 150 百萬元
-        assert result["6657"] == pytest.approx(150.0)
+        assert result["2330"]["revenue_million"] == pytest.approx(200_000.0)
+        assert result["2330"]["yoy_pct"] == pytest.approx(35.2)
+        assert result["2330"]["mom_pct"] == pytest.approx(5.1)
+        # 9999: 50,000 / 1000 = 50 百萬元，年增率 -10.5%
+        assert result["9999"]["revenue_million"] == pytest.approx(50.0)
+        assert result["9999"]["yoy_pct"] == pytest.approx(-10.5)
+        # OTC 6657
+        assert result["6657"]["revenue_million"] == pytest.approx(150.0)
+        assert result["6657"]["yoy_pct"] == pytest.approx(20.0)
         # BAD row skipped
         assert "BAD" not in result
 
@@ -85,7 +101,7 @@ class TestFetchRevenueFromApi:
 
         # TSE skipped, OTC ok
         assert "2330" not in result
-        assert result["6657"] == pytest.approx(150.0)
+        assert result["6657"]["revenue_million"] == pytest.approx(150.0)
 
     def test_api_exception_returns_partial(self):
         tse_resp = self._mock_response(_make_tse_rows())
@@ -102,27 +118,36 @@ class TestFetchRevenueFromApi:
 # ── MonthlyRevenueLoader ───────────────────────────────────────────────────────
 
 class TestMonthlyRevenueLoader:
+    def _make_api_data(self):
+        return {
+            "2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 5.1},
+            "9999": {"revenue_million": 50.0, "yoy_pct": -10.5, "mom_pct": 2.0},
+            "6657": {"revenue_million": 150.0, "yoy_pct": 20.0, "mom_pct": 0.0},
+        }
+
     def test_load_from_api_and_cache(self, tmp_path):
         cache_file = tmp_path / "revenue_cache.json"
         loader = MonthlyRevenueLoader(cache_path=cache_file)
-
-        api_data = {"2330": 200_000.0, "9999": 50.0}
+        api_data = self._make_api_data()
 
         with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=api_data):
             result = loader.load()
 
-        assert result == api_data
-        # Cache file should now exist
+        assert result["2330"]["revenue_million"] == pytest.approx(200_000.0)
+        assert result["2330"]["yoy_pct"] == pytest.approx(35.2)
+        # Cache file should now exist with schema_version
         assert cache_file.exists()
         payload = json.loads(cache_file.read_text())
         assert payload["date"] == date.today().isoformat()
-        assert payload["data"]["2330"] == 200_000.0
+        assert payload["schema_version"] == 2
+        assert payload["data"]["2330"]["revenue_million"] == 200_000.0
 
     def test_uses_today_cache(self, tmp_path):
         cache_file = tmp_path / "revenue_cache.json"
-        cached_data = {"2330": 99_999.0}
+        cached_data = {"2330": {"revenue_million": 99_999.0, "yoy_pct": 10.0, "mom_pct": 1.0}}
         cache_file.write_text(json.dumps({
             "date": date.today().isoformat(),
+            "schema_version": 2,
             "data": cached_data,
         }))
 
@@ -132,23 +157,39 @@ class TestMonthlyRevenueLoader:
             result = loader.load()
             mock_api.assert_not_called()  # API should NOT be called
 
-        assert result == cached_data
+        assert result["2330"]["revenue_million"] == pytest.approx(99_999.0)
 
     def test_ignores_stale_cache(self, tmp_path):
         cache_file = tmp_path / "revenue_cache.json"
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         cache_file.write_text(json.dumps({
             "date": yesterday,
-            "data": {"2330": 1.0},
+            "schema_version": 2,
+            "data": {"2330": {"revenue_million": 1.0, "yoy_pct": 0.0, "mom_pct": 0.0}},
         }))
 
-        fresh_data = {"2330": 200_000.0}
+        fresh_data = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 5.1}}
         loader = MonthlyRevenueLoader(cache_path=cache_file)
 
         with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=fresh_data):
             result = loader.load()
 
-        assert result["2330"] == 200_000.0
+        assert result["2330"]["revenue_million"] == 200_000.0
+
+    def test_ignores_old_schema_cache(self, tmp_path):
+        """舊版 float 格式快取（schema_version < 2）應視為過期"""
+        cache_file = tmp_path / "revenue_cache.json"
+        cache_file.write_text(json.dumps({
+            "date": date.today().isoformat(),
+            # schema_version 缺失 → 舊格式
+            "data": {"2330": 200_000.0},
+        }))
+        fresh_data = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 5.1}}
+        loader = MonthlyRevenueLoader(cache_path=cache_file)
+        with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=fresh_data) as mock_api:
+            result = loader.load()
+            mock_api.assert_called_once()  # 舊格式 → 重新抓取
+        assert isinstance(result["2330"], dict)
 
     def test_returns_empty_dict_when_api_fails_and_no_cache(self, tmp_path):
         cache_file = tmp_path / "revenue_cache.json"
@@ -165,15 +206,15 @@ class TestMonthlyRevenueLoader:
         """Simulate how signals_scanner uses the revenue map."""
         cache_file = tmp_path / "revenue_cache.json"
         loader = MonthlyRevenueLoader(cache_path=cache_file)
-        api_data = {"2330": 200_000.0, "9999": 50.0, "6657": 150.0}
+        api_data = self._make_api_data()
 
         with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=api_data):
             revenue_map = loader.load()
 
         min_revenue = 100.0  # 1億元
 
-        passing = {k for k, v in revenue_map.items() if v >= min_revenue}
-        failing = {k for k, v in revenue_map.items() if v < min_revenue}
+        passing = {k for k, v in revenue_map.items() if v["revenue_million"] >= min_revenue}
+        failing = {k for k, v in revenue_map.items() if v["revenue_million"] < min_revenue}
 
         assert "2330" in passing
         assert "6657" in passing
@@ -186,21 +227,21 @@ class TestOtcSymbolLookup:
     """驗證 signals_scanner 的 OTC symbol 正規化：4741O → 4741"""
 
     def _revenue_ok(self, internal_symbol: str, revenue_map: dict, min_revenue: float) -> bool:
-        """複製 signals_scanner 的月營收過濾邏輯"""
+        """複製 signals_scanner 的月營收過濾邏輯（使用新版 helper）"""
         revenue_key = internal_symbol[:-1] if internal_symbol.endswith('O') else internal_symbol
-        rev = revenue_map.get(revenue_key)
+        rev = get_revenue_million(revenue_map, revenue_key)
         return not (rev is None or rev < min_revenue)
 
     def test_otc_symbol_strips_O(self):
-        revenue_map = {"4741": 200.0}  # API key 無 O 後綴
+        revenue_map = {"4741": {"revenue_million": 200.0, "yoy_pct": 10.0, "mom_pct": 0.0}}
         assert self._revenue_ok("4741O", revenue_map, 100.0) is True
 
     def test_otc_low_revenue_filtered(self):
-        revenue_map = {"4741": 50.0}
+        revenue_map = {"4741": {"revenue_million": 50.0, "yoy_pct": -5.0, "mom_pct": 0.0}}
         assert self._revenue_ok("4741O", revenue_map, 100.0) is False
 
     def test_tse_symbol_unaffected(self):
-        revenue_map = {"2330": 200_000.0}
+        revenue_map = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 35.0, "mom_pct": 5.0}}
         assert self._revenue_ok("2330", revenue_map, 100.0) is True
 
     def test_missing_from_map_is_filtered(self):
@@ -211,3 +252,73 @@ class TestOtcSymbolLookup:
     def test_missing_otc_from_map_is_filtered(self):
         revenue_map = {}
         assert self._revenue_ok("4741O", revenue_map, 100.0) is False
+
+
+# ── Helper functions ──────────────────────────────────────────────────────────
+
+class TestRevenueHelpers:
+    """驗證 get_revenue_million / get_revenue_yoy / get_revenue_mom"""
+
+    def _map(self):
+        return {
+            "2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 5.1},
+        }
+
+    def test_get_revenue_million_dict_format(self):
+        assert get_revenue_million(self._map(), "2330") == pytest.approx(200_000.0)
+
+    def test_get_revenue_million_missing(self):
+        assert get_revenue_million(self._map(), "9999") is None
+
+    def test_get_revenue_yoy(self):
+        assert get_revenue_yoy(self._map(), "2330") == pytest.approx(35.2)
+
+    def test_get_revenue_yoy_missing_returns_zero(self):
+        assert get_revenue_yoy(self._map(), "9999") == 0.0
+
+    def test_get_revenue_mom(self):
+        assert get_revenue_mom(self._map(), "2330") == pytest.approx(5.1)
+
+    def test_get_revenue_mom_missing_returns_zero(self):
+        assert get_revenue_mom(self._map(), "9999") == 0.0
+
+
+# ── 年增率過濾邏輯 ────────────────────────────────────────────────────────────
+
+class TestRevenueYoyFilter:
+    """驗證年增率門檻過濾邏輯（signals_scanner 的行為）"""
+
+    def _revenue_and_yoy_ok(
+        self, revenue_map, code, min_revenue, min_yoy
+    ):
+        """複製 signals_scanner 的月營收 + YoY 過濾邏輯"""
+        rev = get_revenue_million(revenue_map, code)
+        if rev is None or rev < min_revenue:
+            return False, "revenue"
+        if min_yoy > 0:
+            yoy = get_revenue_yoy(revenue_map, code)
+            if yoy < min_yoy:
+                return False, "yoy"
+        return True, None
+
+    def test_passes_when_yoy_above_threshold(self):
+        m = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 0.0}}
+        ok, reason = self._revenue_and_yoy_ok(m, "2330", 100.0, 20.0)
+        assert ok is True
+
+    def test_fails_when_yoy_below_threshold(self):
+        m = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 5.0, "mom_pct": 0.0}}
+        ok, reason = self._revenue_and_yoy_ok(m, "2330", 100.0, 20.0)
+        assert ok is False
+        assert reason == "yoy"
+
+    def test_yoy_filter_disabled_when_zero(self):
+        m = {"2330": {"revenue_million": 200_000.0, "yoy_pct": -50.0, "mom_pct": 0.0}}
+        ok, reason = self._revenue_and_yoy_ok(m, "2330", 100.0, 0.0)  # min_yoy=0 停用
+        assert ok is True
+
+    def test_revenue_filter_takes_precedence(self):
+        m = {"9999": {"revenue_million": 50.0, "yoy_pct": 100.0, "mom_pct": 0.0}}
+        ok, reason = self._revenue_and_yoy_ok(m, "9999", 100.0, 20.0)
+        assert ok is False
+        assert reason == "revenue"  # 營收不足先過濾，不看 YoY
