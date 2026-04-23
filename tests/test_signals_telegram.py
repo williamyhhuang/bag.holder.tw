@@ -46,7 +46,6 @@ class TestFormatForTelegram:
         assert "建議買入" in text
         assert "2330.TW" in text
         assert "台積電" in text
-        assert "975.00" in text
 
     def test_sell_signals_appear(self):
         sell = [_make_signal("2454.TW", "聯發科", "MACD Death Cross", 185.5, 42.1)]

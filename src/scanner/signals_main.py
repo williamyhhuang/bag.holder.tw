@@ -146,34 +146,25 @@ def format_for_telegram(result: dict) -> list[str]:
         lines.append(f"✅ *建議買入* ({len(buy_list)} 支)")
         for s in buy_list:
             name = _escape_md(s["name"] or "")
-            rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
             sector = _escape_md(s.get("sector") or "")
-            sector_tag = f"[{sector}] " if sector else ""
+            sector_tag = f" [{sector}]" if sector else ""
             note = _escape_md(s.get("note", ""))
             note_tag = f" ⚠️{note}" if note else ""
-            lines.append(f"  {s['symbol']} {name} {sector_tag}| {s['signal']} | {s['price']:.2f} {rsi_str}{note_tag}")
+            lines.append(f"  {s['symbol']} {name}{sector_tag}{note_tag}")
         lines.append("")
 
     if sell_list:
         lines.append(f"⚠️ *賣出警示* ({len(sell_list)} 支)")
         for s in sell_list:
             name = _escape_md(s["name"] or "")
-            rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
-            disposal_tag = " 🚨處置股" if s.get("disposal") else ""
-            lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}{disposal_tag}")
+            sector = _escape_md(s.get("sector") or "")
+            sector_tag = f" [{sector}]" if sector else ""
+            note = _escape_md(s.get("note", ""))
+            note_tag = f" ⚠️{note}" if note else ""
+            lines.append(f"  {s['symbol']} {name}{sector_tag}{note_tag}")
 
     if not buy_list and not sell_list:
         lines.append("今日無買賣訊號")
-
-    # 族群摘要
-    sector_summary = result.get("sector_summary", [])
-    if sector_summary:
-        strong_rows = [r for r in sector_summary if r["is_strong"]]
-        weak_rows = [r for r in sector_summary if not r["is_strong"]]
-        lines.append(f"\n🏭 族群趨勢：強勢 {len(strong_rows)} 族群 / 弱勢 {len(weak_rows)} 族群")
-        if weak_rows:
-            weak_names = "、".join(r["sector"] for r in weak_rows[:8])
-            lines.append(f"弱勢族群：{weak_names}")
 
     return _split_into_chunks("\n".join(lines))
 
