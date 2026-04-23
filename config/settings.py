@@ -602,23 +602,45 @@ class BacktestSettings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
-class ClaudeSettings(BaseSettings):
-    """Claude AI configuration"""
-    api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
-    model: str = Field(default="claude-sonnet-4-6", env="CLAUDE_MODEL")
+class AIAnalyzerSettings(BaseSettings):
+    """AI 分析器設定（支援 Claude / OpenAI / Gemini）"""
+    provider: str = Field(
+        default="claude",
+        env="AI_PROVIDER",
+        description="AI 分析器 provider：claude | openai | gemini",
+    )
+    # 各 provider 的 API Key
+    anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
+    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
+    # 指定模型（空字串 = 使用各 provider 預設值）
+    model: str = Field(
+        default="",
+        env="AI_MODEL",
+        description="指定模型名稱（空白 = 使用 provider 預設：claude-sonnet-4-6 / gpt-4o / gemini-2.0-flash）",
+    )
     enable_signal_analysis: bool = Field(
         default=False,
-        env="CLAUDE_ENABLE_SIGNAL_ANALYSIS",
-        description="啟用 Claude AI 二次過濾訊號（需設定 ANTHROPIC_API_KEY）",
+        env="AI_ENABLE_SIGNAL_ANALYSIS",
+        description="是否預設開啟 AI 二次過濾（建議保持 false，用 --ai-filter flag 觸發）",
     )
     max_stocks_per_batch: int = Field(
         default=50,
-        env="CLAUDE_MAX_STOCKS_PER_BATCH",
-        description="每次傳給 Claude 分析的最大股票數",
+        env="AI_MAX_STOCKS_PER_BATCH",
+        description="每批最多傳給 AI 分析的股票數",
     )
 
+    def get_api_key(self) -> str:
+        """根據 provider 回傳對應的 API key"""
+        mapping = {
+            "claude": self.anthropic_api_key,
+            "openai": self.openai_api_key,
+            "gemini": self.gemini_api_key,
+        }
+        return mapping.get(self.provider.lower(), "")
+
     class Config:
-        env_prefix = "CLAUDE_"
+        env_prefix = "AI_"
 
 
 class Settings(BaseSettings):
@@ -641,7 +663,7 @@ class Settings(BaseSettings):
     download: DownloadSettings = DownloadSettings()
     strategy: StrategySettings = StrategySettings()
     backtest: BacktestSettings = BacktestSettings()
-    claude: ClaudeSettings = ClaudeSettings()
+    ai_analyzer: AIAnalyzerSettings = AIAnalyzerSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

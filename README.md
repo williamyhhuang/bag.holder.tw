@@ -161,11 +161,11 @@ python main.py signals --watch
 # 發送到 Telegram
 python main.py signals --send-telegram
 
-# 使用 Claude AI 進行二次過濾分析
-python main.py signals --claude-filter
+# 使用 AI 進行二次過濾分析（provider 由 AI_PROVIDER 設定，預設 claude）
+python main.py signals --ai-filter
 
-# Claude 分析 + 發送到 Telegram
-python main.py signals --claude-filter --send-telegram
+# AI 分析 + 發送到 Telegram
+python main.py signals --ai-filter --send-telegram
 ```
 
 **買入訊號條件（必須同時通過）：**
@@ -182,9 +182,9 @@ python main.py signals --claude-filter --send-telegram
 
 > **注意**：買入過濾器只影響「建議買入」和「觀察清單」，不影響賣出警示。
 
-**Claude AI 二次過濾（`--claude-filter`）：**
+**AI 二次過濾（`--ai-filter`）：**
 
-在 P1 技術指標篩選後，可選擇加入 Claude AI 做進一步的綜合判斷，將股票重新分為四個等級：
+在 P1 技術指標篩選後，可選擇加入 AI 做進一步的綜合判斷，將股票重新分為四個等級：
 
 | 等級 | 說明 |
 |------|------|
@@ -193,13 +193,27 @@ python main.py signals --claude-filter --send-telegram
 | 👀 觀察 | 訊號偏弱或有疑慮，宜等待確認 |
 | ⛔ 不建議 | 處置股/注意股/RSI 極端/訊號可疑 |
 
+**支援 provider：**
+
+| Provider | 預設模型 | API Key 設定 |
+|----------|----------|-------------|
+| `claude`（預設） | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
+| `openai` | `gpt-4o` | `OPENAI_API_KEY` |
+| `gemini` | `gemini-2.0-flash` | `GEMINI_API_KEY` |
+
 **設定方式：**
 ```bash
-# 在 .env 設定 API Key
-ANTHROPIC_API_KEY=your_api_key_here
+# .env — 選擇 provider 並填入對應 API Key
+AI_PROVIDER=claude          # 或 openai、gemini
+ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-...
+# GEMINI_API_KEY=...
 
-# 執行（Claude 分析會包含 buy + watch 清單，再重新分級）
-python main.py signals --claude-filter
+# 可選：指定模型（空白 = 使用預設）
+AI_MODEL=
+
+# 執行（AI 分析會包含 buy + watch 清單，再重新分級）
+python main.py signals --ai-filter
 ```
 
 Telegram 訊息採用手機友善格式，每支股票附上一行中文理由。
@@ -469,13 +483,15 @@ docker compose up -d
 - 🆕 **新增 `DownloadSettings`**：`DOWNLOAD_BATCH_SIZE`（預設 200）可透過環境變數覆蓋
 
 ### v5.1.0 - 2026-04-23
-- 🆕 **Claude AI 二次過濾**：`python main.py signals --claude-filter`
-  - 在 P1 技術訊號篩選後，透過 Claude API 對 buy + watch 清單進行綜合分析
+- 🆕 **AI 二次過濾**：`python main.py signals --ai-filter`
+  - 在 P1 技術訊號篩選後，透過 AI API 對 buy + watch 清單進行綜合分析
   - 重新分級為：🔥 強烈建議買入 / ✅ 建議買入 / 👀 觀察 / ⛔ 不建議，每支附一行中文理由
-  - Telegram 訊息採用手機友善格式（`--claude-filter --send-telegram`）
-  - 新增 `ClaudeSettings`（`ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CLAUDE_ENABLE_SIGNAL_ANALYSIS`）
-  - 新增 `src/claude/analyzer.py`（`ClaudeAnalyzer` class，使用 tool use 確保結構化輸出）
-  - 11 個單元測試全數通過
+  - Telegram 訊息採用手機友善格式（`--ai-filter --send-telegram`）
+  - 支援 Claude / OpenAI / Gemini，透過 `AI_PROVIDER` 設定切換
+  - 抽象架構：`BaseAIAnalyzer`（base.py）+ 各 provider 只需實作 `_analyze_batch()`
+  - `factory.create_analyzer(provider, api_key, model)` 統一建立實例
+  - 新增 `AIAnalyzerSettings`（`AI_PROVIDER`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_MODEL`）
+  - 18 個單元測試全數通過
 
 ### v5.0.0 - 2026-04-21
 - 🚀 **富邦 e01 期貨 API 完整串接**

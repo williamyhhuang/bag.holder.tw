@@ -195,41 +195,45 @@ def _split_into_chunks(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list
     return chunks
 
 
-def run_claude_analysis(result: dict, send_telegram: bool = False) -> None:
-    """執行 Claude AI 二次過濾分析"""
-    claude_cfg = settings.claude
-    api_key = claude_cfg.api_key
+def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
+    """執行 AI 二次過濾分析（provider 由 settings.ai_analyzer.provider 決定）"""
+    cfg = settings.ai_analyzer
+    api_key = cfg.get_api_key()
+    provider = cfg.provider
 
     if not api_key:
-        print("❌ Claude AI 分析失敗：未設定 ANTHROPIC_API_KEY 環境變數")
+        key_var = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}.get(
+            provider.lower(), f"{provider.upper()}_API_KEY"
+        )
+        print(f"❌ AI 分析失敗：未設定 {key_var} 環境變數")
         return
 
     try:
-        from src.claude.analyzer import ClaudeAnalyzer
+        from src.ai_analyzer import create_analyzer
     except ImportError as e:
-        print(f"❌ 無法載入 Claude 分析器：{e}")
+        print(f"❌ 無法載入 AI 分析器：{e}")
         return
 
-    print("\n🤖 正在呼叫 Claude AI 進行二次過濾分析...")
+    print(f"\n🤖 正在呼叫 {provider} 進行二次過濾分析...")
     try:
-        analyzer = ClaudeAnalyzer(api_key=api_key, model=claude_cfg.model)
-        claude_result = analyzer.analyze_signals(
-            result, max_stocks_per_batch=claude_cfg.max_stocks_per_batch
+        analyzer = create_analyzer(provider=provider, api_key=api_key, model=cfg.model)
+        ai_result = analyzer.analyze_signals(
+            result, max_stocks_per_batch=cfg.max_stocks_per_batch
         )
     except Exception as e:
-        logger.error(f"Claude 分析失敗: {e}")
-        print(f"❌ Claude 分析失敗: {e}")
+        logger.error(f"AI 分析失敗: {e}")
+        print(f"❌ AI 分析失敗: {e}")
         return
 
     # ── 終端顯示 ──
-    target_date = claude_result.get("target_date", "")
-    strong_buy = claude_result.get("strong_buy", [])
-    buy = claude_result.get("buy", [])
-    watch = claude_result.get("watch", [])
-    avoid = claude_result.get("avoid", [])
+    target_date = ai_result.get("target_date", "")
+    strong_buy = ai_result.get("strong_buy", [])
+    buy = ai_result.get("buy", [])
+    watch = ai_result.get("watch", [])
+    avoid = ai_result.get("avoid", [])
 
     print(f"\n{'='*60}")
-    print(f"  🤖 Claude AI 二次過濾分析  {target_date}")
+    print(f"  🤖 AI 二次過濾分析（{provider}）  {target_date}")
     print(f"{'='*60}")
 
     sections = [
@@ -259,13 +263,13 @@ def run_claude_analysis(result: dict, send_telegram: bool = False) -> None:
     # ── Telegram 發送 ──
     if send_telegram:
         notifier = TelegramNotifier()
-        chunks = analyzer.format_for_telegram(claude_result)
+        chunks = analyzer.format_for_telegram(ai_result)
         ok = all(notifier.send_message(chunk) for chunk in chunks)
         if ok:
             sent = f"（共 {len(chunks)} 則）" if len(chunks) > 1 else ""
-            print(f"Claude 分析 Telegram 發送成功{sent}")
+            print(f"AI 分析 Telegram 發送成功{sent}")
         else:
-            print("Claude 分析 Telegram 發送失敗")
+            print("AI 分析 Telegram 發送失敗")
 
 
 def run_signals(args):
@@ -290,8 +294,8 @@ def run_signals(args):
             else:
                 print("Telegram 發送失敗")
 
-        if getattr(args, "claude_filter", False):
-            run_claude_analysis(result, send_telegram=send_telegram)
+        if getattr(args, "ai_filter", False):
+            run_ai_analysis(result, send_telegram=send_telegram)
 
     except Exception as e:
         logger.error(f"訊號掃描失敗: {e}")
@@ -315,9 +319,10 @@ def create_parser():
         help="發送結果到 Telegram",
     )
     signals_parser.add_argument(
-        "--claude-filter",
+        "--ai-filter",
         action="store_true",
-        help="使用 Claude AI 對訊號清單進行二次過濾分析（需設定 ANTHROPIC_API_KEY）",
+        dest="ai_filter",
+        help="使用 AI 對訊號清單進行二次過濾分析（provider 由 AI_PROVIDER 設定，預設 claude）",
     )
     return parser
 
