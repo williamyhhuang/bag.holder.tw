@@ -302,7 +302,9 @@ class YFinanceClient:
         if start_date is None:
             start_date = self.get_last_trading_date()
         if end_date is None:
-            end_date = datetime.now()
+            import pytz
+            taipei_tz = pytz.timezone('Asia/Taipei')
+            end_date = (datetime.now(taipei_tz) + timedelta(days=1)).replace(tzinfo=None)
         if batch_size is None:
             batch_size = settings.download.batch_size
 
@@ -360,18 +362,23 @@ class YFinanceClient:
         return successful_downloads
 
     def get_last_trading_date(self) -> datetime:
-        """Get the last trading date (excluding weekends)"""
-        today = datetime.now()
+        """Get the last trading date (excluding weekends), using Asia/Taipei timezone"""
+        import pytz
+        taipei_tz = pytz.timezone('Asia/Taipei')
+        today = datetime.now(taipei_tz)
 
         # If today is Monday, last trading day was Friday
         if today.weekday() == 0:  # Monday
-            return today - timedelta(days=3)
+            result = today - timedelta(days=3)
         # If today is Sunday, last trading day was Friday
         elif today.weekday() == 6:  # Sunday
-            return today - timedelta(days=2)
+            result = today - timedelta(days=2)
         # Otherwise, it was yesterday
         else:
-            return today - timedelta(days=1)
+            result = today - timedelta(days=1)
+
+        # Return naive datetime (strip timezone) for yfinance compatibility
+        return result.replace(tzinfo=None)
 
     def download_recent_data(self, days_back: int = 2) -> int:
         """
@@ -383,7 +390,12 @@ class YFinanceClient:
         Returns:
             Number of stocks successfully downloaded
         """
-        end_date = datetime.now()
+        import pytz
+        taipei_tz = pytz.timezone('Asia/Taipei')
+        today_taipei = datetime.now(taipei_tz)
+
+        # end_date = tomorrow (naive) so yfinance's exclusive end includes today's data
+        end_date = (today_taipei + timedelta(days=1)).replace(tzinfo=None)
         start_date = self.get_last_trading_date()
 
         if days_back > 1:
