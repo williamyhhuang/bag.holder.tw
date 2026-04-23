@@ -160,6 +160,12 @@ python main.py signals --watch
 
 # 發送到 Telegram
 python main.py signals --send-telegram
+
+# 使用 Claude AI 進行二次過濾分析
+python main.py signals --claude-filter
+
+# Claude 分析 + 發送到 Telegram
+python main.py signals --claude-filter --send-telegram
 ```
 
 **買入訊號條件（必須同時通過）：**
@@ -175,6 +181,28 @@ python main.py signals --send-telegram
 10. 三大法人買超（選用，預設停用；啟用後不足者降級至觀察清單）
 
 > **注意**：買入過濾器只影響「建議買入」和「觀察清單」，不影響賣出警示。
+
+**Claude AI 二次過濾（`--claude-filter`）：**
+
+在 P1 技術指標篩選後，可選擇加入 Claude AI 做進一步的綜合判斷，將股票重新分為四個等級：
+
+| 等級 | 說明 |
+|------|------|
+| 🔥 強烈建議買入 | 多訊號共振、RSI 健康、族群強勢、基本面良好 |
+| ✅ 建議買入 | 訊號有效，可考慮小量布局 |
+| 👀 觀察 | 訊號偏弱或有疑慮，宜等待確認 |
+| ⛔ 不建議 | 處置股/注意股/RSI 極端/訊號可疑 |
+
+**設定方式：**
+```bash
+# 在 .env 設定 API Key
+ANTHROPIC_API_KEY=your_api_key_here
+
+# 執行（Claude 分析會包含 buy + watch 清單，再重新分級）
+python main.py signals --claude-filter
+```
+
+Telegram 訊息採用手機友善格式，每支股票附上一行中文理由。
 
 **訊號歷史記錄：**
 每次執行 `python main.py signals` 會自動將結果存為 JSON 至 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比較。
@@ -439,6 +467,15 @@ docker compose up -d
 - ⚡ **下載批次大小從 100 → 200**：`download_all_stocks` 預設 `batch_size` 由 100 提升至 200，減少批次數量加速下載
 - 🗂️ **設定集中管理**：`.env` 僅保留機敏憑證（Fubon API Key/Secret、Telegram Token/Chat ID、Secret Key），所有非機敏參數（策略參數、回測設定、應用程式設定等）改由 `config/settings.py` 管理
 - 🆕 **新增 `DownloadSettings`**：`DOWNLOAD_BATCH_SIZE`（預設 200）可透過環境變數覆蓋
+
+### v5.1.0 - 2026-04-23
+- 🆕 **Claude AI 二次過濾**：`python main.py signals --claude-filter`
+  - 在 P1 技術訊號篩選後，透過 Claude API 對 buy + watch 清單進行綜合分析
+  - 重新分級為：🔥 強烈建議買入 / ✅ 建議買入 / 👀 觀察 / ⛔ 不建議，每支附一行中文理由
+  - Telegram 訊息採用手機友善格式（`--claude-filter --send-telegram`）
+  - 新增 `ClaudeSettings`（`ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CLAUDE_ENABLE_SIGNAL_ANALYSIS`）
+  - 新增 `src/claude/analyzer.py`（`ClaudeAnalyzer` class，使用 tool use 確保結構化輸出）
+  - 11 個單元測試全數通過
 
 ### v5.0.0 - 2026-04-21
 - 🚀 **富邦 e01 期貨 API 完整串接**

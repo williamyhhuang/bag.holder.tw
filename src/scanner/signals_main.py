@@ -12,6 +12,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.scanner.signals_scanner import SignalsScanner
 from src.telegram.simple_notifier import TelegramNotifier
 from src.utils.logger import get_logger
+from config.settings import settings
 
 logger = get_logger(__name__)
 
@@ -194,6 +195,79 @@ def _split_into_chunks(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list
     return chunks
 
 
+def run_claude_analysis(result: dict, send_telegram: bool = False) -> None:
+    """執行 Claude AI 二次過濾分析"""
+    claude_cfg = settings.claude
+    api_key = claude_cfg.api_key
+
+    if not api_key:
+        print("❌ Claude AI 分析失敗：未設定 ANTHROPIC_API_KEY 環境變數")
+        return
+
+    try:
+        from src.claude.analyzer import ClaudeAnalyzer
+    except ImportError as e:
+        print(f"❌ 無法載入 Claude 分析器：{e}")
+        return
+
+    print("\n🤖 正在呼叫 Claude AI 進行二次過濾分析...")
+    try:
+        analyzer = ClaudeAnalyzer(api_key=api_key, model=claude_cfg.model)
+        claude_result = analyzer.analyze_signals(
+            result, max_stocks_per_batch=claude_cfg.max_stocks_per_batch
+        )
+    except Exception as e:
+        logger.error(f"Claude 分析失敗: {e}")
+        print(f"❌ Claude 分析失敗: {e}")
+        return
+
+    # ── 終端顯示 ──
+    target_date = claude_result.get("target_date", "")
+    strong_buy = claude_result.get("strong_buy", [])
+    buy = claude_result.get("buy", [])
+    watch = claude_result.get("watch", [])
+    avoid = claude_result.get("avoid", [])
+
+    print(f"\n{'='*60}")
+    print(f"  🤖 Claude AI 二次過濾分析  {target_date}")
+    print(f"{'='*60}")
+
+    sections = [
+        ("🔥 強烈建議買入", strong_buy),
+        ("✅ 建議買入", buy),
+        ("👀 觀察", watch),
+        ("⛔ 不建議", avoid),
+    ]
+    for title, stocks in sections:
+        if not stocks:
+            continue
+        print(f"\n{title} ({len(stocks)} 支)")
+        for s in stocks:
+            symbol = s.get("symbol", "").split(".")[0]
+            name = s.get("name", "")
+            reason = s.get("reason", "")
+            note = s.get("note", "")
+            note_tag = f" ⚠️{note}" if note else ""
+            print(f"  {symbol} {name}{note_tag}")
+            if reason:
+                print(f"    └ {reason}")
+
+    total = len(strong_buy) + len(buy) + len(watch) + len(avoid)
+    print(f"\n共分析 {total} 支（強買{len(strong_buy)} 買{len(buy)} 觀察{len(watch)} 不建議{len(avoid)}）")
+    print(f"{'='*60}\n")
+
+    # ── Telegram 發送 ──
+    if send_telegram:
+        notifier = TelegramNotifier()
+        chunks = analyzer.format_for_telegram(claude_result)
+        ok = all(notifier.send_message(chunk) for chunk in chunks)
+        if ok:
+            sent = f"（共 {len(chunks)} 則）" if len(chunks) > 1 else ""
+            print(f"Claude 分析 Telegram 發送成功{sent}")
+        else:
+            print("Claude 分析 Telegram 發送失敗")
+
+
 def run_signals(args):
     """執行今日訊號掃描"""
     try:
@@ -204,7 +278,9 @@ def run_signals(args):
         saved_path = save_signals_history(result)
         print(f"📁 訊號記錄已儲存：{saved_path.relative_to(PROJECT_ROOT)}")
 
-        if getattr(args, "send_telegram", False):
+        send_telegram = getattr(args, "send_telegram", False)
+
+        if send_telegram:
             notifier = TelegramNotifier()
             chunks = format_for_telegram(result)
             ok = all(notifier.send_message(chunk) for chunk in chunks)
@@ -213,6 +289,9 @@ def run_signals(args):
                 print(f"Telegram 訊息發送成功{sent}")
             else:
                 print("Telegram 發送失敗")
+
+        if getattr(args, "claude_filter", False):
+            run_claude_analysis(result, send_telegram=send_telegram)
 
     except Exception as e:
         logger.error(f"訊號掃描失敗: {e}")
@@ -234,6 +313,11 @@ def create_parser():
         "--send-telegram",
         action="store_true",
         help="發送結果到 Telegram",
+    )
+    signals_parser.add_argument(
+        "--claude-filter",
+        action="store_true",
+        help="使用 Claude AI 對訊號清單進行二次過濾分析（需設定 ANTHROPIC_API_KEY）",
     )
     return parser
 

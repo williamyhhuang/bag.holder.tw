@@ -67,3 +67,6 @@ pytz==2023.3
 
 # Progress bars
 tqdm==4.67.3
+
+# Claude AI
+anthropic>=0.40.0

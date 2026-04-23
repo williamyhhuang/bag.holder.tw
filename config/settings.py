@@ -602,6 +602,25 @@ class BacktestSettings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
+class ClaudeSettings(BaseSettings):
+    """Claude AI configuration"""
+    api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
+    model: str = Field(default="claude-sonnet-4-6", env="CLAUDE_MODEL")
+    enable_signal_analysis: bool = Field(
+        default=False,
+        env="CLAUDE_ENABLE_SIGNAL_ANALYSIS",
+        description="啟用 Claude AI 二次過濾訊號（需設定 ANTHROPIC_API_KEY）",
+    )
+    max_stocks_per_batch: int = Field(
+        default=50,
+        env="CLAUDE_MAX_STOCKS_PER_BATCH",
+        description="每次傳給 Claude 分析的最大股票數",
+    )
+
+    class Config:
+        env_prefix = "CLAUDE_"
+
+
 class Settings(BaseSettings):
     """Main application settings"""
     # Sub-settings
@@ -622,6 +641,7 @@ class Settings(BaseSettings):
     download: DownloadSettings = DownloadSettings()
     strategy: StrategySettings = StrategySettings()
     backtest: BacktestSettings = BacktestSettings()
+    claude: ClaudeSettings = ClaudeSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")
