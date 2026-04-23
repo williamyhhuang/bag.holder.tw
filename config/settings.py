@@ -620,21 +620,22 @@ class BacktestSettings(BaseSettings):
 
 
 class AIAnalyzerSettings(BaseSettings):
-    """AI 分析器設定（支援 Claude / OpenAI / Gemini）"""
+    """AI 分析器設定（支援 Claude / OpenAI / Gemini / OpenRouter）"""
     provider: str = Field(
         default="claude",
         env="AI_PROVIDER",
-        description="AI 分析器 provider：claude | openai | gemini",
+        description="AI 分析器 provider：claude | openai | gemini | openrouter",
     )
     # 各 provider 的 API Key（用 validation_alias 繞過 env_prefix，直接對應 .env 變數名）
     anthropic_api_key: str = Field(default="", validation_alias=AliasChoices("ANTHROPIC_API_KEY", "AI_ANTHROPIC_API_KEY"))
     openai_api_key: str = Field(default="", validation_alias=AliasChoices("OPENAI_API_KEY", "AI_OPENAI_API_KEY"))
     gemini_api_key: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "AI_GEMINI_API_KEY"))
+    openrouter_api_key: str = Field(default="", validation_alias=AliasChoices("OPENROUTER_API_KEY", "AI_OPENROUTER_API_KEY"))
     # 指定模型（空字串 = 使用各 provider 預設值）
     model: str = Field(
         default="",
         env="AI_MODEL",
-        description="指定模型名稱（空白 = 使用 provider 預設：claude-sonnet-4-6 / gpt-4o / gemini-2.5-flash-preview-04-17）",
+        description="指定模型名稱（空白 = 使用 provider 預設：claude-sonnet-4-6 / gpt-4o / gemini-2.5-flash-preview-04-17 / google/gemini-2.5-flash-preview）",
     )
     enable_signal_analysis: bool = Field(
         default=False,
@@ -653,6 +654,7 @@ class AIAnalyzerSettings(BaseSettings):
             "claude": self.anthropic_api_key,
             "openai": self.openai_api_key,
             "gemini": self.gemini_api_key,
+            "openrouter": self.openrouter_api_key,
         }
         return mapping.get(self.provider.lower(), "")
 

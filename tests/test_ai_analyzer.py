@@ -193,6 +193,22 @@ class TestFactory:
         with pytest.raises(ValueError, match="不支援的 AI provider"):
             create_analyzer(provider="unknown", api_key="key")
 
+    def test_openrouter_provider_returns_openrouter_analyzer(self):
+        from src.ai_analyzer.factory import create_analyzer
+        import sys
+        sys.modules["openai"] = MagicMock()
+        from src.ai_analyzer.providers.openrouter import OpenRouterAnalyzer
+        analyzer = create_analyzer(provider="openrouter", api_key="test-key")
+        assert isinstance(analyzer, OpenRouterAnalyzer)
+
+    def test_openrouter_provider_case_insensitive(self):
+        from src.ai_analyzer.factory import create_analyzer
+        import sys
+        sys.modules["openai"] = MagicMock()
+        from src.ai_analyzer.providers.openrouter import OpenRouterAnalyzer
+        analyzer = create_analyzer(provider="OpenRouter", api_key="k")
+        assert isinstance(analyzer, OpenRouterAnalyzer)
+
     def test_claude_provider_returns_claude_analyzer(self):
         from src.ai_analyzer.factory import create_analyzer
         with patch.dict("sys.modules", {"anthropic": MagicMock()}):

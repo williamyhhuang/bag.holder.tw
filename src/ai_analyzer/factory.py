@@ -12,7 +12,7 @@ def create_analyzer(
     """建立 AI 分析器實例
 
     Args:
-        provider: "claude" | "openai" | "gemini"
+        provider: "claude" | "openai" | "gemini" | "openrouter"
         api_key:  對應 provider 的 API key
         model:    指定模型名稱；空字串則使用各 provider 的預設值
 
@@ -37,7 +37,11 @@ def create_analyzer(
         from src.ai_analyzer.providers.gemini import GeminiAnalyzer
         return GeminiAnalyzer(api_key=api_key, model=model)
 
+    if provider == "openrouter":
+        from src.ai_analyzer.providers.openrouter import OpenRouterAnalyzer
+        return OpenRouterAnalyzer(api_key=api_key, model=model)
+
     raise ValueError(
         f"不支援的 AI provider：'{provider}'，"
-        "請使用 'claude'、'openai' 或 'gemini'"
+        "請使用 'claude'、'openai'、'gemini' 或 'openrouter'"
     )

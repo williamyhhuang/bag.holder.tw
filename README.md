@@ -199,13 +199,15 @@ python main.py signals --ai-filter --send-telegram
 |----------|----------|-------------|
 | `claude`（預設） | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
 | `openai` | `gpt-4o` | `OPENAI_API_KEY` |
-| `gemini` | `gemini-2.0-flash` | `GEMINI_API_KEY` |
+| `gemini` | `gemini-2.5-flash-preview-04-17` | `GEMINI_API_KEY` |
+| `openrouter` | `google/gemini-2.5-flash-preview` | `OPENROUTER_API_KEY` |
 
 **設定方式：**
 ```bash
 # .env — 選擇 provider 並填入對應 API Key
-AI_PROVIDER=claude          # 或 openai、gemini
-ANTHROPIC_API_KEY=sk-ant-...
+AI_PROVIDER=openrouter      # 或 claude、openai、gemini
+OPENROUTER_API_KEY=sk-or-...
+# ANTHROPIC_API_KEY=sk-ant-...
 # OPENAI_API_KEY=sk-...
 # GEMINI_API_KEY=...
 
@@ -489,16 +491,22 @@ docker compose up -d
 - 🗂️ **設定集中管理**：`.env` 僅保留機敏憑證（Fubon API Key/Secret、Telegram Token/Chat ID、Secret Key），所有非機敏參數（策略參數、回測設定、應用程式設定等）改由 `config/settings.py` 管理
 - 🆕 **新增 `DownloadSettings`**：`DOWNLOAD_BATCH_SIZE`（預設 200）可透過環境變數覆蓋
 
+### v5.1.1 - 2026-04-24
+- 🆕 **AI 二次過濾新增 OpenRouter provider**：`AI_PROVIDER=openrouter`
+  - 使用 OpenAI 相容 API 串接 OpenRouter，預設模型 `google/gemini-2.5-flash-preview`
+  - 設定 `OPENROUTER_API_KEY` 即可使用，支援所有 OpenRouter 上的模型
+  - 新增 2 個單元測試覆蓋 openrouter factory 建立
+
 ### v5.1.0 - 2026-04-23
 - 🆕 **AI 二次過濾**：`python main.py signals --ai-filter`
   - 在 P1 技術訊號篩選後，透過 AI API 對 buy + watch 清單進行綜合分析
   - 重新分級為：🔥 強烈建議買入 / ✅ 建議買入 / 👀 觀察 / ⛔ 不建議，每支附一行中文理由
   - Telegram 訊息採用手機友善格式（`--ai-filter --send-telegram`）
-  - 支援 Claude / OpenAI / Gemini，透過 `AI_PROVIDER` 設定切換
+  - 支援 Claude / OpenAI / Gemini / OpenRouter，透過 `AI_PROVIDER` 設定切換
   - 抽象架構：`BaseAIAnalyzer`（base.py）+ 各 provider 只需實作 `_analyze_batch()`
   - `factory.create_analyzer(provider, api_key, model)` 統一建立實例
-  - 新增 `AIAnalyzerSettings`（`AI_PROVIDER`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_MODEL`）
-  - 18 個單元測試全數通過
+  - 新增 `AIAnalyzerSettings`（`AI_PROVIDER`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `AI_MODEL`）
+  - 20 個單元測試全數通過
 
 ### v5.0.0 - 2026-04-21
 - 🚀 **富邦 e01 期貨 API 完整串接**
