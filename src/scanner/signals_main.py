@@ -129,6 +129,11 @@ def display_signals(result: dict, show_watch: bool = False):
 TELEGRAM_MAX_LENGTH = 4096
 
 
+def _escape_md(text: str) -> str:
+    """Escape Telegram Markdown special characters in dynamic content"""
+    return text.replace('*', '').replace('_', '\\_').replace('[', '\\[').replace('`', '\\`')
+
+
 def format_for_telegram(result: dict) -> list[str]:
     """格式化為 Telegram 訊息，超過 4096 字元時自動切割為多則"""
     target_date = result["target_date"]
@@ -140,11 +145,11 @@ def format_for_telegram(result: dict) -> list[str]:
     if buy_list:
         lines.append(f"✅ *建議買入* ({len(buy_list)} 支)")
         for s in buy_list:
-            name = s["name"] or ""
+            name = _escape_md(s["name"] or "")
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
-            sector = s.get("sector") or ""
+            sector = _escape_md(s.get("sector") or "")
             sector_tag = f"[{sector}] " if sector else ""
-            note = s.get("note", "")
+            note = _escape_md(s.get("note", ""))
             note_tag = f" ⚠️{note}" if note else ""
             lines.append(f"  {s['symbol']} {name} {sector_tag}| {s['signal']} | {s['price']:.2f} {rsi_str}{note_tag}")
         lines.append("")
@@ -152,7 +157,7 @@ def format_for_telegram(result: dict) -> list[str]:
     if sell_list:
         lines.append(f"⚠️ *賣出警示* ({len(sell_list)} 支)")
         for s in sell_list:
-            name = s["name"] or ""
+            name = _escape_md(s["name"] or "")
             rsi_str = f"RSI:{s['rsi']:.0f}" if s["rsi"] else ""
             disposal_tag = " 🚨處置股" if s.get("disposal") else ""
             lines.append(f"  {s['symbol']} {name} | {s['signal']} | {s['price']:.2f} {rsi_str}{disposal_tag}")
