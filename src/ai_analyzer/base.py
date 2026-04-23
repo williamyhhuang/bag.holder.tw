@@ -103,7 +103,7 @@ class BaseAIAnalyzer(ABC):
         Returns:
             {"strong_buy": [...], "buy": [...], "watch": [...], "avoid": [...], "target_date": ...}
         """
-        all_stocks = signals_result.get("buy", []) + signals_result.get("watch", [])
+        all_stocks = signals_result.get("buy", [])
 
         if not all_stocks:
             return {**EMPTY_RESULT, "target_date": signals_result.get("target_date")}

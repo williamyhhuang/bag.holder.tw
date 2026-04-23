@@ -83,8 +83,8 @@ class TestAnalyzeSignals:
         result = analyzer.analyze_signals(SAMPLE_SIGNALS_RESULT)
         assert result["target_date"] == "2026-04-23"
 
-    def test_merges_buy_and_watch(self):
-        """analyze_signals 應把 buy + watch 合併後傳給 _analyze_batch"""
+    def test_only_buy_sent_to_ai(self):
+        """analyze_signals 應只把 buy 清單傳給 _analyze_batch，不包含 watch"""
         call_args: list[list[dict]] = []
 
         class CaptureAnalyzer(BaseAIAnalyzer):
@@ -94,8 +94,8 @@ class TestAnalyzeSignals:
 
         CaptureAnalyzer().analyze_signals(SAMPLE_SIGNALS_RESULT)
         symbols = [s["symbol"] for s in call_args[0]]
-        assert "2330.TW" in symbols  # buy
-        assert "3008.TW" in symbols  # watch
+        assert "2330.TW" in symbols  # buy → 應被納入
+        assert "3008.TW" not in symbols  # watch → 不應被納入
 
     def test_empty_input_returns_empty(self):
         analyzer = FakeAnalyzer()
