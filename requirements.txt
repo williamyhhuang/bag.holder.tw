@@ -1,8 +1,8 @@
 # Core dependencies
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+fastapi==0.115.12
+uvicorn==0.34.0
+pydantic==2.11.3
+pydantic-settings==2.9.1
 
 # Fubon Securities Official SDK
 # Note: fubon_neo needs to be installed from .whl file
@@ -10,27 +10,27 @@ pydantic-settings==2.1.0
 # Install with: pip install fubon_neo-<version>-cp37-abi3-<platform>.whl
 
 # Database
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.13.0
+sqlalchemy==2.0.40
+psycopg2-binary==2.9.10
+alembic==1.15.2
 
 # Redis and caching
-redis==5.0.1
+redis==5.2.1
 
 # HTTP client
-aiohttp==3.9.1
-httpx==0.25.2
+aiohttp==3.11.14
+httpx==0.28.1
 
 # Data processing
-pandas==2.1.4
-numpy==1.25.2
+pandas==2.2.3
+numpy==2.2.5
 yfinance==1.2.0
 
 # Technical indicators
 TA-Lib==0.6.8
 
 # Telegram bot
-python-telegram-bot==20.7
+python-telegram-bot==21.11.1
 
 # Async utilities
 asyncio-mqtt==0.16.1
@@ -39,23 +39,23 @@ asyncio-mqtt==0.16.1
 python-dotenv==1.0.0
 
 # Development and testing dependencies
-pytest==8.4.2
-pytest-asyncio==1.2.0
-pytest-cov==4.1.0
-black==23.11.0
-flake8==6.1.0
-mypy==1.7.1
+pytest==8.3.5
+pytest-asyncio==0.25.3
+pytest-cov==6.1.0
+black==25.1.0
+flake8==7.2.0
+mypy==1.15.0
 
 # System monitoring
-psutil==5.9.6
+psutil==7.0.0
 
 # Monitoring and metrics
 prometheus-client==0.19.0
 
 # Utilities
-click==8.1.7
-rich==13.7.0
-typer==0.9.0
+click==8.1.8
+rich==13.9.4
+typer==0.15.2
 
 # Security
 cryptography>=42.0.0

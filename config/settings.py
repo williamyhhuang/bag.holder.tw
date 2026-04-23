@@ -19,6 +19,7 @@ class DatabaseSettings(BaseSettings):
     echo: bool = Field(default=False, env="DATABASE_ECHO")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "DATABASE_"
 
 class RedisSettings(BaseSettings):
@@ -28,6 +29,7 @@ class RedisSettings(BaseSettings):
     db: int = Field(default=0, env="REDIS_DB")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "REDIS_"
 
 class FubonAPISettings(BaseSettings):
@@ -61,6 +63,7 @@ class FubonAPISettings(BaseSettings):
         return bool(self.user_id and self.password and self.cert_path)
 
     class Config:
+        extra = 'ignore'
         env_prefix = "FUBON_"
 
 class TelegramSettings(BaseSettings):
@@ -71,6 +74,7 @@ class TelegramSettings(BaseSettings):
     webhook_secret: Optional[str] = Field(default=None, env="TELEGRAM_WEBHOOK_SECRET")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "TELEGRAM_"
 
 class AppSettings(BaseSettings):
@@ -83,6 +87,7 @@ class AppSettings(BaseSettings):
     port: int = Field(default=8000, env="APP_PORT")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "APP_"
 
 class LoggingSettings(BaseSettings):
@@ -93,6 +98,7 @@ class LoggingSettings(BaseSettings):
     backup_count: int = Field(default=5, env="LOG_BACKUP_COUNT")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "LOG_"
 
 class ScannerSettings(BaseSettings):
@@ -110,6 +116,7 @@ class ScannerSettings(BaseSettings):
         return v
 
     class Config:
+        extra = 'ignore'
         env_prefix = "SCAN_"
 
 class IndicatorSettings(BaseSettings):
@@ -129,6 +136,7 @@ class IndicatorSettings(BaseSettings):
         return v
 
     class Config:
+        extra = 'ignore'
         env_prefix = "INDICATORS_"
 
 class AlertSettings(BaseSettings):
@@ -139,6 +147,7 @@ class AlertSettings(BaseSettings):
     batch_size: int = Field(default=20, env="ALERT_BATCH_SIZE")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "ALERT_"
 
 class DataRetentionSettings(BaseSettings):
@@ -148,6 +157,7 @@ class DataRetentionSettings(BaseSettings):
     auto_cleanup_enabled: bool = Field(default=True, env="AUTO_CLEANUP_ENABLED")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "DATA_"
 
 class SecuritySettings(BaseSettings):
@@ -163,6 +173,7 @@ class SecuritySettings(BaseSettings):
         return v
 
     class Config:
+        extra = 'ignore'
         env_prefix = "SECURITY_"
 
 class FuturesSettings(BaseSettings):
@@ -178,6 +189,7 @@ class FuturesSettings(BaseSettings):
         return v
 
     class Config:
+        extra = 'ignore'
         env_prefix = "FUTURES_"
 
 class PerformanceSettings(BaseSettings):
@@ -192,6 +204,7 @@ class DownloadSettings(BaseSettings):
     batch_size: int = Field(default=200, env="DOWNLOAD_BATCH_SIZE")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "DOWNLOAD_"
 
 class DataSettings(BaseSettings):
@@ -200,6 +213,7 @@ class DataSettings(BaseSettings):
     user_trades_path: str = Field(default="data/user_trades.csv", env="DATA_USER_TRADES_PATH")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "DATA_"
 
 class StrategySettings(BaseSettings):
@@ -239,6 +253,7 @@ class StrategySettings(BaseSettings):
         return v
 
     class Config:
+        extra = 'ignore'
         env_prefix = "STRATEGY_"
 
 class BacktestSettings(BaseSettings):
@@ -598,6 +613,7 @@ class BacktestSettings(BaseSettings):
         return excluded
 
     class Config:
+        extra = 'ignore'
         env_prefix = "BACKTEST_"
         env_file = str(PROJECT_ROOT / ".env")
         env_file_encoding = "utf-8"
@@ -641,6 +657,7 @@ class AIAnalyzerSettings(BaseSettings):
         return mapping.get(self.provider.lower(), "")
 
     class Config:
+        extra = 'ignore'
         env_prefix = "AI_"
         env_file = str(PROJECT_ROOT / ".env")
         env_file_encoding = "utf-8"
