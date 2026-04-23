@@ -11,6 +11,6 @@ gsutil cp "${GCS_BUCKET}/stocks.tar.gz" /tmp/stocks.tar.gz
 tar xzf /tmp/stocks.tar.gz -C "${DATA_DIR}"
 
 echo "[signals-job] Running signals..."
-python main.py signals --send-telegram
+python main.py signals --send-telegram --ai-filter
 
 echo "[signals-job] Done."
