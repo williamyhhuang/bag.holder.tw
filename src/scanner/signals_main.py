@@ -206,7 +206,7 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
     provider = cfg.provider
 
     if not api_key:
-        key_var = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}.get(
+        key_var = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}.get(
             provider.lower(), f"{provider.upper()}_API_KEY"
         )
         print(f"❌ AI 分析失敗：未設定 {key_var} 環境變數")
