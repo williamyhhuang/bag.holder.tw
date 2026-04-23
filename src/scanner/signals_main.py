@@ -66,22 +66,23 @@ def display_signals(result: dict, show_watch: bool = False):
         print("  （今日無 P1 買入訊號）")
 
     # ── 賣出警示 ──
-    SELL_DISPLAY_LIMIT = 30
-    print(f"\n⚠️  賣出警示 ({len(sell_list)} 支)  [若持有以下個股，請留意出場]")
-    if sell_list:
-        shown = sell_list[:SELL_DISPLAY_LIMIT]
-        print(f"  {'代號':<16} {'名稱':<10} {'訊號':<26} {'價格':>8} {'RSI':>6}  備註")
-        print("  " + "-" * 80)
-        for s in shown:
-            name = (s["name"] or "")[:8]
-            signal = s["signal"][:24]
-            rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
-            note = "⚠️處置股" if s.get("disposal") else ""
-            print(f"  {s['symbol']:<16} {name:<10} {signal:<26} {s['price']:>8.2f} {rsi_str:>6}  {note}")
-        if len(sell_list) > SELL_DISPLAY_LIMIT:
-            print(f"  ... 另有 {len(sell_list) - SELL_DISPLAY_LIMIT} 支（使用 --watch 查看觀察清單）")
-    else:
-        print("  （今日無賣出訊號）")
+    if settings.scanner.show_sell_signals:
+        SELL_DISPLAY_LIMIT = 30
+        print(f"\n⚠️  賣出警示 ({len(sell_list)} 支)  [若持有以下個股，請留意出場]")
+        if sell_list:
+            shown = sell_list[:SELL_DISPLAY_LIMIT]
+            print(f"  {'代號':<16} {'名稱':<10} {'訊號':<26} {'價格':>8} {'RSI':>6}  備註")
+            print("  " + "-" * 80)
+            for s in shown:
+                name = (s["name"] or "")[:8]
+                signal = s["signal"][:24]
+                rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
+                note = "⚠️處置股" if s.get("disposal") else ""
+                print(f"  {s['symbol']:<16} {name:<10} {signal:<26} {s['price']:>8.2f} {rsi_str:>6}  {note}")
+            if len(sell_list) > SELL_DISPLAY_LIMIT:
+                print(f"  ... 另有 {len(sell_list) - SELL_DISPLAY_LIMIT} 支（使用 --watch 查看觀察清單）")
+        else:
+            print("  （今日無賣出訊號）")
 
     # ── 觀察清單（選用） ──
     if show_watch:
@@ -122,8 +123,11 @@ def display_signals(result: dict, show_watch: bool = False):
     print("    ④ 籌碼面：三大法人買超≥門檻（預設停用）")
     print("    ⑤ 處置/注意股：不排除，備註欄標記「⚠️處置股」或「⚠️注意股」供參考")
     print("    ⑥ 排除：族群偏弱（排入觀察清單）")
-    print("  • 賣出警示：持有股出場訊號，不受買入過濾限制")
-    print("    （處置/注意股賣出警示標記「⚠️處置股」或「⚠️注意股」）")
+    if settings.scanner.show_sell_signals:
+        print("  • 賣出警示：持有股出場訊號，不受買入過濾限制")
+        print("    （處置/注意股賣出警示標記「⚠️處置股」或「⚠️注意股」）")
+    else:
+        print("  • 賣出警示：已關閉（可在 settings.py 設定 SIGNALS_SHOW_SELL=true 開啟）")
     print(f"{'='*60}\n")
 
 
@@ -154,7 +158,7 @@ def format_for_telegram(result: dict) -> list[str]:
             lines.append(f"  {s['symbol']} {name}{sector_tag}{note_tag}")
         lines.append("")
 
-    if sell_list:
+    if sell_list and settings.scanner.show_sell_signals:
         lines.append(f"⚠️ *賣出警示* ({len(sell_list)} 支)")
         for s in sell_list:
             name = _escape_md(s["name"] or "")
@@ -164,7 +168,7 @@ def format_for_telegram(result: dict) -> list[str]:
             note_tag = f" ⚠️{note}" if note else ""
             lines.append(f"  {s['symbol']} {name}{sector_tag}{note_tag}")
 
-    if not buy_list and not sell_list:
+    if not buy_list and not (sell_list and settings.scanner.show_sell_signals):
         lines.append("今日無買賣訊號")
 
     return _split_into_chunks("\n".join(lines))

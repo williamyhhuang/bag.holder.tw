@@ -101,6 +101,7 @@ class ScannerSettings(BaseSettings):
     batch_size: int = Field(default=50, env="SCAN_BATCH_SIZE")
     max_concurrent: int = Field(default=10, env="SCAN_MAX_CONCURRENT")
     enabled_markets: List[str] = Field(default=["TSE", "OTC"], env="SCAN_ENABLED_MARKETS")
+    show_sell_signals: bool = Field(default=False, env="SIGNALS_SHOW_SELL", description="是否在 signals 輸出顯示賣出警示（終端機與 Telegram）")
 
     @validator('enabled_markets', pre=True)
     def split_markets(cls, v):
