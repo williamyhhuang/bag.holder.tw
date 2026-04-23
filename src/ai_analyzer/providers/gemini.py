@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 
 class GeminiAnalyzer(BaseAIAnalyzer):
-    DEFAULT_MODEL = "gemini-2.0-flash"
+    DEFAULT_MODEL = "gemini-2.5-flash-preview-04-17"
 
     def __init__(self, api_key: str, model: str = ""):
         try:

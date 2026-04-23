@@ -618,7 +618,7 @@ class AIAnalyzerSettings(BaseSettings):
     model: str = Field(
         default="",
         env="AI_MODEL",
-        description="指定模型名稱（空白 = 使用 provider 預設：claude-sonnet-4-6 / gpt-4o / gemini-2.0-flash）",
+        description="指定模型名稱（空白 = 使用 provider 預設：claude-sonnet-4-6 / gpt-4o / gemini-2.5-flash-preview-04-17）",
     )
     enable_signal_analysis: bool = Field(
         default=False,
