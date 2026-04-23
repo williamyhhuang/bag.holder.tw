@@ -7,40 +7,40 @@ pydantic-settings==2.9.1
 # Database dependencies removed - now using CSV storage
 
 # Redis and caching
-redis==5.0.1
+redis==5.2.1
 
 # HTTP client
-aiohttp==3.9.1
-httpx==0.25.2
+aiohttp==3.11.14
+httpx==0.28.1
 requests>=2.31.0
 
 # Data processing
-pandas==2.1.4
-numpy==1.25.2
+pandas==2.2.3
+numpy==2.2.5
 yfinance==1.2.0
 
 # Technical indicators
 TA-Lib==0.6.8
 
 # Telegram bot
-python-telegram-bot==20.7
+python-telegram-bot==21.11.1
 
 # Configuration
 python-dotenv==1.0.0
 
 # System monitoring
-psutil==5.9.6
-prometheus-client>=0.19.0
+psutil==7.0.0
+prometheus-client==0.19.0
 
 # Database ORM
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
+sqlalchemy==2.0.40
+psycopg2-binary==2.9.10
 
 # Utilities
-click==8.1.7
-rich==13.7.0
-typer==0.9.0
-tqdm>=4.66.0
+click==8.1.8
+rich==13.9.4
+typer==0.15.2
+tqdm==4.67.3
 
 # Security
 cryptography>=42.0.0
