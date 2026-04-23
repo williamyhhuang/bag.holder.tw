@@ -7,7 +7,7 @@ from datetime import date
 from typing import List, Optional, Set
 from pathlib import Path
 
-from pydantic import Field, validator
+from pydantic import AliasChoices, Field, validator
 from pydantic_settings import BaseSettings
 
 # Get project root directory
@@ -610,10 +610,10 @@ class AIAnalyzerSettings(BaseSettings):
         env="AI_PROVIDER",
         description="AI 分析器 provider：claude | openai | gemini",
     )
-    # 各 provider 的 API Key
-    anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
-    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
-    gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
+    # 各 provider 的 API Key（用 validation_alias 繞過 env_prefix，直接對應 .env 變數名）
+    anthropic_api_key: str = Field(default="", validation_alias=AliasChoices("ANTHROPIC_API_KEY", "AI_ANTHROPIC_API_KEY"))
+    openai_api_key: str = Field(default="", validation_alias=AliasChoices("OPENAI_API_KEY", "AI_OPENAI_API_KEY"))
+    gemini_api_key: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "AI_GEMINI_API_KEY"))
     # 指定模型（空字串 = 使用各 provider 預設值）
     model: str = Field(
         default="",
@@ -642,6 +642,8 @@ class AIAnalyzerSettings(BaseSettings):
 
     class Config:
         env_prefix = "AI_"
+        env_file = str(PROJECT_ROOT / ".env")
+        env_file_encoding = "utf-8"
 
 
 class Settings(BaseSettings):

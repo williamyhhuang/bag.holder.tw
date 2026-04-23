@@ -42,6 +42,8 @@ def run_signals(args):
         cmd.append('--watch')
     if getattr(args, 'send_telegram', False):
         cmd.append('--send-telegram')
+    if getattr(args, 'ai_filter', False):
+        cmd.append('--ai-filter')
 
     try:
         result = subprocess.run(cmd, cwd=project_root, check=True)
@@ -165,6 +167,12 @@ def create_parser():
         '--send-telegram',
         action='store_true',
         help='發送結果到 Telegram'
+    )
+    signals_parser.add_argument(
+        '--ai-filter',
+        action='store_true',
+        dest='ai_filter',
+        help='使用 AI 對訊號清單進行二次過濾分析'
     )
 
     # Scan command
