@@ -18,7 +18,10 @@ class GeminiAnalyzer(BaseAIAnalyzer):
             raise ImportError(
                 "需要安裝 google-genai 套件：pip install google-genai"
             )
-        self._client = genai.Client(api_key=api_key)
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=genai_types.HttpOptions(timeout=120_000),  # 120 秒
+        )
         self._types = genai_types
         self._model_name = model or self.DEFAULT_MODEL
 
@@ -63,6 +66,7 @@ class GeminiAnalyzer(BaseAIAnalyzer):
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     tools=[tool],
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
 
