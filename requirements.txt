@@ -70,3 +70,6 @@ tqdm==4.67.3
 
 # Claude AI
 anthropic>=0.40.0
+
+# Google Gemini AI
+google-genai>=1.0.0
