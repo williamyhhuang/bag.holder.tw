@@ -66,7 +66,7 @@ class GeminiAnalyzer(BaseAIAnalyzer):
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     tools=[tool],
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 ),
             )
 
