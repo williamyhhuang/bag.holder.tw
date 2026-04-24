@@ -6,9 +6,21 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
+def _make_secret(name: str, project: str = "my-project"):
+    secret = MagicMock()
+    secret.name = f"projects/{project}/secrets/{name}"
+    return secret
+
+
+def _make_version_response(value: str):
+    response = MagicMock()
+    response.payload.data = value.encode("utf-8")
+    return response
+
+
 class TestInitSecrets:
     def test_no_op_when_gcp_project_id_not_set(self):
-        """本機開發：GCP_PROJECT_ID 未設定時應直接 return，不呼叫 Secret Manager"""
+        """本機開發：GCP_PROJECT_ID 未設定時應直接 return"""
         env = {k: v for k, v in os.environ.items() if k != "GCP_PROJECT_ID"}
         with patch.dict(os.environ, env, clear=True):
             with patch("config.secret_manager.load_secrets_to_env") as mock_load:
@@ -26,93 +38,86 @@ class TestInitSecrets:
 
 
 class TestLoadSecretsToEnv:
-    def _make_secret_response(self, value: str):
-        response = MagicMock()
-        response.payload.data = value.encode("utf-8")
-        return response
-
-    def test_loads_secret_into_environ(self):
-        """成功讀取的 secret 應被注入到 os.environ"""
+    def _make_client(self, secrets: dict):
+        """secrets: {secret_name: secret_value}"""
         mock_client = MagicMock()
-        mock_client.access_secret_version.return_value = self._make_secret_response("token123")
+        mock_client.list_secrets.return_value = [
+            _make_secret(name) for name in secrets
+        ]
+        mock_client.access_secret_version.side_effect = lambda request: (
+            _make_version_response(secrets[request["name"].split("/")[-3]])
+        )
+        return mock_client
+
+    def _patch_sm(self, mock_client):
         mock_sm = MagicMock()
         mock_sm.SecretManagerServiceClient.return_value = mock_client
+        return mock_sm
+
+    def test_loads_all_secrets_into_environ(self):
+        """列出的所有 secrets 應全部注入 os.environ"""
+        secrets = {"TELEGRAM_BOT_TOKEN": "tok123", "GEMINI_API_KEY": "gem456"}
+        mock_client = self._make_client(secrets)
 
         env_snapshot = {k: v for k, v in os.environ.items()}
-        env_snapshot.pop("TELEGRAM_BOT_TOKEN", None)
+        for k in secrets:
+            env_snapshot.pop(k, None)
 
         with patch.dict(os.environ, env_snapshot, clear=True):
-            with patch("config.secret_manager._secretmanager", mock_sm):
+            with patch("config.secret_manager._secretmanager", self._patch_sm(mock_client)):
                 with patch("config.secret_manager._SECRET_MANAGER_AVAILABLE", True):
                     from config.secret_manager import load_secrets_to_env
                     load_secrets_to_env("my-project")
-                    assert os.environ.get("TELEGRAM_BOT_TOKEN") == "token123"
+                    assert os.environ["TELEGRAM_BOT_TOKEN"] == "tok123"
+                    assert os.environ["GEMINI_API_KEY"] == "gem456"
 
     def test_skips_existing_env_var(self):
         """os.environ 已有值時不應覆蓋"""
-        mock_client = MagicMock()
-        mock_sm = MagicMock()
-        mock_sm.SecretManagerServiceClient.return_value = mock_client
+        secrets = {"TELEGRAM_BOT_TOKEN": "new_value"}
+        mock_client = self._make_client(secrets)
 
         with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "existing_token"}):
-            with patch("config.secret_manager._secretmanager", mock_sm):
+            with patch("config.secret_manager._secretmanager", self._patch_sm(mock_client)):
                 with patch("config.secret_manager._SECRET_MANAGER_AVAILABLE", True):
                     from config.secret_manager import load_secrets_to_env
                     load_secrets_to_env("my-project")
-
-                    # 不應呼叫 access_secret_version for TELEGRAM_BOT_TOKEN
-                    calls = [
-                        str(call)
-                        for call in mock_client.access_secret_version.call_args_list
-                        if "TELEGRAM_BOT_TOKEN" in str(call)
-                    ]
-                    assert len(calls) == 0
                     assert os.environ["TELEGRAM_BOT_TOKEN"] == "existing_token"
 
-    def test_skips_not_found_secret(self):
-        """Secret Manager 中不存在的 secret 應跳過，不拋出例外"""
+    def test_skips_not_found_version(self):
+        """secret 存在但無版本時應跳過，不拋出例外"""
         from google.api_core.exceptions import NotFound
 
         mock_client = MagicMock()
-        mock_client.access_secret_version.side_effect = NotFound("not found")
-        mock_sm = MagicMock()
-        mock_sm.SecretManagerServiceClient.return_value = mock_client
+        mock_client.list_secrets.return_value = [_make_secret("EMPTY_SECRET")]
+        mock_client.access_secret_version.side_effect = NotFound("no version")
 
         env_snapshot = {k: v for k, v in os.environ.items()}
-        for key in ["TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY"]:
-            env_snapshot.pop(key, None)
+        env_snapshot.pop("EMPTY_SECRET", None)
 
         with patch.dict(os.environ, env_snapshot, clear=True):
-            with patch("config.secret_manager._secretmanager", mock_sm):
+            with patch("config.secret_manager._secretmanager", self._patch_sm(mock_client)):
                 with patch("config.secret_manager._SECRET_MANAGER_AVAILABLE", True):
                     with patch("config.secret_manager.NotFound", NotFound):
                         from config.secret_manager import load_secrets_to_env
-                        # 不應拋出例外
-                        load_secrets_to_env("my-project")
+                        load_secrets_to_env("my-project")  # 不應拋出例外
 
-    def test_warns_on_permission_denied(self):
-        """PermissionDenied 應記錄 warning 但不拋出例外"""
+    def test_warns_on_list_permission_denied(self):
+        """list_secrets 無權限時應記錄 warning 並 return"""
         from google.api_core.exceptions import PermissionDenied
 
         mock_client = MagicMock()
-        mock_client.access_secret_version.side_effect = PermissionDenied("denied")
-        mock_sm = MagicMock()
-        mock_sm.SecretManagerServiceClient.return_value = mock_client
+        mock_client.list_secrets.side_effect = PermissionDenied("denied")
 
-        env_snapshot = {k: v for k, v in os.environ.items()}
-        env_snapshot.pop("TELEGRAM_BOT_TOKEN", None)
-
-        with patch.dict(os.environ, env_snapshot, clear=True):
-            with patch("config.secret_manager._secretmanager", mock_sm):
-                with patch("config.secret_manager._SECRET_MANAGER_AVAILABLE", True):
-                    with patch("config.secret_manager.PermissionDenied", PermissionDenied):
-                        with patch("config.secret_manager.logger") as mock_logger:
-                            from config.secret_manager import load_secrets_to_env
-                            load_secrets_to_env("my-project")
-                            assert mock_logger.warning.called
+        with patch("config.secret_manager._secretmanager", self._patch_sm(mock_client)):
+            with patch("config.secret_manager._SECRET_MANAGER_AVAILABLE", True):
+                with patch("config.secret_manager.PermissionDenied", PermissionDenied):
+                    with patch("config.secret_manager.logger") as mock_logger:
+                        from config.secret_manager import load_secrets_to_env
+                        load_secrets_to_env("my-project")
+                        assert mock_logger.warning.called
 
     def test_unavailable_library_logs_warning(self):
-        """google-cloud-secret-manager 未安裝時應記錄 warning 但不拋出例外"""
+        """google-cloud-secret-manager 未安裝時應記錄 warning"""
         with patch("config.secret_manager._SECRET_MANAGER_AVAILABLE", False):
             with patch("config.secret_manager.logger") as mock_logger:
                 from config.secret_manager import load_secrets_to_env

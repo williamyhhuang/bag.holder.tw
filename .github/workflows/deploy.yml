@@ -86,7 +86,6 @@ jobs:
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
-            --update-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,AI_PROVIDER=AI_PROVIDER:latest,AI_MODEL=AI_MODEL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
           || \
           gcloud run jobs create bag-holder-download \
             --project=${{ secrets.GCP_PROJECT_ID }} \
@@ -98,8 +97,7 @@ jobs:
             --cpu=2 \
             --task-timeout=3600 \
             --max-retries=1 \
-            --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,AI_PROVIDER=AI_PROVIDER:latest,AI_MODEL=AI_MODEL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
+            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
 
       - name: Deploy bag-holder-signals job
         run: |
@@ -107,7 +105,6 @@ jobs:
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
-            --update-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,AI_PROVIDER=AI_PROVIDER:latest,AI_MODEL=AI_MODEL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
           || \
           gcloud run jobs create bag-holder-signals \
             --project=${{ secrets.GCP_PROJECT_ID }} \
@@ -119,5 +116,4 @@ jobs:
             --cpu=2 \
             --task-timeout=600 \
             --max-retries=1 \
-            --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_CHAT_ID=TELEGRAM_CHAT_ID:latest,AI_PROVIDER=AI_PROVIDER:latest,AI_MODEL=AI_MODEL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
+            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
