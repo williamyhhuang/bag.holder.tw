@@ -10,10 +10,14 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, validator
 from pydantic_settings import BaseSettings
 
-# 在 pydantic-settings 初始化前，從 GCP Secret Manager 自動載入所有機敏設定
-# 本機開發時 GCP_PROJECT_ID 未設定，此呼叫為 no-op
-from config.secret_manager import init_secrets
-init_secrets()
+# 若 Cloud Run 透過 --set-secrets 注入 APP_SECRETS（JSON 格式），
+# 將其展開到 os.environ，讓 pydantic-settings 能正常讀取。
+# 本機開發時 APP_SECRETS 不存在，此段為 no-op。
+_app_secrets_raw = os.environ.get("APP_SECRETS")
+if _app_secrets_raw:
+    import json as _json
+    for _k, _v in _json.loads(_app_secrets_raw).items():
+        os.environ.setdefault(_k, str(_v))
 
 # Get project root directory
 PROJECT_ROOT = Path(__file__).parent.parent

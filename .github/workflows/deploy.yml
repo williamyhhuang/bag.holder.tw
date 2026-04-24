@@ -97,7 +97,8 @@ jobs:
             --cpu=2 \
             --task-timeout=3600 \
             --max-retries=1 \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
+            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
+            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
 
       - name: Deploy bag-holder-signals job
         run: |
@@ -116,4 +117,5 @@ jobs:
             --cpu=2 \
             --task-timeout=600 \
             --max-retries=1 \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
+            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
+            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
