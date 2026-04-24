@@ -256,9 +256,10 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
             reason = s.get("reason", "")
             note = s.get("note", "")
             note_tag = f" ⚠️{note}" if note else ""
-            print(f"  {symbol} {name}{note_tag}")
+            print(f"  【{symbol} {name}】{note_tag}")
             if reason:
                 print(f"    └ {reason}")
+            print()
 
     total = len(strong_buy) + len(buy) + len(watch) + len(avoid)
     print(f"\n共分析 {total} 支（強買{len(strong_buy)} 買{len(buy)} 觀察{len(watch)} 不建議{len(avoid)}）")
