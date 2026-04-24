@@ -10,11 +10,6 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, validator
 from pydantic_settings import BaseSettings
 
-# 在 pydantic-settings 初始化前，從 GCP Secret Manager 載入機敏設定
-# 本機開發時 GCP_PROJECT_ID 未設定，此呼叫為 no-op
-from config.secret_manager import init_secrets
-init_secrets()
-
 # Get project root directory
 PROJECT_ROOT = Path(__file__).parent.parent
 
