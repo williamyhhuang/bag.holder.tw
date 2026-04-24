@@ -54,3 +54,6 @@ anthropic>=0.40.0
 
 # Google Gemini AI
 google-genai>=1.0.0
+
+# GCP Secret Manager
+google-cloud-secret-manager>=2.16.0
