@@ -20,6 +20,27 @@
 
 ## 🏗️ 系統架構
 
+本專案採用 **DDD (Domain-Driven Design) / Hexagonal Architecture（六角形架構 / Ports and Adapters）** 設計模式：
+
+```
+src/
+├── domain/              # 領域層（最內層，無外部依賴）
+│   ├── models/          # 領域模型：StockData, TradingSignal, Portfolio, BacktestResult
+│   ├── services/        # 領域服務：IndicatorCalculator, SignalDetector
+│   └── ports/           # 抽象介面：IMarketDataProvider, INotificationService, IAIAnalyzer
+├── application/         # 應用層（協調領域服務）
+│   └── use_cases/       # ScanStocksUseCase, RunBacktestUseCase, DownloadDataUseCase, AnalyzeFuturesUseCase
+├── infrastructure/      # 基礎設施層（實作外部依賴）
+│   ├── persistence/     # DatabaseManager, ORM Models
+│   ├── market_data/     # YFinanceAdapter, FubonAdapter
+│   ├── notification/    # TelegramAdapter
+│   └── ai/              # ClaudeAnalyzer, OpenAIAnalyzer, GeminiAnalyzer, OpenRouterAnalyzer
+└── interfaces/          # 介面層（CLI 入口）
+    └── cli/             # main.py CLI 入口
+```
+
+向下相容：舊有 `src/database/`, `src/indicators/` 等路徑透過 re-export shim 保持相容。
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                   Taiwan Stock Analysis CLI                   │
@@ -781,6 +802,15 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🆕 `YFinanceDataSource.load_from_stocks_dir()` — 批次讀取每檔獨立 CSV
 - 🐛 修正 `calculate_position_size` 最小張數判斷未含手續費的問題
 - ✅ 新增 `load_from_stocks_dir` 相關單元測試（3 個測試案例）
+
+### v3.0.0 - 2026-04-25
+- 🆕 **DDD / Hexagonal Architecture 全面重構**
+  - 新增 `src/domain/` 領域層（models, services, ports）
+  - 新增 `src/application/use_cases/` 應用層 Use Cases
+  - 新增 `src/infrastructure/` 基礎設施層（persistence, market_data, notification, ai）
+  - 新增 `src/interfaces/cli/` 介面層 CLI 入口
+- 🔧 `src/database/`, `src/indicators/` 轉為 re-export shim，保持向下相容
+- ✅ 所有 411 個單元測試通過
 
 ### v2.0.0 - 2024-03-15
 - 🆕 全面重構為 CLI 架構
