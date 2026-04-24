@@ -157,10 +157,10 @@ class BaseAIAnalyzer(ABC):
                 note = s.get("note", "")
                 note_tag = f" ⚠️{note}" if note else ""
                 reason = s.get("reason", "")
-                lines.append(f"{symbol} {name}{note_tag}")
+                lines.append(f"【{symbol} {name}】{note_tag}")
                 if reason:
                     lines.append(f"└ {reason}")
-            lines.append("")
+                lines.append("")
 
         total = len(strong_buy) + len(buy) + len(watch) + len(avoid)
         lines.append(

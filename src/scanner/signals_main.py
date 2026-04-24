@@ -287,8 +287,9 @@ def run_signals(args):
         print(f"📁 訊號記錄已儲存：{saved_path.relative_to(PROJECT_ROOT)}")
 
         send_telegram = getattr(args, "send_telegram", False)
+        ai_filter = getattr(args, "ai_filter", False)
 
-        if send_telegram:
+        if send_telegram and not ai_filter:
             notifier = TelegramNotifier()
             chunks = format_for_telegram(result)
             ok = all(notifier.send_message(chunk) for chunk in chunks)
@@ -298,7 +299,7 @@ def run_signals(args):
             else:
                 print("Telegram 發送失敗")
 
-        if getattr(args, "ai_filter", False):
+        if ai_filter:
             run_ai_analysis(result, send_telegram=send_telegram)
 
     except Exception as e:
