@@ -20,16 +20,41 @@ class TestYFinanceClient:
 
     def test_get_tse_listed_stocks(self):
         """Test getting TSE listed stocks"""
-        stocks = self.client.get_tse_listed_stocks()
+        mock_data = [
+            {'Code': '2330', 'Name': '台積電'},
+            {'Code': '2317', 'Name': '鴻海'},
+            {'Code': 'IX0001', 'Name': '加權指數'},  # should be excluded
+        ]
+        mock_response = MagicMock()
+        mock_response.json.return_value = mock_data
+        mock_response.raise_for_status.return_value = None
+
+        with patch('src.data_downloader.yfinance_client.requests.get', return_value=mock_response):
+            stocks = self.client.get_tse_listed_stocks()
+
         assert isinstance(stocks, list)
-        assert len(stocks) > 0
+        assert len(stocks) == 2
         assert '2330.TW' in stocks
+        assert '2317.TW' in stocks
 
     def test_get_otc_listed_stocks(self):
         """Test getting OTC listed stocks"""
-        stocks = self.client.get_otc_listed_stocks()
+        mock_data = [
+            {'SecuritiesCompanyCode': '6277', 'CompanyName': '宏正'},
+            {'SecuritiesCompanyCode': '3481', 'CompanyName': '群創'},
+            {'SecuritiesCompanyCode': '00679B', 'CompanyName': '元大美債20年'},  # should be excluded
+        ]
+        mock_response = MagicMock()
+        mock_response.json.return_value = mock_data
+        mock_response.raise_for_status.return_value = None
+
+        with patch('src.data_downloader.yfinance_client.requests.get', return_value=mock_response):
+            stocks = self.client.get_otc_listed_stocks()
+
         assert isinstance(stocks, list)
-        assert len(stocks) > 0
+        assert len(stocks) == 2
+        assert '6277.TWO' in stocks
+        assert '3481.TWO' in stocks
 
     def test_get_last_trading_date(self):
         """Test getting last trading date"""
