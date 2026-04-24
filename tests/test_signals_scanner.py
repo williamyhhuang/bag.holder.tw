@@ -36,13 +36,11 @@ class TestDisplaySymbol:
 
 class TestLookupName:
     def test_tw_stock_lookup(self):
-        # 2330 is TSMC — should be in the name dict
-        from src.utils.stock_name_mapper import get_stock_names
-        names = get_stock_names()
+        # 2330 is TSMC — use a mock dict to avoid network dependency
+        names = {"2330.TW": "台積電"}
         result = _lookup_name("2330", names)
         assert isinstance(result, str)
-        # TSMC name exists
-        assert len(result) > 0
+        assert result == "台積電"
 
     def test_unknown_symbol_returns_empty(self):
         names = {"9999.TW": "TestCo"}
