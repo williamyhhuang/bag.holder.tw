@@ -7,10 +7,10 @@ from typing import List
 
 from sqlalchemy import and_, desc
 
-from ..database.connection import db_manager
-from ..database.models import Alert, Stock
-from ..utils.logger import get_logger
-from ..utils.error_handler import handle_errors
+from ...database.connection import db_manager
+from ...database.models import Alert, Stock
+from ...utils.logger import get_logger
+from ...utils.error_handler import handle_errors
 
 logger = get_logger(__name__)
 

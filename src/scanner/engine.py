@@ -13,8 +13,9 @@ from ..database.connection import db_manager
 from ..database.models import (
     Stock, StockPrice, StockRealtime, TechnicalIndicator, Alert
 )
-from ..api.fubon_client import FubonClient, FubonAPIError
-from ..indicators.calculator import IndicatorCalculator, SignalDetector
+from ..infrastructure.market_data.fubon_client import FubonClient, FubonAPIError
+from ..domain.services.indicator_calculator import IndicatorCalculator
+from ..domain.services.signal_detector import SignalDetector
 from ..utils.logger import get_logger
 from ..utils.error_handler import handle_errors, retry_on_failure, CircuitBreaker
 

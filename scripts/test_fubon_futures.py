@@ -20,7 +20,7 @@ from decimal import Decimal
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.api.fubon_client import FubonClient, FubonAPIError, get_near_month_symbol
+from src.infrastructure.market_data.fubon_client import FubonClient, FubonAPIError, get_near_month_symbol
 
 # ─────────────────────────────────────────────────────────────────────────────
 

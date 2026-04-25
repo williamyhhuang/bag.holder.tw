@@ -226,7 +226,7 @@ class TestFactory:
         from src.infrastructure.ai.factory import create_analyzer
         import sys
         sys.modules["anthropic"] = MagicMock()
-        from src.ai_analyzer.providers.claude import ClaudeAnalyzer
+        from src.infrastructure.ai.providers.claude import ClaudeAnalyzer
         analyzer = create_analyzer(provider="CLAUDE", api_key="k")
         assert isinstance(analyzer, ClaudeAnalyzer)
 

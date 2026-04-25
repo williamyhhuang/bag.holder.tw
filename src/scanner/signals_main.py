@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.scanner.signals_scanner import SignalsScanner
-from src.telegram.simple_notifier import TelegramNotifier
+from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 from src.utils.logger import get_logger
 from config.settings import settings
 
@@ -213,7 +213,7 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
         return
 
     try:
-        from src.ai_analyzer import create_analyzer
+        from src.infrastructure.ai.factory import create_analyzer
     except ImportError as e:
         print(f"❌ 無法載入 AI 分析器：{e}")
         return

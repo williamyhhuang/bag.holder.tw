@@ -6,7 +6,8 @@ from decimal import Decimal
 from typing import List, Dict, Optional, Set, Tuple
 
 from .models import StockData, TradingSignal, TechnicalIndicators, SignalType
-from ..indicators.calculator import IndicatorCalculator, SignalDetector
+from ..domain.services.indicator_calculator import IndicatorCalculator
+from ..domain.services.signal_detector import SignalDetector
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -5,14 +5,13 @@ import asyncio
 import sys
 from pathlib import Path
 
-# Add src to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from config.settings import settings
-from utils.logger import get_logger, setup_logging
-from database.connection import db_manager
-from .bot import TelegramBot
-from .notifier import AlertNotifier
+from src.utils.logger import get_logger, setup_logging
+from src.database.connection import db_manager
+from src.infrastructure.notification.telegram_bot import TelegramBot
+from src.infrastructure.notification.telegram_alert_notifier import AlertNotifier
 
 # Setup logging
 logger = setup_logging(

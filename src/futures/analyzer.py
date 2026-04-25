@@ -17,7 +17,7 @@ sys.path.append(str(project_root))
 
 from src.utils.logger import get_logger
 from config.settings import settings
-from src.telegram.simple_notifier import TelegramNotifier
+from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 
 logger = get_logger(__name__)
 

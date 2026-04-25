@@ -10,7 +10,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 from src.scanner.csv_scanner import CSVStockScanner
-from src.telegram.simple_notifier import TelegramNotifier
+from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

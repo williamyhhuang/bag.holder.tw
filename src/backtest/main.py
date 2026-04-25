@@ -19,7 +19,7 @@ from src.backtest import (
     BacktestReporter
 )
 from src.scanner.sector_trend import SectorTrendAnalyzer
-from src.data_downloader.yfinance_client import YFinanceClient
+from src.infrastructure.market_data.yfinance_client import YFinanceClient
 from src.utils.logger import get_logger
 from config.settings import settings
 

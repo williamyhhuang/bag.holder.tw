@@ -1,3 +1,0 @@
-"""
-User trades tracking module
-"""
