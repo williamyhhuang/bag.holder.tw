@@ -3,6 +3,7 @@ Google Sheets trade recorder
 """
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 from ...utils.logger import get_logger
@@ -105,7 +106,7 @@ class GoogleSheetsRecorder:
         """
         try:
             ws = self._get_worksheet()
-            now = datetime.now()
+            now = datetime.now(ZoneInfo("Asia/Taipei"))
             amount = round(price * quantity, 2)
 
             row = [
