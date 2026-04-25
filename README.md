@@ -435,6 +435,115 @@ trade_id,timestamp,symbol,action,quantity,price,status,notes
 - 系統運行狀態
 - 錯誤警告
 
+---
+
+## 📝 Telegram 交易記錄 Bot（Google Sheets 同步）
+
+使用者在 Telegram 輸入買入/賣出指令，系統自動記錄至 CSV 及 Google Sheets。
+
+### 指令格式
+
+| 指令 | 說明 | 範例 |
+|------|------|------|
+| `買入 股票代號 價格 [股數]` | 記錄買入（股數預設 1000） | `買入 2330 150.5 1000` |
+| `賣出 股票代號 價格 [股數]` | 記錄賣出 | `賣出 2330 165` |
+| `/stats` | 近 30 天交易統計 | `/stats` |
+| `/trades` | 最近 10 筆記錄 | `/trades` |
+| `/help` | 顯示說明 | `/help` |
+
+### Google Sheets 設定
+
+#### 步驟一：建立 Google Service Account
+
+1. 至 [Google Cloud Console](https://console.cloud.google.com/) → IAM & Admin → Service Accounts
+2. 建立新的 Service Account（名稱例如 `trade-recorder`）
+3. 下載 JSON 金鑰檔案
+
+#### 步驟二：啟用 Google Sheets API
+
+```bash
+gcloud services enable sheets.googleapis.com drive.googleapis.com
+```
+
+#### 步驟三：建立 Google Sheet 並共用
+
+1. 建立新的 Google 試算表
+2. 取得試算表 ID（URL 中 `/d/` 後面的部分）
+3. 將試算表共用給 Service Account 的 email（賦予「編輯者」權限）
+
+#### 步驟四：設定 `.env`
+
+```env
+# Telegram
+TELEGRAM_BOT_TOKEN=your_bot_token
+
+# Google Sheets
+GOOGLE_SHEETS_ENABLED=true
+GOOGLE_SHEETS_SPREADSHEET_ID=你的試算表ID
+GOOGLE_SHEETS_WORKSHEET_NAME=交易記錄
+
+# 方式一：直接貼上 JSON 字串（推薦 Cloud Run / Docker）
+GOOGLE_CREDENTIALS_JSON={"type":"service_account","project_id":"..."}
+
+# 方式二：指定 JSON 檔案路徑（本地開發）
+# GOOGLE_CREDENTIALS_FILE=/path/to/service_account.json
+```
+
+### 本地啟動
+
+```bash
+source venv/bin/activate
+python -m src.interfaces.trade_bot_main
+```
+
+### Docker 啟動
+
+```bash
+docker compose up trade-recorder
+```
+
+### Google Sheets 欄位說明
+
+記錄寫入後，試算表「交易記錄」工作表會包含以下欄位：
+
+| 欄位 | 說明 |
+|------|------|
+| timestamp | ISO 8601 時間戳 |
+| date | 交易日期 (YYYY-MM-DD) |
+| time | 交易時間 (HH:MM:SS) |
+| stock_code | 股票代號 |
+| action | 買入 / 賣出 |
+| price | 成交價格 |
+| quantity | 股數 |
+| amount | 總金額（price × quantity） |
+| notes | 備註（含 Telegram chat ID） |
+
+### 範例對話
+
+```
+User:  買入 2330 150.5 1000
+Bot:   ✅ 交易記錄已確認
+       📈 股票: 2330
+       操作: 買入
+       價格: 150.50
+       股數: 1,000
+       金額: 150,500
+       時間: 2026-04-25 14:30
+       📊 已同步 Google Sheets
+
+User:  賣出 2454 215
+Bot:   ✅ 交易記錄已確認
+       📉 股票: 2454
+       操作: 賣出
+       ...
+
+User:  /stats
+Bot:   📊 交易統計 (近30天)
+       總交易數: 5
+       買入: 3 | 賣出: 2
+       ...
+```
+
 ## ⏰ 定時任務
 
 Docker 部署支援自動定時執行：
@@ -696,6 +805,14 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - **WEAK**（市場環境過濾觸發）：暫停所有買進
 - 📊 `BacktestEngine` 新增 `get_market_regime()`、`benchmark_rsi` 儲存、`strong/neutral_regime_signals` 路由設定
 - ✅ **新增 `TestMarketRegime` 單元測試**（5 tests）：覆蓋 WEAK/STRONG/NEUTRAL 判斷與訊號封鎖邏輯
+
+### v3.2.0 - 2026-04-25
+- 📝 **新增 Telegram 交易記錄 Bot**：使用者輸入「買入/賣出 股票代號 價格 股數」，自動記錄至 CSV 及 Google Sheets
+- 🗂️ **新增 `GoogleSheetsRecorder`**（`src/infrastructure/persistence/google_sheets_recorder.py`）：透過 Service Account 將交易記錄同步寫入 Google Sheets，支援 JSON 字串或金鑰檔案兩種憑證方式
+- 🤖 **新增 `trade_bot_main.py`**（`src/interfaces/trade_bot_main.py`）：獨立 Bot 執行入口，polling 模式，支援 /stats、/trades、/help 指令
+- ⚙️ **新增 `GoogleSheetsSettings`**：新增 `GOOGLE_SHEETS_ENABLED`、`GOOGLE_SHEETS_SPREADSHEET_ID`、`GOOGLE_SHEETS_WORKSHEET_NAME`、`GOOGLE_CREDENTIALS_JSON`、`GOOGLE_CREDENTIALS_FILE` 參數
+- 🐳 **新增 `trade-recorder` Docker 服務**：docker-compose.yml 增加獨立 trade-recorder container
+- ✅ **新增 26 個單元測試**：覆蓋 Google Sheets 可用性判斷、寫入成功/失敗、交易指令解析（中英文/買賣/舊格式）、Google Sheets 同步狀態回報
 
 ### v3.1.0 - 2026-04-10
 - 🆕 **新增買入冷卻期（Signal Cooldown）**：同一支股票在 `BACKTEST_SIGNAL_COOLDOWN_DAYS` 個交易日內重複出現買入訊號時，自動降級為 WATCH，避免同一波上漲中反覆進場（預設 10 日）

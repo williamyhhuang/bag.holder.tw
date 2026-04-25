@@ -629,6 +629,24 @@ class BacktestSettings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
+class GoogleSheetsSettings(BaseSettings):
+    """Google Sheets integration configuration"""
+    # Google Sheets spreadsheet ID（從試算表 URL 取得）
+    spreadsheet_id: Optional[str] = Field(default=None, env="GOOGLE_SHEETS_SPREADSHEET_ID")
+    # 工作表名稱（預設：交易記錄）
+    worksheet_name: str = Field(default="交易記錄", env="GOOGLE_SHEETS_WORKSHEET_NAME")
+    # Service Account JSON 憑證（可直接貼整個 JSON 字串，或設為檔案路徑）
+    credentials_json: Optional[str] = Field(default=None, env="GOOGLE_CREDENTIALS_JSON")
+    # 或使用憑證檔案路徑
+    credentials_file: Optional[str] = Field(default=None, env="GOOGLE_CREDENTIALS_FILE")
+    # 是否啟用 Google Sheets 同步
+    enabled: bool = Field(default=False, env="GOOGLE_SHEETS_ENABLED")
+
+    class Config:
+        extra = 'ignore'
+        env_prefix = "GOOGLE_"
+
+
 class AIAnalyzerSettings(BaseSettings):
     """AI 分析器設定（支援 Claude / OpenAI / Gemini / OpenRouter）"""
     provider: str = Field(
@@ -696,6 +714,7 @@ class Settings(BaseSettings):
     strategy: StrategySettings = StrategySettings()
     backtest: BacktestSettings = BacktestSettings()
     ai_analyzer: AIAnalyzerSettings = AIAnalyzerSettings()
+    google_sheets: GoogleSheetsSettings = GoogleSheetsSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

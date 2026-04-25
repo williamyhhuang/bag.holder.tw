@@ -112,6 +112,25 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "src.telegram.simple_notifier"]
 
+  # Trade Recorder Bot — 接收 Telegram 買入/賣出指令並記錄至 Google Sheets
+  trade-recorder:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.optimized
+    container_name: tw-stock-trade-recorder
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - GOOGLE_SHEETS_ENABLED=${GOOGLE_SHEETS_ENABLED:-false}
+      - GOOGLE_SHEETS_SPREADSHEET_ID=${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      - GOOGLE_SHEETS_WORKSHEET_NAME=${GOOGLE_SHEETS_WORKSHEET_NAME:-交易記錄}
+      - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON:-}
+      - GOOGLE_CREDENTIALS_FILE=${GOOGLE_CREDENTIALS_FILE:-}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    command: ["python", "-m", "src.interfaces.trade_bot_main"]
+
   # Taiwan Index Futures monitor service
   futures-monitor:
     build:
