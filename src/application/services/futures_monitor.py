@@ -7,10 +7,10 @@ from decimal import Decimal
 from dataclasses import dataclass
 import asyncio
 
-from ..infrastructure.market_data.fubon_client import FubonClient
-from ..utils.logger import get_logger
-from ..utils.error_handler import handle_errors, retry_on_failure
-from ..utils.rate_limiter import rate_limit_manager
+from ...infrastructure.market_data.fubon_client import FubonClient
+from ...utils.logger import get_logger
+from ...utils.error_handler import handle_errors, retry_on_failure
+from ...utils.rate_limiter import rate_limit_manager
 
 logger = get_logger(__name__)
 
@@ -232,7 +232,7 @@ class TaiwanFuturesMonitor:
         Computes the current near-month symbol automatically.
         """
         try:
-            from ..infrastructure.market_data.fubon_client import get_near_month_symbol
+            from ...infrastructure.market_data.fubon_client import get_near_month_symbol
 
             # Compute near-month symbol e.g. 'TXFE6'
             near_month = get_near_month_symbol(contract_symbol)

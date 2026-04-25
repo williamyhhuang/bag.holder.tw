@@ -11,14 +11,12 @@ import os
 # Add src directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
-from src.backtest import (
-    YFinanceDataSource,
-    BacktestEngine,
-    TechnicalStrategy,
-    PerformanceAnalyzer,
-    BacktestReporter
-)
-from src.scanner.sector_trend import SectorTrendAnalyzer
+from src.infrastructure.market_data.backtest_data_source import YFinanceDataSource
+from src.application.services.backtest_engine import BacktestEngine
+from src.application.services.backtest_strategy import TechnicalStrategy
+from src.application.services.performance_analyzer import PerformanceAnalyzer
+from src.interfaces.reporters.backtest_reporter import BacktestReporter
+from src.domain.services.sector_trend_analyzer import SectorTrendAnalyzer
 from src.infrastructure.market_data.yfinance_client import YFinanceClient
 from src.utils.logger import get_logger
 from config.settings import settings

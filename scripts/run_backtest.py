@@ -12,7 +12,7 @@ from decimal import Decimal
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
-    from src.backtest.main import BacktestRunner
+    from src.interfaces.cli.backtest_main import BacktestRunner
     from src.utils.logger import get_logger
     from config.settings import settings
 except ImportError as e:

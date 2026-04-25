@@ -6,18 +6,10 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 import requests
-from pathlib import Path
 
-import sys
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root))
-
-from src.utils.logger import get_logger
+from ...utils.logger import get_logger
 from config.settings import settings
-from src.infrastructure.notification.telegram_notifier import TelegramNotifier
+from ...infrastructure.notification.telegram_notifier import TelegramNotifier
 
 logger = get_logger(__name__)
 

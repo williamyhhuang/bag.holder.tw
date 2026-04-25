@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from src.scanner.signals_scanner import SignalsScanner
+from src.application.services.signals_scanner import SignalsScanner
 from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 from src.utils.logger import get_logger
 from config.settings import settings

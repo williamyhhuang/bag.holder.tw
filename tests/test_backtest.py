@@ -11,15 +11,15 @@ import sys
 # Add src directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.backtest.models import (
+from src.domain.models import (
     StockData, TradingSignal, TechnicalIndicators,
     SignalType, Position, Portfolio, BacktestResult
 )
-from src.backtest.data_source import YFinanceDataSource
-from src.backtest.engine import BacktestEngine
-from src.backtest.strategy import TechnicalStrategy
-from src.backtest.analyzer import PerformanceAnalyzer
-from src.backtest.reporter import BacktestReporter
+from src.infrastructure.market_data.backtest_data_source import YFinanceDataSource
+from src.application.services.backtest_engine import BacktestEngine
+from src.application.services.backtest_strategy import TechnicalStrategy
+from src.application.services.performance_analyzer import PerformanceAnalyzer
+from src.interfaces.reporters.backtest_reporter import BacktestReporter
 
 
 class TestStockData:
@@ -310,7 +310,7 @@ class TestTechnicalStrategy:
     def test_disabled_signal_becomes_watch(self):
         """A signal explicitly added to disabled_signals should be demoted to WATCH."""
         strategy = TechnicalStrategy(disabled_signals=['TestSignal'])
-        from src.backtest.models import TechnicalIndicators as TI
+        from src.domain.models import TechnicalIndicators as TI
         result = strategy._apply_buy_filters(
             signal_name='TestSignal',
             price=Decimal('100'),
@@ -354,7 +354,7 @@ class TestTechnicalStrategy:
 
     def test_ma_alignment_fails_blocks_signal(self):
         """BUY signal should be blocked when MA5 <= MA10 (trend not fully aligned)."""
-        from src.backtest.models import TechnicalIndicators as TI
+        from src.domain.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
             ma5=Decimal('95'),    # MA5 < MA10 → misaligned
@@ -373,7 +373,7 @@ class TestTechnicalStrategy:
 
     def test_valid_buy_passes_all_filters(self):
         """BUY signal that passes all checks (MA alignment + RSI >= 50) should remain BUY."""
-        from src.backtest.models import TechnicalIndicators as TI
+        from src.domain.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
             ma5=Decimal('105'),   # MA5 > MA10 > MA20 → fully aligned
@@ -403,7 +403,7 @@ class TestTechnicalStrategy:
 
     def test_rsi_below_min_entry_becomes_watch(self):
         """BUY signal should be blocked when RSI < rsi_min_entry (weak momentum)."""
-        from src.backtest.models import TechnicalIndicators as TI
+        from src.domain.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
             ma5=Decimal('105'),
@@ -423,7 +423,7 @@ class TestTechnicalStrategy:
 
     def test_rsi_exactly_at_min_entry_passes(self):
         """BUY signal should pass when RSI exactly equals rsi_min_entry."""
-        from src.backtest.models import TechnicalIndicators as TI
+        from src.domain.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
             ma5=Decimal('105'),
@@ -443,7 +443,7 @@ class TestTechnicalStrategy:
 
     def test_rsi_none_does_not_block(self):
         """When RSI data is unavailable (None), the filter should not block the signal."""
-        from src.backtest.models import TechnicalIndicators as TI
+        from src.domain.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
             ma5=Decimal('105'),
@@ -775,7 +775,7 @@ class TestBacktestReporter:
 
     def test_analyze_signals_real_success_rate(self):
         """Success rate should reflect actual trade win/loss, not a fixed 50%."""
-        from src.backtest.models import Position, PositionStatus
+        from src.domain.models import Position, PositionStatus
         signals = [
             TradingSignal(
                 symbol="A",
@@ -1519,7 +1519,7 @@ class TestDiagnoseFilters:
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
         from scripts.diagnose_filters import _analyze_signal_breakdown
-        from src.backtest.models import Position, PositionStatus
+        from src.domain.models import Position, PositionStatus
 
         positions = []
         base = date(2025, 1, 1)
@@ -2167,7 +2167,7 @@ class TestBacktestRunnerSkipDownload:
 
     def test_skip_download_avoids_download_when_low_coverage(self):
         """_download_history should NOT be called when skip_download=True even if coverage is low."""
-        from src.backtest.main import BacktestRunner
+        from src.interfaces.cli.backtest_main import BacktestRunner
 
         runner = BacktestRunner()
 
@@ -2218,7 +2218,7 @@ class TestBacktestRunnerSkipDownload:
 
     def test_no_skip_download_triggers_download_when_low_coverage(self):
         """_download_history SHOULD be called when coverage is low and skip_download=False."""
-        from src.backtest.main import BacktestRunner
+        from src.interfaces.cli.backtest_main import BacktestRunner
 
         runner = BacktestRunner()
 
@@ -2269,7 +2269,7 @@ class TestBacktestRunnerSkipDownload:
 
     def test_skip_download_raises_when_no_local_data(self):
         """Should raise an error if skip_download=True and no local data directory exists."""
-        from src.backtest.main import BacktestRunner
+        from src.interfaces.cli.backtest_main import BacktestRunner
 
         runner = BacktestRunner()
 

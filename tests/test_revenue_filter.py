@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.scanner.revenue_filter import (
+from src.infrastructure.market_data.revenue_filter import (
     MonthlyRevenueLoader,
     _fetch_revenue_from_api,
     get_revenue_million,
@@ -74,7 +74,7 @@ class TestFetchRevenueFromApi:
         tse_resp = self._mock_response(_make_tse_rows())
         otc_resp = self._mock_response(_make_otc_rows())
 
-        with patch("src.scanner.revenue_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.revenue_filter.requests") as mock_req:
             mock_req.get.side_effect = [tse_resp, otc_resp]
             result = _fetch_revenue_from_api()
 
@@ -95,7 +95,7 @@ class TestFetchRevenueFromApi:
         tse_resp = self._mock_response([], is_json=False)
         otc_resp = self._mock_response(_make_otc_rows())
 
-        with patch("src.scanner.revenue_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.revenue_filter.requests") as mock_req:
             mock_req.get.side_effect = [tse_resp, otc_resp]
             result = _fetch_revenue_from_api()
 
@@ -106,7 +106,7 @@ class TestFetchRevenueFromApi:
     def test_api_exception_returns_partial(self):
         tse_resp = self._mock_response(_make_tse_rows())
 
-        with patch("src.scanner.revenue_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.revenue_filter.requests") as mock_req:
             mock_req.get.side_effect = [tse_resp, Exception("timeout")]
             result = _fetch_revenue_from_api()
 
@@ -130,7 +130,7 @@ class TestMonthlyRevenueLoader:
         loader = MonthlyRevenueLoader(cache_path=cache_file)
         api_data = self._make_api_data()
 
-        with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=api_data):
+        with patch("src.infrastructure.market_data.revenue_filter._fetch_revenue_from_api", return_value=api_data):
             result = loader.load()
 
         assert result["2330"]["revenue_million"] == pytest.approx(200_000.0)
@@ -153,7 +153,7 @@ class TestMonthlyRevenueLoader:
 
         loader = MonthlyRevenueLoader(cache_path=cache_file)
 
-        with patch("src.scanner.revenue_filter._fetch_revenue_from_api") as mock_api:
+        with patch("src.infrastructure.market_data.revenue_filter._fetch_revenue_from_api") as mock_api:
             result = loader.load()
             mock_api.assert_not_called()  # API should NOT be called
 
@@ -171,7 +171,7 @@ class TestMonthlyRevenueLoader:
         fresh_data = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 5.1}}
         loader = MonthlyRevenueLoader(cache_path=cache_file)
 
-        with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=fresh_data):
+        with patch("src.infrastructure.market_data.revenue_filter._fetch_revenue_from_api", return_value=fresh_data):
             result = loader.load()
 
         assert result["2330"]["revenue_million"] == 200_000.0
@@ -186,7 +186,7 @@ class TestMonthlyRevenueLoader:
         }))
         fresh_data = {"2330": {"revenue_million": 200_000.0, "yoy_pct": 35.2, "mom_pct": 5.1}}
         loader = MonthlyRevenueLoader(cache_path=cache_file)
-        with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=fresh_data) as mock_api:
+        with patch("src.infrastructure.market_data.revenue_filter._fetch_revenue_from_api", return_value=fresh_data) as mock_api:
             result = loader.load()
             mock_api.assert_called_once()  # 舊格式 → 重新抓取
         assert isinstance(result["2330"], dict)
@@ -195,7 +195,7 @@ class TestMonthlyRevenueLoader:
         cache_file = tmp_path / "revenue_cache.json"
         loader = MonthlyRevenueLoader(cache_path=cache_file)
 
-        with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value={}):
+        with patch("src.infrastructure.market_data.revenue_filter._fetch_revenue_from_api", return_value={}):
             result = loader.load()
 
         assert result == {}
@@ -208,7 +208,7 @@ class TestMonthlyRevenueLoader:
         loader = MonthlyRevenueLoader(cache_path=cache_file)
         api_data = self._make_api_data()
 
-        with patch("src.scanner.revenue_filter._fetch_revenue_from_api", return_value=api_data):
+        with patch("src.infrastructure.market_data.revenue_filter._fetch_revenue_from_api", return_value=api_data):
             revenue_map = loader.load()
 
         min_revenue = 100.0  # 1億元

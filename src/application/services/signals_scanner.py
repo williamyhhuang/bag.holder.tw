@@ -16,16 +16,15 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from src.backtest import YFinanceDataSource, TechnicalStrategy
-from src.backtest.models import StockData, TradingSignal, SignalType, TechnicalIndicators
-from src.scanner.sector_trend import SectorTrendAnalyzer
-from src.scanner.revenue_filter import MonthlyRevenueLoader, get_revenue_million, get_revenue_yoy
-from src.scanner.disposal_filter import DisposalStockFilter
-from src.scanner.institutional_filter import InstitutionalFlowLoader, InstitutionalFlow
-from src.utils.logger import get_logger
-from src.utils.stock_name_mapper import get_stock_names
+from ...infrastructure.market_data.backtest_data_source import YFinanceDataSource
+from .backtest_strategy import TechnicalStrategy
+from ...domain.models import StockData, TradingSignal, SignalType, TechnicalIndicators
+from ...domain.services.sector_trend_analyzer import SectorTrendAnalyzer
+from ...infrastructure.market_data.revenue_filter import MonthlyRevenueLoader, get_revenue_million, get_revenue_yoy
+from ...infrastructure.market_data.disposal_filter import DisposalStockFilter
+from ...infrastructure.market_data.institutional_filter import InstitutionalFlowLoader, InstitutionalFlow
+from ...utils.logger import get_logger
+from ...utils.stock_name_mapper import get_stock_names
 from config.settings import settings
 
 logger = get_logger(__name__)

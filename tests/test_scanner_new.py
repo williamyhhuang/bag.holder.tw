@@ -8,7 +8,7 @@ from datetime import datetime
 import tempfile
 from pathlib import Path
 
-from src.scanner.csv_scanner import CSVStockScanner
+from src.application.services.csv_scanner import CSVStockScanner
 
 class TestCSVStockScanner:
     """Test CSV stock scanner functionality"""

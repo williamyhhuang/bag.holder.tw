@@ -10,9 +10,9 @@ from enum import Enum
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 
-from ..database.connection import db_manager
-from ..database.models import Stock, StockPrice, StockRealtime, TechnicalIndicator
-from ..utils.logger import get_logger
+from ...database.connection import db_manager
+from ...database.models import Stock, StockPrice, StockRealtime, TechnicalIndicator
+from ...utils.logger import get_logger
 import sys
 from pathlib import Path
 

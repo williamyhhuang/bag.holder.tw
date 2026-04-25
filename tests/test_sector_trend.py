@@ -11,7 +11,7 @@ import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.scanner.sector_trend import (
+from src.domain.services.sector_trend_analyzer import (
     SectorTrendAnalyzer,
     MIN_SECTOR_STOCKS,
     _EXEMPT_SECTORS,
@@ -21,7 +21,7 @@ from src.utils.stock_industry_mapper import (
     get_sector_name,
     INDUSTRY_CODE_TO_SECTOR,
 )
-from src.backtest.models import StockData
+from src.domain.models import StockData
 
 
 # ── Mock 產業別資料（避免測試時發 HTTP 請求）────────────────────────────────
@@ -74,7 +74,7 @@ def _make_stock_data(symbol: str, dates_prices: list) -> list:
 @pytest.fixture
 def analyzer():
     """建立帶有 mock 產業別資料的 SectorTrendAnalyzer"""
-    with patch("src.scanner.sector_trend.get_stock_industries", return_value=MOCK_INDUSTRIES):
+    with patch("src.domain.services.sector_trend_analyzer.get_stock_industries", return_value=MOCK_INDUSTRIES):
         a = SectorTrendAnalyzer()
     return a
 
@@ -163,7 +163,7 @@ class TestGetStockSector:
 
     def test_otc_stock_with_o_suffix(self, analyzer):
         # OTC 股票後綴 'O' 被去除後查詢；code 26 = 光電業
-        with patch("src.scanner.sector_trend.get_stock_industries",
+        with patch("src.domain.services.sector_trend_analyzer.get_stock_industries",
                    return_value={"6274": "26"}):
             a = SectorTrendAnalyzer()
         assert a.get_stock_sector("6274O") == "光電業"
@@ -174,7 +174,7 @@ class TestGetStockSector:
 
     def test_fallback_to_prefix_when_api_empty(self):
         """API 資料為空時，降級使用前綴推斷（僅傳統股有效）"""
-        with patch("src.scanner.sector_trend.get_stock_industries", return_value={}):
+        with patch("src.domain.services.sector_trend_analyzer.get_stock_industries", return_value={}):
             a = SectorTrendAnalyzer()
         # 28xx → 金融保險（前綴 28 → industry code 17）
         assert a.get_stock_sector("2882") == "金融保險"

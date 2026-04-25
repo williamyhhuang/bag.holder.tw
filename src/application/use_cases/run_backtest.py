@@ -5,9 +5,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from ...backtest.engine import BacktestEngine
-from ...backtest.strategy import TechnicalStrategy
-from ...backtest.data_source import YFinanceDataSource
+from ..services.backtest_engine import BacktestEngine
+from ..services.backtest_strategy import TechnicalStrategy
+from ...infrastructure.market_data.backtest_data_source import YFinanceDataSource
 from ...domain.models.backtest_result import BacktestResult
 from ...utils.logger import get_logger
 

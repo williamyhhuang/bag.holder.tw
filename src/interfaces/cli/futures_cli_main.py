@@ -9,7 +9,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from src.futures.analyzer import FuturesAnalyzer
+from src.application.services.futures_analyzer import FuturesAnalyzer
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

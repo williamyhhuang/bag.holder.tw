@@ -9,7 +9,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from src.scanner.csv_scanner import CSVStockScanner
+from src.application.services.csv_scanner import CSVStockScanner
 from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 from src.utils.logger import get_logger
 

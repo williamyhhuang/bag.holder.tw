@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.scanner.institutional_filter import (
+from src.infrastructure.market_data.institutional_filter import (
     InstitutionalFlow,
     InstitutionalFlowLoader,
     _fetch_institutional_from_api,
@@ -74,7 +74,7 @@ class TestFetchInstitutionalFromApi:
                           dealer_net=100_000, total_net=-400_000),
         ]
         payload = _make_t86_response(rows)
-        with patch("src.scanner.institutional_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.institutional_filter.requests") as mock_req:
             mock_req.get.return_value = _mock_resp(payload)
             result = _fetch_institutional_from_api(date.today())
 
@@ -86,13 +86,13 @@ class TestFetchInstitutionalFromApi:
 
     def test_non_trading_day_returns_empty(self):
         payload = {"stat": "no data"}
-        with patch("src.scanner.institutional_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.institutional_filter.requests") as mock_req:
             mock_req.get.return_value = _mock_resp(payload)
             result = _fetch_institutional_from_api(date.today())
         assert result == {}
 
     def test_api_exception_returns_empty(self):
-        with patch("src.scanner.institutional_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.institutional_filter.requests") as mock_req:
             mock_req.get.side_effect = Exception("timeout")
             result = _fetch_institutional_from_api(date.today())
         assert result == {}
@@ -103,7 +103,7 @@ class TestFetchInstitutionalFromApi:
             _make_t86_row("2330", "台積電", foreign_net=100_000),
         ]
         payload = _make_t86_response(rows)
-        with patch("src.scanner.institutional_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.institutional_filter.requests") as mock_req:
             mock_req.get.return_value = _mock_resp(payload)
             result = _fetch_institutional_from_api(date.today())
         assert "合計" not in result
@@ -111,7 +111,7 @@ class TestFetchInstitutionalFromApi:
 
     def test_skips_short_rows(self):
         payload = _make_t86_response([["2330", "台積電"]])  # 只有 2 欄
-        with patch("src.scanner.institutional_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.institutional_filter.requests") as mock_req:
             mock_req.get.return_value = _mock_resp(payload)
             result = _fetch_institutional_from_api(date.today())
         assert result == {}
@@ -121,7 +121,7 @@ class TestFetchInstitutionalFromApi:
         row[4] = "2,345,678"  # 外資買賣超
         row[18] = "2,345,678"
         payload = _make_t86_response([row])
-        with patch("src.scanner.institutional_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.institutional_filter.requests") as mock_req:
             mock_req.get.return_value = _mock_resp(payload)
             result = _fetch_institutional_from_api(date.today())
         assert result["2330"].foreign_net == 2_345_678
@@ -136,7 +136,7 @@ class TestInstitutionalFlowLoader:
         api_data = {
             "2330": InstitutionalFlow(1_000_000, 200_000, -50_000, 1_150_000)
         }
-        with patch("src.scanner.institutional_filter._fetch_institutional_from_api",
+        with patch("src.infrastructure.market_data.institutional_filter._fetch_institutional_from_api",
                    return_value=api_data):
             result = loader.load()
 
@@ -152,7 +152,7 @@ class TestInstitutionalFlowLoader:
             "data": {"2330": asdict(flow)},
         }))
         loader = InstitutionalFlowLoader(cache_path=cache_file)
-        with patch("src.scanner.institutional_filter._fetch_institutional_from_api") as mock_api:
+        with patch("src.infrastructure.market_data.institutional_filter._fetch_institutional_from_api") as mock_api:
             result = loader.load()
             mock_api.assert_not_called()
         assert result["2330"].foreign_net == 500_000
@@ -167,7 +167,7 @@ class TestInstitutionalFlowLoader:
         }))
         new_flow = {"2330": InstitutionalFlow(999_000, 0, 0, 999_000)}
         loader = InstitutionalFlowLoader(cache_path=cache_file)
-        with patch("src.scanner.institutional_filter._fetch_institutional_from_api",
+        with patch("src.infrastructure.market_data.institutional_filter._fetch_institutional_from_api",
                    return_value=new_flow):
             result = loader.load()
         assert result["2330"].foreign_net == 999_000
@@ -175,7 +175,7 @@ class TestInstitutionalFlowLoader:
     def test_fail_open_on_api_failure(self, tmp_path):
         cache_file = tmp_path / "inst.json"
         loader = InstitutionalFlowLoader(cache_path=cache_file)
-        with patch("src.scanner.institutional_filter._fetch_institutional_from_api",
+        with patch("src.infrastructure.market_data.institutional_filter._fetch_institutional_from_api",
                    return_value={}):
             result = loader.load()
         assert result == {}
@@ -186,13 +186,13 @@ class TestInstitutionalFlowLoader:
         cache_file = tmp_path / "inst.json"
         loader = InstitutionalFlowLoader(cache_path=cache_file)
         api_data = {"2330": InstitutionalFlow(100, 0, 0, 100)}
-        with patch("src.scanner.institutional_filter._fetch_institutional_from_api",
+        with patch("src.infrastructure.market_data.institutional_filter._fetch_institutional_from_api",
                    return_value=api_data):
             loader.load(date.today())
 
         # 查詢昨天 → 快取日期不符 → 重新呼叫 API
         api_data_yesterday = {"9999": InstitutionalFlow(200, 0, 0, 200)}
-        with patch("src.scanner.institutional_filter._fetch_institutional_from_api",
+        with patch("src.infrastructure.market_data.institutional_filter._fetch_institutional_from_api",
                    return_value=api_data_yesterday) as mock_api:
             result = loader.load(date.today() - timedelta(days=1))
             mock_api.assert_called_once()

@@ -31,12 +31,10 @@ import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.backtest import (
-    YFinanceDataSource,
-    BacktestEngine,
-    TechnicalStrategy,
-)
-from src.backtest.models import Position, StockData
+from src.infrastructure.market_data.backtest_data_source import YFinanceDataSource
+from src.application.services.backtest_engine import BacktestEngine
+from src.application.services.backtest_strategy import TechnicalStrategy
+from src.domain.models import Position, StockData
 from config.settings import settings
 
 

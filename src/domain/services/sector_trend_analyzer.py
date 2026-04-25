@@ -21,9 +21,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Optional, Set
 
-from src.backtest.models import StockData
-from src.utils.logger import get_logger
-from src.utils.stock_industry_mapper import (
+from ..models.stock import StockData
+from ...utils.logger import get_logger
+from ...utils.stock_industry_mapper import (
     get_stock_industries,
     get_sector_name,
     INDUSTRY_CODE_TO_SECTOR,

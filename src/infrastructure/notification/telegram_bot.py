@@ -18,7 +18,7 @@ from ...database.models import (
     TelegramUser, Stock, Alert, Watchlist, Portfolio, PortfolioHolding,
     StockRealtime, TechnicalIndicator
 )
-from ...scanner.filters import MarketScreener, FilterCriteria, FilterOperator
+from ..market_data.market_filters import MarketScreener, FilterCriteria, FilterOperator
 from ...utils.logger import get_logger
 from ...utils.error_handler import handle_errors
 from ...utils.rate_limiter import rate_limit_manager

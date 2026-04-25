@@ -8,8 +8,8 @@ from typing import List, Dict, Optional, Tuple
 import csv
 import os
 
-from .models import BacktestResult, Position, Portfolio, StockData
-from ..utils.logger import get_logger
+from ...domain.models import BacktestResult, Position, Portfolio, StockData
+from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 

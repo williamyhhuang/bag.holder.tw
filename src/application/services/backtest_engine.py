@@ -6,11 +6,11 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Dict, Optional, Set, Tuple
 import uuid
 
-from .models import (
+from ...domain.models import (
     StockData, TradingSignal, Order, Position, Portfolio,
     SignalType, OrderType, PositionStatus, BacktestResult
 )
-from ..utils.logger import get_logger
+from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 

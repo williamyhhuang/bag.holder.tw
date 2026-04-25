@@ -5,15 +5,14 @@ import asyncio
 import sys
 from pathlib import Path
 
-# Add src to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from config.settings import settings
-from api.fubon_client import FubonClient
-from utils.logger import get_logger, setup_logging
-from utils.rate_limiter import setup_rate_limiters
-from database.connection import db_manager
-from .engine import MarketScanner, HistoricalDataUpdater
+from src.infrastructure.market_data.fubon_client import FubonClient
+from src.utils.logger import get_logger, setup_logging
+from src.utils.rate_limiter import setup_rate_limiters
+from src.database.connection import db_manager
+from src.application.services.market_scanner import MarketScanner, HistoricalDataUpdater
 
 # Setup logging
 logger = setup_logging(

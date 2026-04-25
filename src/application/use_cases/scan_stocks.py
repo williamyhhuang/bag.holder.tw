@@ -1,7 +1,7 @@
 """
 ScanStocksUseCase - orchestrates the stock scanning workflow
 """
-from ...scanner.signals_scanner import SignalsScanner
+from ..services.signals_scanner import SignalsScanner
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)

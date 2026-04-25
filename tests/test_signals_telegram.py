@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.scanner.signals_main import format_for_telegram, _split_into_chunks, TELEGRAM_MAX_LENGTH
+from src.interfaces.cli.signals_main import format_for_telegram, _split_into_chunks, TELEGRAM_MAX_LENGTH
 
 
 def _make_signal(symbol, name, signal, price, rsi):
@@ -50,7 +50,7 @@ class TestFormatForTelegram:
 
     def test_sell_signals_appear(self):
         sell = [_make_signal("2454.TW", "聯發科", "MACD Death Cross", 185.5, 42.1)]
-        with patch("src.scanner.signals_main.settings") as mock_settings:
+        with patch("src.interfaces.cli.signals_main.settings") as mock_settings:
             mock_settings.scanner.show_sell_signals = True
             text = _full_text(format_for_telegram(self._result(sell=sell)))
         assert "賣出警示" in text
@@ -68,7 +68,7 @@ class TestFormatForTelegram:
         """全部賣出訊號都應出現，不截斷至 10 支"""
         sell = [_make_signal(f"{3000+i}.TW", f"股票{i}", "MACD Death Cross", 100.0, 40.0)
                 for i in range(15)]
-        with patch("src.scanner.signals_main.settings") as mock_settings:
+        with patch("src.interfaces.cli.signals_main.settings") as mock_settings:
             mock_settings.scanner.show_sell_signals = True
             text = _full_text(format_for_telegram(self._result(sell=sell)))
         for i in range(15):

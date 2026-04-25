@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.scanner.disposal_filter import DisposalStockFilter, _fetch_from_fubon, _fetch_from_twse
+from src.infrastructure.market_data.disposal_filter import DisposalStockFilter, _fetch_from_fubon, _fetch_from_twse
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ class TestFetchFromTwse:
         """TWSE OpenAPI /announcement/punish 格式：list of dict with Code field"""
         punish_payload = _make_twse_response(["2330", "4741"])
         notetrans_payload = []
-        with patch("src.scanner.disposal_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = [
                 self._mock_resp(punish_payload),
                 self._mock_resp(notetrans_payload),
@@ -105,7 +105,7 @@ class TestFetchFromTwse:
         """TWSE OpenAPI /announcement/notetrans 也包含在結果中，標記為注意股"""
         punish_payload = _make_twse_response(["2330"])
         notetrans_payload = [{"Code": "6657", "Name": "OTC股"}]
-        with patch("src.scanner.disposal_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = [
                 self._mock_resp(punish_payload),
                 self._mock_resp(notetrans_payload),
@@ -121,13 +121,13 @@ class TestFetchFromTwse:
         html_resp.text = "<html>error</html>"
         notetrans_payload = [{"Code": "9999"}]
         notetrans_resp = self._mock_resp(notetrans_payload)
-        with patch("src.scanner.disposal_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = [html_resp, notetrans_resp]
             result = _fetch_from_twse()
         assert result["9999"] == "注意股"
 
     def test_api_exception_returns_empty(self):
-        with patch("src.scanner.disposal_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = Exception("timeout")
             result = _fetch_from_twse()
         assert result == {}
@@ -161,7 +161,7 @@ class TestDisposalStockFilter:
         mock_notetrans.text = json.dumps(notetrans_payload)
         mock_notetrans.json.return_value = notetrans_payload
 
-        with patch("src.scanner.disposal_filter.requests") as mock_req:
+        with patch("src.infrastructure.market_data.disposal_filter.requests") as mock_req:
             mock_req.get.side_effect = [mock_punish, mock_notetrans]
             f = DisposalStockFilter(sdk=None, cache_path=tmp_path / "disposal.json")
             result = f.load_labeled()
@@ -203,7 +203,7 @@ class TestDisposalStockFilter:
     def test_fail_open_when_all_sources_fail(self, tmp_path):
         sdk = MagicMock()
         sdk.marketdata.rest_client.stock.intraday.tickers.side_effect = Exception("fail")
-        with patch("src.scanner.disposal_filter._fetch_from_twse", return_value={}):
+        with patch("src.infrastructure.market_data.disposal_filter._fetch_from_twse", return_value={}):
             f = DisposalStockFilter(sdk=sdk, cache_path=tmp_path / "disposal.json")
             result = f.load_labeled()
         assert result == {}  # fail-open

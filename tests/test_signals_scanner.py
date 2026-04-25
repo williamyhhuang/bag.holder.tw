@@ -13,7 +13,7 @@ import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.scanner.signals_scanner import _display_symbol, _lookup_name, P1_SELL_SIGNALS, MIN_VOLUME_SHARES
+from src.application.services.signals_scanner import _display_symbol, _lookup_name, P1_SELL_SIGNALS, MIN_VOLUME_SHARES
 
 
 class TestDisplaySymbol:
@@ -171,20 +171,20 @@ class TestSaveSignalsHistory:
 
     def test_file_created(self):
         """執行後應建立 JSON 檔案"""
-        from src.scanner.signals_main import save_signals_history
+        from src.interfaces.cli.signals_main import save_signals_history
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+            with patch("src.interfaces.cli.signals_main.SIGNALS_LOG_DIR", tmp_path):
                 filepath = save_signals_history(self._make_result())
             assert filepath.exists()
             assert filepath.suffix == ".json"
 
     def test_json_content_correct(self):
         """JSON 內容應包含 target_date、buy、sell"""
-        from src.scanner.signals_main import save_signals_history
+        from src.interfaces.cli.signals_main import save_signals_history
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+            with patch("src.interfaces.cli.signals_main.SIGNALS_LOG_DIR", tmp_path):
                 filepath = save_signals_history(self._make_result())
             with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
@@ -195,10 +195,10 @@ class TestSaveSignalsHistory:
 
     def test_date_serialized_as_string(self):
         """date 物件應序列化為 ISO 格式字串"""
-        from src.scanner.signals_main import save_signals_history
+        from src.interfaces.cli.signals_main import save_signals_history
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+            with patch("src.interfaces.cli.signals_main.SIGNALS_LOG_DIR", tmp_path):
                 filepath = save_signals_history(self._make_result())
             with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
@@ -207,10 +207,10 @@ class TestSaveSignalsHistory:
 
     def test_filename_contains_timestamp(self):
         """檔名應包含 signals_ 前綴與時間戳"""
-        from src.scanner.signals_main import save_signals_history
+        from src.interfaces.cli.signals_main import save_signals_history
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            with patch("src.scanner.signals_main.SIGNALS_LOG_DIR", tmp_path):
+            with patch("src.interfaces.cli.signals_main.SIGNALS_LOG_DIR", tmp_path):
                 filepath = save_signals_history(self._make_result())
             assert filepath.name.startswith("signals_")
 

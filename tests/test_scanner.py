@@ -6,8 +6,8 @@ import asyncio
 from decimal import Decimal
 from datetime import date, timedelta
 
-from src.scanner.engine import MarketScanner, HistoricalDataUpdater
-from src.scanner.filters import StockFilter, FilterCriteria, FilterOperator, MarketScreener
+from src.application.services.market_scanner import MarketScanner, HistoricalDataUpdater
+from src.infrastructure.market_data.market_filters import StockFilter, FilterCriteria, FilterOperator, MarketScreener
 from src.database.models import Stock, StockPrice, StockRealtime
 
 class TestMarketScanner:

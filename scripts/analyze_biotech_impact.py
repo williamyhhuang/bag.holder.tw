@@ -13,13 +13,11 @@ from decimal import Decimal
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.backtest import (
-    YFinanceDataSource,
-    BacktestEngine,
-    TechnicalStrategy,
-    PerformanceAnalyzer,
-    BacktestReporter,
-)
+from src.infrastructure.market_data.backtest_data_source import YFinanceDataSource
+from src.application.services.backtest_engine import BacktestEngine
+from src.application.services.backtest_strategy import TechnicalStrategy
+from src.application.services.performance_analyzer import PerformanceAnalyzer
+from src.interfaces.reporters.backtest_reporter import BacktestReporter
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

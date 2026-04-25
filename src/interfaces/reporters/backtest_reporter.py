@@ -6,9 +6,10 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 import os
 
-from .models import BacktestResult, TradingSignal, StockData
-from .analyzer import PerformanceAnalyzer
-from ..utils.logger import get_logger
+from ...domain.models import BacktestResult, TradingSignal
+from ...domain.models.stock import StockData
+from ...application.services.performance_analyzer import PerformanceAnalyzer
+from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 

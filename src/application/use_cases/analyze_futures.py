@@ -14,7 +14,7 @@ class AnalyzeFuturesUseCase:
 
     def _get_monitor(self):
         if self._monitor is None:
-            from ...futures.monitor import TaiwanFuturesMonitor
+            from ..services.futures_monitor import TaiwanFuturesMonitor
             self._monitor = TaiwanFuturesMonitor()
         return self._monitor
 

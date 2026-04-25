@@ -16,7 +16,7 @@ from scripts.analyze_scan_attribution import (
     compute_stats,
     SCAN_TYPES,
 )
-from src.backtest.models import Position, PositionStatus
+from src.domain.models import Position, PositionStatus
 
 
 def _make_position(

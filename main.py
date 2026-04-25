@@ -36,7 +36,7 @@ def run_download(args):
 
 def run_signals(args):
     """Run today's trading signals command"""
-    cmd = ['python', '-m', 'src.scanner.signals_main', 'signals']
+    cmd = ['python', '-m', 'src.interfaces.cli.signals_main', 'signals']
 
     if getattr(args, 'watch', False):
         cmd.append('--watch')
@@ -54,7 +54,7 @@ def run_signals(args):
 
 def run_scan(args):
     """Run scan command"""
-    cmd = ['python', '-m', 'src.scanner.csv_main', 'scan']
+    cmd = ['python', '-m', 'src.interfaces.cli.csv_scan_main', 'scan']
 
     if args.strategy:
         cmd.extend(['--strategy', args.strategy])
@@ -88,7 +88,7 @@ def run_backtest(args):
 
 def run_futures(args):
     """Run futures command"""
-    cmd = ['python', '-m', 'src.futures.cli_main', 'analyze']
+    cmd = ['python', '-m', 'src.interfaces.cli.futures_cli_main', 'analyze']
 
     if args.send_telegram:
         cmd.append('--send-telegram')

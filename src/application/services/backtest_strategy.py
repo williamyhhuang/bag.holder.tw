@@ -5,10 +5,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import List, Dict, Optional, Set, Tuple
 
-from .models import StockData, TradingSignal, TechnicalIndicators, SignalType
-from ..domain.services.indicator_calculator import IndicatorCalculator
-from ..domain.services.signal_detector import SignalDetector
-from ..utils.logger import get_logger
+from ...domain.models import StockData, TradingSignal, TechnicalIndicators, SignalType
+from ...domain.services.indicator_calculator import IndicatorCalculator
+from ...domain.services.signal_detector import SignalDetector
+from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -81,7 +81,7 @@ class TechnicalStrategy:
     def prepare_price_data(self, stock_data: List[StockData]) -> List:
         """Convert StockData to format compatible with IndicatorCalculator"""
         # Create mock StockPrice objects for indicator calculation
-        from ..database.models import StockPrice
+        from ...database.models import StockPrice
 
         price_objects = []
         for data in stock_data:

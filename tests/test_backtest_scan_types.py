@@ -11,7 +11,7 @@ import pytest
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from scripts.backtest_scan_types import _compute_rsi, _compute_ma, build_scan_whitelist
-from src.backtest.models import StockData
+from src.domain.models import StockData
 
 
 # ─────────────────────────────────────────────

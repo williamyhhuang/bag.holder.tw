@@ -11,8 +11,8 @@ import time
 import os
 import csv
 
-from .models import StockData
-from ..utils.logger import get_logger
+from ...domain.models.stock import StockData
+from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
