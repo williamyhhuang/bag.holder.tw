@@ -82,14 +82,7 @@ jobs:
 
       - name: Deploy bag-holder-download job
         run: |
-          gcloud run jobs update bag-holder-download \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1" \
-          || \
-          gcloud run jobs create bag-holder-download \
+          gcloud run jobs deploy bag-holder-download \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
@@ -104,14 +97,7 @@ jobs:
 
       - name: Deploy bag-holder-signals job
         run: |
-          gcloud run jobs update bag-holder-signals \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1" \
-          || \
-          gcloud run jobs create bag-holder-signals \
+          gcloud run jobs deploy bag-holder-signals \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
@@ -126,15 +112,7 @@ jobs:
 
       - name: Deploy bag-holder-webhook service
         run: |
-          # Update if exists, create if not
-          gcloud run services update bag-holder-webhook \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1" \
-          || \
-          gcloud run services create bag-holder-webhook \
+          gcloud run deploy bag-holder-webhook \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
