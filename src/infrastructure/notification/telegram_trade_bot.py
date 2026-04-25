@@ -113,13 +113,16 @@ class TradingBot:
             amount = price * quantity
 
             # --- CSV 記錄 ---
-            self.trade_recorder.record_trade(
+            csv_ok = self.trade_recorder.record_trade(
                 symbol=symbol,
                 action='long' if action == '買入' else 'short',
                 cost=price,
                 quantity=quantity,
                 notes=f"From Telegram chat: {chat_id}",
             )
+
+            if not csv_ok:
+                return "❌ 交易記錄失敗，請稍後再試"
 
             # --- Google Sheets 同步（若已設定則同步，否則略過）---
             sheets_status = ""
