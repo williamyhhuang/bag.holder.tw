@@ -38,24 +38,23 @@ if [ -z "${BOT_TOKEN}" ] || [ "${BOT_TOKEN}" = "dummy_token" ]; then
 fi
 
 if [ -z "${WEBHOOK_URL}" ]; then
-    echo "ERROR: TELEGRAM_WEBHOOK_URL is not configured"
-    exit 1
-fi
-
-FULL_WEBHOOK="${WEBHOOK_URL}/webhook"
-echo "[webhook] Registering Telegram webhook → ${FULL_WEBHOOK}"
-
-if [ -n "${WEBHOOK_SECRET}" ]; then
-    curl -sf -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-        -d "url=${FULL_WEBHOOK}" \
-        -d "secret_token=${WEBHOOK_SECRET}" \
-        -d "drop_pending_updates=true" \
-        || echo "WARNING: webhook registration failed, continuing..."
+    echo "WARNING: TELEGRAM_WEBHOOK_URL is not configured, skipping webhook registration"
 else
-    curl -sf -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-        -d "url=${FULL_WEBHOOK}" \
-        -d "drop_pending_updates=true" \
-        || echo "WARNING: webhook registration failed, continuing..."
+    FULL_WEBHOOK="${WEBHOOK_URL}/webhook"
+    echo "[webhook] Registering Telegram webhook → ${FULL_WEBHOOK}"
+
+    if [ -n "${WEBHOOK_SECRET}" ]; then
+        curl -sf -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
+            -d "url=${FULL_WEBHOOK}" \
+            -d "secret_token=${WEBHOOK_SECRET}" \
+            -d "drop_pending_updates=true" \
+            || echo "WARNING: webhook registration failed, continuing..."
+    else
+        curl -sf -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
+            -d "url=${FULL_WEBHOOK}" \
+            -d "drop_pending_updates=true" \
+            || echo "WARNING: webhook registration failed, continuing..."
+    fi
 fi
 
 echo "[webhook] Starting uvicorn on port ${PORT}..."

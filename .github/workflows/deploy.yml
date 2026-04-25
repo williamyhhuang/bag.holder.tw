@@ -128,6 +128,14 @@ jobs:
             --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
             --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
 
+      - name: Allow unauthenticated access to webhook service
+        run: |
+          gcloud run services add-iam-policy-binding bag-holder-webhook \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --region=${{ env.REGION }} \
+            --member=allUsers \
+            --role=roles/run.invoker
+
       - name: Update Telegram webhook URL
         run: |
           SERVICE_URL=$(gcloud run services describe bag-holder-webhook \
