@@ -6,7 +6,7 @@ import pytest
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
-from src.ai_analyzer.base import BaseAIAnalyzer, _short_symbol, _split_into_chunks
+from src.infrastructure.ai.base import BaseAIAnalyzer, _short_symbol, _split_into_chunks
 
 SAMPLE_SIGNALS_RESULT = {
     "target_date": "2026-04-23",
@@ -189,41 +189,41 @@ class TestFormatForTelegram:
 
 class TestFactory:
     def test_unknown_provider_raises(self):
-        from src.ai_analyzer.factory import create_analyzer
+        from src.infrastructure.ai.factory import create_analyzer
         with pytest.raises(ValueError, match="不支援的 AI provider"):
             create_analyzer(provider="unknown", api_key="key")
 
     def test_openrouter_provider_returns_openrouter_analyzer(self):
-        from src.ai_analyzer.factory import create_analyzer
+        from src.infrastructure.ai.factory import create_analyzer
         import sys
         sys.modules["openai"] = MagicMock()
-        from src.ai_analyzer.providers.openrouter import OpenRouterAnalyzer
+        from src.infrastructure.ai.providers.openrouter import OpenRouterAnalyzer
         analyzer = create_analyzer(provider="openrouter", api_key="test-key")
         assert isinstance(analyzer, OpenRouterAnalyzer)
 
     def test_openrouter_provider_case_insensitive(self):
-        from src.ai_analyzer.factory import create_analyzer
+        from src.infrastructure.ai.factory import create_analyzer
         import sys
         sys.modules["openai"] = MagicMock()
-        from src.ai_analyzer.providers.openrouter import OpenRouterAnalyzer
+        from src.infrastructure.ai.providers.openrouter import OpenRouterAnalyzer
         analyzer = create_analyzer(provider="OpenRouter", api_key="k")
         assert isinstance(analyzer, OpenRouterAnalyzer)
 
     def test_claude_provider_returns_claude_analyzer(self):
-        from src.ai_analyzer.factory import create_analyzer
+        from src.infrastructure.ai.factory import create_analyzer
         with patch.dict("sys.modules", {"anthropic": MagicMock()}):
             mock_anthropic = MagicMock()
-            with patch("src.ai_analyzer.providers.claude.anthropic", mock_anthropic, create=True):
+            with patch("src.infrastructure.ai.providers.claude.anthropic", mock_anthropic, create=True):
                 import importlib
                 import sys
                 # 讓 import anthropic 在 ClaudeAnalyzer.__init__ 裡不失敗
                 sys.modules["anthropic"] = MagicMock()
-                from src.ai_analyzer.providers.claude import ClaudeAnalyzer
+                from src.infrastructure.ai.providers.claude import ClaudeAnalyzer
                 analyzer = create_analyzer(provider="claude", api_key="test-key")
                 assert isinstance(analyzer, ClaudeAnalyzer)
 
     def test_provider_case_insensitive(self):
-        from src.ai_analyzer.factory import create_analyzer
+        from src.infrastructure.ai.factory import create_analyzer
         import sys
         sys.modules["anthropic"] = MagicMock()
         from src.ai_analyzer.providers.claude import ClaudeAnalyzer

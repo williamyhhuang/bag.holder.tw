@@ -12,7 +12,7 @@ class FubonAdapter(IMarketDataProvider):
     """Fubon Securities implementation of IMarketDataProvider"""
 
     def __init__(self):
-        from ...api.fubon_client import FubonClient
+        from .fubon_client import FubonClient
         self._client = FubonClient()
 
     def get_stock_data(

@@ -1,9 +1,7 @@
 """
-Technical indicators package
+indicators package - backward compatibility shim
 """
-from .calculator import IndicatorCalculator, SignalDetector
+from src.domain.services.indicator_calculator import IndicatorCalculator
+from src.domain.services.signal_detector import SignalDetector
 
-__all__ = [
-    'IndicatorCalculator',
-    'SignalDetector',
-]
+__all__ = ["IndicatorCalculator", "SignalDetector"]

@@ -5,8 +5,8 @@ import pytest
 from datetime import datetime
 from unittest.mock import Mock, MagicMock, patch
 
-from src.telegram.simple_notifier import TelegramNotifier
-from src.telegram.trade_bot import TradingBot
+from src.infrastructure.notification.telegram_notifier import TelegramNotifier
+from src.infrastructure.notification.telegram_trade_bot import TradingBot
 
 class TestTelegramNotifier:
     """Test Telegram notifier functionality"""

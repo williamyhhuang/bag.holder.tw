@@ -4,7 +4,7 @@ DownloadDataUseCase - orchestrates the data download workflow
 from datetime import datetime
 from typing import List, Optional
 
-from ...data_downloader.yfinance_client import YFinanceClient
+from ...infrastructure.market_data.yfinance_client import YFinanceClient
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)

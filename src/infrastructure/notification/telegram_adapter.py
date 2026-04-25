@@ -4,7 +4,7 @@ Telegram notification adapter - implements INotificationService port
 from typing import Optional
 
 from ...domain.ports.notification_port import INotificationService
-from ...telegram.simple_notifier import TelegramNotifier
+from .telegram_notifier import TelegramNotifier
 
 
 class TelegramAdapter(INotificationService):

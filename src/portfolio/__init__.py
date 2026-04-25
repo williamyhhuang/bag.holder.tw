@@ -1,7 +1,7 @@
 """
-Portfolio management package
+portfolio package - backward compatibility shim
 """
-from .manager import PortfolioManager, PerformanceAnalyzer, HoldingInfo, PortfolioSummary
+from src.application.services.portfolio_manager import PortfolioManager, PerformanceAnalyzer, HoldingInfo, PortfolioSummary
 
 __all__ = [
     'PortfolioManager',

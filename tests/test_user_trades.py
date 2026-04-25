@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
-from src.user_trades.csv_recorder import UserTradesRecorder
+from src.infrastructure.persistence.user_trades_recorder import UserTradesRecorder
 
 class TestUserTradesRecorder:
     """Test user trades recorder functionality"""

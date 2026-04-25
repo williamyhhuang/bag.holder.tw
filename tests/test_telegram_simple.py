@@ -11,8 +11,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.telegram.simple_notifier import TelegramNotifier
-from src.telegram.trade_bot import TradingBot
+from src.infrastructure.notification.telegram_notifier import TelegramNotifier
+from src.infrastructure.notification.telegram_trade_bot import TradingBot
 
 class TestTelegramNotifier:
     """Test Telegram notifier functionality"""

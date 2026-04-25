@@ -13,7 +13,7 @@ from src.futures.monitor import (
     FuturesQuote,
     FuturesSignal
 )
-from src.api.fubon_client import FubonClient, get_near_month_symbol
+from src.infrastructure.market_data.fubon_client import FubonClient, get_near_month_symbol
 
 
 # ─────────────────────────────────────────────────────────────────────────────

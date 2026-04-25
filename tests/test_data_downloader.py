@@ -9,7 +9,7 @@ import tempfile
 import os
 from unittest.mock import patch, MagicMock
 
-from src.data_downloader.yfinance_client import YFinanceClient
+from src.infrastructure.market_data.yfinance_client import YFinanceClient
 
 class TestYFinanceClient:
     """Test YFinance client functionality"""
@@ -29,7 +29,7 @@ class TestYFinanceClient:
         mock_response.json.return_value = mock_data
         mock_response.raise_for_status.return_value = None
 
-        with patch('src.data_downloader.yfinance_client.requests.get', return_value=mock_response):
+        with patch('src.infrastructure.market_data.yfinance_client.requests.get', return_value=mock_response):
             stocks = self.client.get_tse_listed_stocks()
 
         assert isinstance(stocks, list)
@@ -48,7 +48,7 @@ class TestYFinanceClient:
         mock_response.json.return_value = mock_data
         mock_response.raise_for_status.return_value = None
 
-        with patch('src.data_downloader.yfinance_client.requests.get', return_value=mock_response):
+        with patch('src.infrastructure.market_data.yfinance_client.requests.get', return_value=mock_response):
             stocks = self.client.get_otc_listed_stocks()
 
         assert isinstance(stocks, list)
@@ -106,7 +106,7 @@ class TestYFinanceClient:
         from unittest.mock import patch
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('src.data_downloader.yfinance_client.settings') as mock_settings:
+            with patch('src.infrastructure.market_data.yfinance_client.settings') as mock_settings:
                 mock_settings.data.stocks_path = temp_dir
 
                 day1 = pd.DataFrame({
@@ -131,7 +131,7 @@ class TestYFinanceClient:
         from unittest.mock import patch
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('src.data_downloader.yfinance_client.settings') as mock_settings:
+            with patch('src.infrastructure.market_data.yfinance_client.settings') as mock_settings:
                 mock_settings.data.stocks_path = temp_dir
 
                 original = pd.DataFrame({
@@ -157,7 +157,7 @@ class TestYFinanceClient:
         from unittest.mock import patch
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('src.data_downloader.yfinance_client.settings') as mock_settings:
+            with patch('src.infrastructure.market_data.yfinance_client.settings') as mock_settings:
                 mock_settings.data.stocks_path = temp_dir
 
                 # Save newer date first, then older

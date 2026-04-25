@@ -5,7 +5,8 @@ import pytest
 from decimal import Decimal
 from datetime import date, timedelta
 
-from src.indicators.calculator import IndicatorCalculator, SignalDetector
+from src.domain.services.indicator_calculator import IndicatorCalculator
+from src.domain.services.signal_detector import SignalDetector
 from src.database.models import StockPrice
 
 class TestIndicatorCalculator:

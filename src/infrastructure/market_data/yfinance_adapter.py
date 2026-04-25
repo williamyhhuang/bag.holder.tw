@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from ...domain.ports.market_data_port import IMarketDataProvider
 from ...domain.models.stock import StockData
-from ...data_downloader.yfinance_client import YFinanceClient
+from .yfinance_client import YFinanceClient
 
 
 class YFinanceAdapter(IMarketDataProvider):
