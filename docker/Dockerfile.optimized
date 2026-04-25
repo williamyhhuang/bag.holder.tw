@@ -20,8 +20,8 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
     rm -rf ta-lib*
 
 # Copy and install Python dependencies
-COPY requirements-prod.txt .
-RUN pip install --no-cache-dir --prefix=/usr/local -r requirements-prod.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/usr/local -r requirements.txt
 
 # Final stage - runtime only
 FROM python:3.11-slim
