@@ -644,7 +644,6 @@ class GoogleSheetsSettings(BaseSettings):
 
     class Config:
         extra = 'ignore'
-        env_prefix = "GOOGLE_"
 
 
 class AIAnalyzerSettings(BaseSettings):
