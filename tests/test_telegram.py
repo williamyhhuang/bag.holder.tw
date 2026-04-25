@@ -100,33 +100,33 @@ class TestTradingBot:
 
     def test_parse_trade_message_chinese(self):
         """Test parsing Chinese trade messages"""
-        # Test long position
+        # Test long position (做多 → 買入)
         result = self.trading_bot.parse_trade_message("做多 2330 580")
         assert result is not None
-        assert result['action'] == 'long'
+        assert result['action'] == '買入'
         assert result['symbol'] == '2330'
         assert result['cost'] == 580.0
 
-        # Test short position
+        # Test short position (做空 → 賣出)
         result = self.trading_bot.parse_trade_message("做空 2454 95.5")
         assert result is not None
-        assert result['action'] == 'short'
+        assert result['action'] == '賣出'
         assert result['symbol'] == '2454'
         assert result['cost'] == 95.5
 
     def test_parse_trade_message_english(self):
         """Test parsing English trade messages"""
-        # Test long position
+        # Test long position (long → 買入)
         result = self.trading_bot.parse_trade_message("long TSMC 580")
         assert result is not None
-        assert result['action'] == 'long'
+        assert result['action'] == '買入'
         assert result['symbol'] == 'TSMC'
         assert result['cost'] == 580.0
 
-        # Test short position
+        # Test short position (short → 賣出)
         result = self.trading_bot.parse_trade_message("short 2454.TW 95.5")
         assert result is not None
-        assert result['action'] == 'short'
+        assert result['action'] == '賣出'
         assert result['symbol'] == '2454.TW'
         assert result['cost'] == 95.5
 
@@ -147,8 +147,8 @@ class TestTradingBot:
         """Test getting help message"""
         help_msg = self.trading_bot._get_help_message()
         assert isinstance(help_msg, str)
-        assert '做多' in help_msg
-        assert '做空' in help_msg
+        assert '買入' in help_msg
+        assert '賣出' in help_msg
         assert '/stats' in help_msg
 
     def test_handle_trade_input_success(self):
@@ -165,13 +165,13 @@ class TestTradingBot:
 
     def test_handle_trade_input_failure(self):
         """Test failed trade input handling"""
-        # Mock failed recording on the instance
+        # Mock failed CSV recording
         self.trading_bot.trade_recorder.record_trade = MagicMock(return_value=False)
 
         response = self.trading_bot.handle_trade_input("做多 2330 580", "test_chat")
 
         assert isinstance(response, str)
-        assert '記錄失敗' in response
+        assert '❌' in response
 
     def test_handle_trade_input_invalid(self):
         """Test invalid trade input handling"""

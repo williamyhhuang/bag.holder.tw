@@ -502,6 +502,59 @@ python -m src.interfaces.trade_bot_main
 docker compose up trade-recorder
 ```
 
+### Cloud Run 部署（方案 A：Webhook + Cloud Run Service）
+
+生產環境建議使用 Webhook 模式，成本幾乎為零（按請求計費，個人用量通常在免費額度內）。
+
+#### 架構圖
+
+```
+Telegram ──POST──▶ Cloud Run Service (bag-holder-webhook)
+                        │
+                        ▼
+              HandleTelegramWebhookUseCase  [Application]
+                        │
+                        ▼
+                  TradingBot               [Infrastructure]
+                  ├─ UserTradesRecorder    [Infrastructure / CSV]
+                  └─ GoogleSheetsRecorder  [Infrastructure / GSheets]
+```
+
+#### 部署步驟
+
+**步驟一：設定 GCP Secret Manager**
+
+在 `APP_SECRETS` JSON 中新增以下欄位（Webhook URL 可在 Service 建立後再填入）：
+
+```json
+{
+  "TELEGRAM_BOT_TOKEN": "your_bot_token",
+  "TELEGRAM_WEBHOOK_SECRET": "自訂一個隨機字串（用於驗證 Telegram 請求）",
+  "TELEGRAM_WEBHOOK_URL": "https://bag-holder-webhook-<hash>-de.a.run.app",
+  "GOOGLE_SHEETS_ENABLED": "true",
+  "GOOGLE_SHEETS_SPREADSHEET_ID": "你的試算表ID",
+  "GOOGLE_CREDENTIALS_JSON": "{...service account json...}"
+}
+```
+
+> `TELEGRAM_WEBHOOK_URL` 是 Cloud Run Service URL，首次部署後可從 Console 取得，再更新 Secret。
+
+**步驟二：推送到 main 分支**
+
+CI/CD 會自動完成：
+1. 建立/更新 Docker image
+2. 部署 `bag-holder-webhook` Cloud Run Service（min-instances=0）
+3. 啟動時 `entrypoint-webhook.sh` 自動向 Telegram 註冊 webhook URL
+
+**步驟三：確認 Webhook 已設定**
+
+```bash
+# 查詢目前 webhook 狀態
+curl https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo
+```
+
+成功後，在 Telegram 頻道輸入 `買入 2330 150.5 1000` 即可觸發 Cloud Run。
+
 ### Google Sheets 欄位說明
 
 記錄寫入後，試算表「交易記錄」工作表會包含以下欄位：
@@ -612,6 +665,16 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.2.0 - 2026-04-25
+- 🚀 **Telegram Webhook + Cloud Run Service（方案 A）**
+  - 新增 `src/application/use_cases/handle_telegram_webhook.py`：Application 層 Use Case，協調 webhook 事件處理
+  - 新增 `src/interfaces/api/webhook_app.py`：FastAPI HTTP adapter，接收 Telegram webhook POST
+  - 新增 `docker/entrypoint-webhook.sh`：自動向 Telegram 註冊 webhook URL 後啟動 uvicorn
+  - 更新 `docker/Dockerfile.cloudrun`：加入 webhook entrypoint
+  - 更新 `.github/workflows/deploy.yml`：自動部署 `bag-holder-webhook` Cloud Run Service（min-instances=0，幾乎免費）
+  - 支援 `X-Telegram-Bot-Api-Secret-Token` header 驗證，防止偽造請求
+  - 新增 11 個單元測試（`tests/test_webhook_handler.py`）
 
 ### v4.3.0 - 2026-04-14
 - 🔍 **賣出警示新增月營收過濾**：`signals` 指令的賣出清單現在也會套用 `min_monthly_revenue_million` 門檻，只顯示通過營收門檻股票的賣出訊號（與買入過濾邏輯一致）
