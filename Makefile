@@ -40,8 +40,8 @@ help:
 # Installation and setup
 install:
 	@echo "📦 Installing Taiwan Stock Monitor..."
-	chmod +x deploy/install.sh
-	./deploy/install.sh
+	chmod +x docker/install.sh
+	./docker/install.sh
 
 # Development environment
 dev:
@@ -55,13 +55,13 @@ dev-daemon:
 # Production environment
 prod:
 	@echo "🚀 Starting production environment..."
-	docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+	docker-compose -f docker-compose.yml -f docker/docker-compose.prod.yml up -d --build
 
 # Stop all services
 stop:
 	@echo "🛑 Stopping all services..."
 	docker-compose down
-	docker-compose -f deploy/docker-compose.prod.yml down 2>/dev/null || true
+	docker-compose -f docker/docker-compose.prod.yml down 2>/dev/null || true
 
 # Restart services
 restart: stop prod

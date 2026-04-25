@@ -93,7 +93,7 @@ docker-compose up --build
 start_production.bat
 
 # 方式 2: 手動啟動
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.yml -f docker/docker-compose.prod.yml up -d --build
 ```
 
 ### 停止服務
