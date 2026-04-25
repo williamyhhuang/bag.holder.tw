@@ -140,13 +140,17 @@ class GoogleSheetsRecorder:
                 and gs_cfg.spreadsheet_id
                 and (gs_cfg.credentials_json or gs_cfg.credentials_file)
             )
-            self.logger.info(
-                f"Google Sheets is_available={result} "
+            import sys
+            print(
+                f"[DEBUG] Google Sheets is_available={result} "
                 f"enabled={gs_cfg.enabled} "
                 f"spreadsheet_id={bool(gs_cfg.spreadsheet_id)} "
-                f"credentials_json={bool(gs_cfg.credentials_json)}"
+                f"credentials_json={bool(gs_cfg.credentials_json)}",
+                file=sys.stderr, flush=True
             )
             return result
         except Exception as e:
-            self.logger.error(f"Google Sheets is_available check failed: {e}", exc_info=True)
+            import sys, traceback
+            print(f"[DEBUG] Google Sheets is_available exception: {e}", file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
             return False
