@@ -60,3 +60,7 @@ google-genai>=1.0.0
 
 # GCP Secret Manager
 google-cloud-secret-manager>=2.16.0
+
+# Google Sheets
+gspread>=6.0.0
+google-auth>=2.0.0
