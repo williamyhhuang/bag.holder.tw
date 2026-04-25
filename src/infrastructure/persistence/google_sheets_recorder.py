@@ -135,10 +135,18 @@ class GoogleSheetsRecorder:
         try:
             from config.settings import settings
             gs_cfg = settings.google_sheets
-            return bool(
+            result = bool(
                 gs_cfg.enabled
                 and gs_cfg.spreadsheet_id
                 and (gs_cfg.credentials_json or gs_cfg.credentials_file)
             )
-        except Exception:
+            self.logger.info(
+                f"Google Sheets is_available={result} "
+                f"enabled={gs_cfg.enabled} "
+                f"spreadsheet_id={bool(gs_cfg.spreadsheet_id)} "
+                f"credentials_json={bool(gs_cfg.credentials_json)}"
+            )
+            return result
+        except Exception as e:
+            self.logger.error(f"Google Sheets is_available check failed: {e}", exc_info=True)
             return False
