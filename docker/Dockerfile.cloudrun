@@ -49,8 +49,9 @@ COPY scripts/run_backtest.py ./
 COPY config/ ./config/
 COPY docker/entrypoint-download.sh /entrypoint-download.sh
 COPY docker/entrypoint-signals.sh /entrypoint-signals.sh
+COPY docker/entrypoint-webhook.sh /entrypoint-webhook.sh
 
-RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh && \
+RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh && \
     mkdir -p /app/data /app/logs /app/reports /app/data/stocks
 
 ENV PYTHONPATH=/app
