@@ -15,6 +15,7 @@
 - **🤖 Telegram 整合**: 分析結果即時推送與交易記錄
 - **⏰ 定時任務支援**: 自動化資料下載與定期掃描
 - **🐳 容器化部署**: Docker Compose 一鍵部署多服務
+- **☁️ GCP 生產部署**: Terraform IaC 自動佈建 Cloud Run Jobs/Service、GCP Workflows、Cloud Scheduler
 - **🖥️ 統一 CLI 介面**: 簡潔明瞭的命令列操作介面
 - **📁 CSV 資料儲存**: 無需資料庫，簡單透明的檔案儲存
 
@@ -502,6 +503,57 @@ python -m src.interfaces.trade_bot_main
 docker compose up trade-recorder
 ```
 
+### GCP 生產部署（Terraform IaC）
+
+本專案使用 Terraform 管理所有 GCP 資源，CI/CD（GitHub Actions）於每次推送 `main` 分支時自動執行 `terraform apply`。
+
+#### 架構
+
+```
+Cloud Scheduler (台北時間 08:05 週一至五)
+    │
+    ▼
+GCP Workflows (bag-holder-run-jobs)
+    ├─ Cloud Run Job: bag-holder-download   # 下載台股資料
+    └─ Cloud Run Job: bag-holder-signals    # 產生買賣訊號並推送 Telegram
+Cloud Run Service: bag-holder-webhook       # Telegram Webhook Bot
+```
+
+#### 資源清單
+
+| 資源類型 | 名稱 | 說明 |
+|---|---|---|
+| Cloud Run Job | `bag-holder-download` | 每日下載股票資料 |
+| Cloud Run Job | `bag-holder-signals` | 每日產生買賣訊號 |
+| Cloud Run Service | `bag-holder-webhook` | Telegram Webhook Bot |
+| GCP Workflows | `bag-holder-run-jobs` | 依序執行 download → signals |
+| Cloud Scheduler | `bag-holder-run-jobs-trigger` | UTC 00:05（台北 08:05）觸發 |
+
+#### Terraform 結構
+
+```
+terraform/
+├── bootstrap/      # 一次性基礎建設（GCS backend、IAM SA）
+└── deployable/     # 每次部署更新的資源
+    ├── main.tf
+    ├── variables.tf
+    ├── backend.tf
+    ├── run-jobs.workflow.yaml   # GCP Workflows 定義
+    └── modules/
+        ├── cloud_run_job/
+        └── cloud_run_service/
+```
+
+#### 手動部署（緊急）
+
+```bash
+cd terraform/deployable
+terraform init
+terraform apply -var="project_id=bag-holder-tw" -var="image_tag=<commit_sha>"
+```
+
+---
+
 ### Cloud Run 部署（方案 A：Webhook + Cloud Run Service）
 
 生產環境建議使用 Webhook 模式，成本幾乎為零（按請求計費，個人用量通常在免費額度內）。
@@ -665,6 +717,18 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.3.1 - 2026-04-28
+- 🐛 **修正 GCP Workflows YAML 解析錯誤**：`raise` 值中含冒號（`status: `）導致 YAML parser 截斷 `${...}` 表達式，以單引號包覆修正
+
+### v5.3.0 - 2026-04-27
+- ☁️ **新增 Terraform IaC GCP 部署**：以 Terraform 管理所有 GCP 資源，CI/CD 自動 `terraform apply`
+  - `terraform/bootstrap/`：一次性基礎建設（GCS backend bucket、Runner Service Account、IAM 權限）
+  - `terraform/deployable/`：Cloud Run Jobs（download / signals）、Cloud Run Service（webhook）、GCP Workflows、Cloud Scheduler
+  - `terraform/modules/cloud_run_job/` & `cloud_run_service/`：可複用模組，統一 secret / env var 注入
+  - GCP Workflows `run-jobs.workflow.yaml`：依序執行 download → signals，失敗即 raise 中斷
+  - Cloud Scheduler 設定 UTC 00:05 週一至五（台北時間 08:05）自動觸發
+  - GitHub Actions `deploy.yml` 新增 `terraform init / plan / apply` 步驟
 
 ### v5.2.0 - 2026-04-25
 - 🚀 **Telegram Webhook + Cloud Run Service（方案 A）**
