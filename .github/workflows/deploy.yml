@@ -10,6 +10,7 @@ env:
   REGION: asia-east1
   IMAGE: asia-east1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/bag-holder-repo/bag-holder
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TF_VERSION: "1.9.0"
 
 jobs:
   test:
@@ -80,60 +81,22 @@ jobs:
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
-      - name: Deploy bag-holder-download job
-        run: |
-          gcloud run jobs deploy bag-holder-download \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --service-account=bag-holder-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
-            --command=/entrypoint-download.sh \
-            --memory=2Gi \
-            --cpu=2 \
-            --task-timeout=3600 \
-            --max-retries=1 \
-            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Deploy bag-holder-signals job
-        run: |
-          gcloud run jobs deploy bag-holder-signals \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --service-account=bag-holder-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
-            --command=/entrypoint-signals.sh \
-            --memory=2Gi \
-            --cpu=2 \
-            --task-timeout=600 \
-            --max-retries=1 \
-            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
+      - name: Terraform Init
+        working-directory: terraform/deployable
+        run: terraform init
 
-      - name: Deploy bag-holder-webhook service
+      - name: Terraform Apply
+        working-directory: terraform/deployable
         run: |
-          gcloud run deploy bag-holder-webhook \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --service-account=bag-holder-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
-            --command=/entrypoint-webhook.sh \
-            --memory=512Mi \
-            --cpu=1 \
-            --min-instances=0 \
-            --max-instances=3 \
-            --concurrency=80 \
-            --timeout=30 \
-            --allow-unauthenticated \
-            --set-secrets="APP_SECRETS=APP_SECRETS:latest" \
-            --set-env-vars="APP_ENV=production,PYTHONUNBUFFERED=1"
+          terraform apply -auto-approve \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="image=${{ env.IMAGE }}:${{ github.sha }}"
 
-      - name: Update Telegram webhook URL
-        run: |
-          SERVICE_URL=$(gcloud run services describe bag-holder-webhook \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --region=${{ env.REGION }} \
-            --format='value(status.url)')
-          echo "Service URL: ${SERVICE_URL}"
-          # Update APP_SECRETS with the service URL so entrypoint-webhook.sh can read it
-          # (TELEGRAM_WEBHOOK_URL must be set in Secret Manager's APP_SECRETS JSON)
+      - name: Show webhook URL
+        working-directory: terraform/deployable
+        run: terraform output -raw webhook_url

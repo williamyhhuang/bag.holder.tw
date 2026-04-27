@@ -1,0 +1,77 @@
+main:
+  steps:
+    - init:
+        assign:
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+
+    - run_download:
+        call: googleapis.run.v1.namespaces.jobs.run
+        args:
+          name: ${"namespaces/" + project_id + "/jobs/bag-holder-download"}
+        result: download_execution
+
+    - wait_for_download:
+        call: wait_for_execution
+        args:
+          execution_name: ${download_execution.metadata.name}
+        result: download_status
+
+    - check_download:
+        switch:
+          - condition: ${download_status != "succeeded"}
+            raise: ${"bag-holder-download failed with status: " + download_status}
+
+    - run_signals:
+        call: googleapis.run.v1.namespaces.jobs.run
+        args:
+          name: ${"namespaces/" + project_id + "/jobs/bag-holder-signals"}
+        result: signals_execution
+
+    - wait_for_signals:
+        call: wait_for_execution
+        args:
+          execution_name: ${signals_execution.metadata.name}
+        result: signals_status
+
+    - check_signals:
+        switch:
+          - condition: ${signals_status != "succeeded"}
+            raise: ${"bag-holder-signals failed with status: " + signals_status}
+
+    - done:
+        return: "All jobs completed successfully"
+
+# 輪詢 Cloud Run Job Execution 直到完成
+wait_for_execution:
+  params: [execution_name]
+  steps:
+    - initial_sleep:
+        call: sys.sleep
+        args:
+          seconds: 30
+
+    - get_status:
+        call: http.get
+        args:
+          url: ${"https://run.googleapis.com/v1/" + execution_name}
+          auth:
+            type: OAuth2
+        result: exec_resp
+
+    - check_complete:
+        switch:
+          - condition: ${"completionTime" in exec_resp.body.status}
+            next: determine_result
+
+    - sleep_and_retry:
+        call: sys.sleep
+        args:
+          seconds: 30
+        next: get_status
+
+    - determine_result:
+        switch:
+          - condition: ${exec_resp.body.status.succeededCount > 0}
+            return: "succeeded"
+          - condition: true
+            return: "failed"

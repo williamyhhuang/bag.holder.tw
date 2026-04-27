@@ -136,3 +136,10 @@ reports/*.md
 # Runtime files
 *.pid
 *.lock
+
+# Terraform
+terraform/bootstrap/terraform.tfstate
+terraform/bootstrap/terraform.tfstate.backup
+terraform/bootstrap/.terraform/
+terraform/deployable/.terraform/
+**/.terraform.lock.hcl
