@@ -19,7 +19,7 @@ main:
     - check_download:
         switch:
           - condition: ${download_status != "succeeded"}
-            raise: ${"bag-holder-download failed with status: " + download_status}
+            raise: '${"bag-holder-download failed with status: " + download_status}'
 
     - run_signals:
         call: googleapis.run.v1.namespaces.jobs.run
@@ -36,7 +36,7 @@ main:
     - check_signals:
         switch:
           - condition: ${signals_status != "succeeded"}
-            raise: ${"bag-holder-signals failed with status: " + signals_status}
+            raise: '${"bag-holder-signals failed with status: " + signals_status}'
 
     - done:
         return: "All jobs completed successfully"
