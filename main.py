@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 def run_download(args):
     """Run download command"""
-    cmd = ['python', '-m', 'src.data_downloader.main', 'download']
+    cmd = ['python', '-m', 'src.interfaces.cli.download_main', 'download']
 
     if args.start_date:
         cmd.extend(['--start-date', args.start_date])
