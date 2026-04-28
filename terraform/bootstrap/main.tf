@@ -69,6 +69,17 @@ resource "google_artifact_registry_repository" "app" {
   location      = var.region
   format        = "DOCKER"
 
+  # 只保留最新 5 個 image，自動刪除舊版本節省儲存費用
+  cleanup_policies {
+    id     = "keep-last-5"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 5
+    }
+  }
+
+  cleanup_policy_dry_run = false
+
   depends_on = [google_project_service.apis]
 }
 
