@@ -1047,6 +1047,15 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🐛 修正 `calculate_position_size` 最小張數判斷未含手續費的問題
 - ✅ 新增 `load_from_stocks_dir` 相關單元測試（3 個測試案例）
 
+### v3.0.2 - 2026-04-28
+- 🐛 修正 Cloud Scheduler cron 時間錯誤：`5 0 * * 1-5` → `5 8 * * 1-5`（台北時間 08:05，原本實際執行於 00:05）
+- 🆕 **GCP Monitoring 失敗告警**：新增三條 alert policy，任一步驟失敗即寄 email 通知
+  - Cloud Scheduler 觸發失敗
+  - GCP Workflow 執行失敗
+  - Cloud Run Job（download / signals）task 失敗
+  - 新增 Terraform 變數 `notification_email`，由 GitHub Secret `NOTIFICATION_EMAIL` 注入
+  - **需手動設定 GitHub Secret**：`NOTIFICATION_EMAIL` = 你的 email 地址
+
 ### v3.0.1 - 2026-04-28
 - 🐛 修正 `signals_scanner.py` 中股票資料路徑硬編碼錯誤，導致 Cloud Run `bag-holder-signals` 執行失敗（exit code 1）
   - 原路徑 `../../data/stocks`（相對 `__file__`）在容器內解析為 `/app/src/data/stocks`，但實際資料在 `/app/data/stocks`

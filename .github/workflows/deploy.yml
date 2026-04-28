@@ -99,7 +99,8 @@ jobs:
         run: |
           terraform apply -auto-approve \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            -var="image=${{ env.IMAGE }}:${{ github.sha }}"
+            -var="image=${{ env.IMAGE }}:${{ github.sha }}" \
+            -var="notification_email=${{ secrets.NOTIFICATION_EMAIL }}"
 
       - name: Show webhook URL
         working-directory: terraform/deployable

@@ -14,3 +14,8 @@ variable "image" {
   type        = string
   # 由 CI/CD 注入，不設 default
 }
+
+variable "notification_email" {
+  description = "Email address to receive failure notifications (Cloud Scheduler / Workflow / Cloud Run)"
+  type        = string
+}
