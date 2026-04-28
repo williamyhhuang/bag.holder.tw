@@ -1047,6 +1047,11 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🐛 修正 `calculate_position_size` 最小張數判斷未含手續費的問題
 - ✅ 新增 `load_from_stocks_dir` 相關單元測試（3 個測試案例）
 
+### v3.0.1 - 2026-04-28
+- 🐛 修正 `signals_scanner.py` 中股票資料路徑硬編碼錯誤，導致 Cloud Run `bag-holder-signals` 執行失敗（exit code 1）
+  - 原路徑 `../../data/stocks`（相對 `__file__`）在容器內解析為 `/app/src/data/stocks`，但實際資料在 `/app/data/stocks`
+  - 改用 `settings.data.stocks_path`（`DATA_STOCKS_PATH` 環境變數），與 `yfinance_client.py` / `csv_scanner.py` 一致
+
 ### v3.0.0 - 2026-04-25
 - 🆕 **DDD / Hexagonal Architecture 全面重構**
   - 新增 `src/domain/` 領域層（models, services, ports）
