@@ -25,6 +25,8 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iamcredentials.googleapis.com",
+    "monitoring.googleapis.com",
+    "logging.googleapis.com",
   ])
   service            = each.key
   disable_on_destroy = false
@@ -139,6 +141,20 @@ resource "google_service_account_iam_member" "deployer_impersonate_runner" {
   service_account_id = google_service_account.runner.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${var.github_actions_sa_email}"
+}
+
+# Deployer 需要建立 Monitoring alert policy / notification channel
+resource "google_project_iam_member" "deployer_monitoring_editor" {
+  project = var.project_id
+  role    = "roles/monitoring.editor"
+  member  = "serviceAccount:${var.github_actions_sa_email}"
+}
+
+# Deployer 需要建立 log-based metrics
+resource "google_project_iam_member" "deployer_logging_config_writer" {
+  project = var.project_id
+  role    = "roles/logging.configWriter"
+  member  = "serviceAccount:${var.github_actions_sa_email}"
 }
 
 # Deployer 需要讀寫 Terraform state bucket
