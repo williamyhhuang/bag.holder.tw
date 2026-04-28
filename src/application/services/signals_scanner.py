@@ -124,9 +124,7 @@ class SignalsScanner:
 
     def _load_stock_data(self) -> Tuple[Dict[str, List[StockData]], date]:
         """載入本地 CSV 資料，回傳 stock_data_dict 與最新交易日"""
-        stocks_dir = os.path.normpath(
-            os.path.join(os.path.dirname(__file__), '../../data/stocks')
-        )
+        stocks_dir = str(Path(settings.data.stocks_path).resolve())
         # 需要足夠的歷史資料讓指標暖機（MA60 + Donchian50 = 至少 120 天）
         load_start = date.today() - timedelta(days=365)
         stock_data = self.data_source.load_from_stocks_dir(
