@@ -12,6 +12,7 @@ sys.path.append(str(project_root))
 
 from src.infrastructure.market_data.yfinance_client import YFinanceClient
 from src.utils.logger import get_logger
+from config.settings import settings
 
 logger = get_logger(__name__)
 
@@ -19,8 +20,24 @@ class DataDownloaderCLI:
     """Command line interface for data downloader"""
 
     def __init__(self):
-        self.yf_client = YFinanceClient()
         self.logger = get_logger(self.__class__.__name__)
+
+    def _make_client(self, source: str):
+        """Instantiate the appropriate download client based on source."""
+        if source == "fubon":
+            from src.infrastructure.market_data.fubon_download_client import (
+                FubonDownloadClient,
+                FubonDownloadError,
+            )
+            client = FubonDownloadClient()
+            try:
+                client.login()
+            except FubonDownloadError as e:
+                self.logger.error(f"Fubon login failed: {e}")
+                sys.exit(1)
+            return client
+        else:
+            return YFinanceClient()
 
     def parse_date(self, date_str: str) -> datetime:
         """Parse date string to datetime object"""
@@ -33,6 +50,10 @@ class DataDownloaderCLI:
     def run_download(self, args):
         """Run the download command"""
         try:
+            source = getattr(args, 'source', None) or settings.download.data_source
+            client = self._make_client(source)
+            self.logger.info(f"Data source: {source}")
+
             start_date = None
             end_date = None
 
@@ -44,7 +65,7 @@ class DataDownloaderCLI:
             # If no dates provided, download recent data
             if start_date is None and end_date is None:
                 self.logger.info("No dates provided, downloading recent data")
-                count = self.yf_client.download_recent_data()
+                count = client.download_recent_data()
             else:
                 # If only start date provided, use today as end date
                 if start_date and not end_date:
@@ -52,11 +73,11 @@ class DataDownloaderCLI:
 
                 # If only end date provided, use yesterday as start date
                 if end_date and not start_date:
-                    start_date = self.yf_client.get_last_trading_date()
+                    start_date = client.get_last_trading_date()
 
                 markets = args.markets if args.markets else ["TSE", "OTC"]
                 limit = args.limit if hasattr(args, 'limit') and args.limit else None
-                count = self.yf_client.download_all_stocks(start_date, end_date, markets, limit)
+                count = client.download_all_stocks(start_date, end_date, markets, limit)
 
             self.logger.info(f"Download completed: {count} stocks processed")
             return count
@@ -102,6 +123,15 @@ Examples:
         '--limit',
         type=int,
         help='Limit number of stocks to download (for testing)'
+    )
+    download_parser.add_argument(
+        '--source',
+        choices=['yfinance', 'fubon'],
+        default=None,
+        help=(
+            'Data source: yfinance (default) or fubon. '
+            'Can also be set via DOWNLOAD_DATA_SOURCE env var.'
+        ),
     )
 
     return parser

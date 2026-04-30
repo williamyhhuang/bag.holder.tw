@@ -157,10 +157,10 @@ docker compose --profile backtest run --rm backtest
 ## 📋 功能說明
 
 ### 資料下載 (download)
-使用 YFinance 下載台股歷史資料，支援 TSE 與 OTC 市場。
+下載台股歷史資料，支援 TSE 與 OTC 市場。預設資料來源為 **YFinance**，可透過 `--source fubon` 切換至**富邦 Neo API**。
 
 ```bash
-# 下載最近的股票資料
+# 下載最近的股票資料（預設 yfinance）
 python main.py download
 
 # 指定日期區間
@@ -168,7 +168,30 @@ python main.py download --start-date 2024-01-01 --end-date 2024-01-31
 
 # 指定市場
 python main.py download --markets TSE OTC
+
+# 使用富邦 API 下載（需設定 FUBON_* 環境變數）
+python main.py download --source fubon
+
+# 富邦 API 指定日期
+python main.py download --source fubon --start-date 2024-01-01 --end-date 2024-01-31
 ```
+
+#### 資料來源說明
+
+| 來源 | 特性 | 適用情境 |
+|------|------|---------|
+| `yfinance`（預設）| 批次下載，速度快 | 一般使用 |
+| `fubon` | 逐支查詢，每分鐘 30 次限制 | 需要富邦 API 原始資料 |
+
+**環境變數設定（富邦 API）：**
+```bash
+FUBON_USER_ID=你的身分證字號
+FUBON_API_KEY=你的 API Key
+FUBON_CERT_PATH=docs/fubon.cert.p12
+FUBON_CERT_PASSWORD=你的憑證密碼
+```
+
+也可透過 `DOWNLOAD_DATA_SOURCE=fubon` 環境變數設為全域預設值。
 
 ### 今日買賣訊號 (signals) ⭐
 使用 P1 完整策略過濾，直接輸出「今日建議買入」與「賣出警示」，是每日操盤的主要參考指令。
@@ -717,6 +740,15 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.4.0 - 2026-04-30
+- 🏦 **新增富邦 API 資料來源**：`download` 指令新增 `--source fubon` 參數，可切換至富邦 Neo API 下載歷史股價，預設仍為 yfinance
+  - 新增 `FubonDownloadClient`：同步客戶端，支援 `apikey_login` / `login` 兩種登入方式
+  - 與 `YFinanceClient` 相同介面（`download_all_stocks`, `download_recent_data`, `get_last_trading_date`），可無縫切換
+  - 內建速率限制（預設 30 req/min），適合夜間批次下載
+  - CSV 存檔格式與 yfinance 相同，兩者資料可共用同一目錄
+  - 新增 `DOWNLOAD_DATA_SOURCE` 環境變數，可設定全域預設資料來源
+  - 新增 18 個單元測試覆蓋登入、資料取得、批次下載等情境
 
 ### v5.3.1 - 2026-04-28
 - 🐛 **修正 GCP Workflows YAML 解析錯誤**：`raise` 值中含冒號（`status: `）導致 YAML parser 截斷 `${...}` 表達式，以單引號包覆修正

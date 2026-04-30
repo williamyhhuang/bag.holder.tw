@@ -4,17 +4,36 @@ DownloadDataUseCase - orchestrates the data download workflow
 from datetime import datetime
 from typing import List, Optional
 
-from ...infrastructure.market_data.yfinance_client import YFinanceClient
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
+def _make_client(source: str):
+    """Return the appropriate download client for the given source name."""
+    if source == "fubon":
+        from ...infrastructure.market_data.fubon_download_client import (
+            FubonDownloadClient,
+            FubonDownloadError,
+        )
+        client = FubonDownloadClient()
+        client.login()  # raises FubonDownloadError on failure
+        return client
+    else:
+        from ...infrastructure.market_data.yfinance_client import YFinanceClient
+        return YFinanceClient()
+
+
 class DownloadDataUseCase:
     """Use case for downloading market data"""
 
-    def __init__(self, client: YFinanceClient = None):
-        self._client = client or YFinanceClient()
+    def __init__(self, client=None, source: str = "yfinance"):
+        if client is not None:
+            self._client = client
+        else:
+            from config.settings import settings
+            effective_source = source or settings.download.data_source
+            self._client = _make_client(effective_source)
 
     def execute(
         self,

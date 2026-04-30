@@ -212,6 +212,7 @@ class PerformanceSettings(BaseSettings):
 class DownloadSettings(BaseSettings):
     """Data download configuration"""
     batch_size: int = Field(default=200, env="DOWNLOAD_BATCH_SIZE")
+    data_source: str = Field(default="yfinance", env="DOWNLOAD_DATA_SOURCE")
 
     class Config:
         extra = 'ignore'
