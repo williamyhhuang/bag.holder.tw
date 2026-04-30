@@ -215,7 +215,8 @@ class DownloadSettings(BaseSettings):
     """Data download configuration"""
     batch_size: int = Field(default=200, env="DOWNLOAD_BATCH_SIZE")
     data_source: str = Field(default="yfinance", env="DOWNLOAD_DATA_SOURCE")
-    fubon_max_workers: int = Field(default=5, env="DOWNLOAD_FUBON_MAX_WORKERS")
+    # Fubon concurrent workers – mirrors yfinance batch_size (200 stocks at a time)
+    fubon_max_workers: int = Field(default=200, env="DOWNLOAD_FUBON_MAX_WORKERS")
 
     class Config:
         extra = 'ignore'

@@ -95,8 +95,8 @@ class FubonDownloadClient:
         self._reststock = None
         self._logged_in = False
 
-        rpm = getattr(settings.fubon, "rate_limit_per_minute", 30) or 30
-        self._rpm = rpm
+        self._rpm: int = settings.fubon.rate_limit_per_minute   # FUBON_RATE_LIMIT_PER_MINUTE
+        self._max_workers: int = settings.download.fubon_max_workers  # DOWNLOAD_FUBON_MAX_WORKERS
 
     # ─────────────────────────────────────────────────────────────────────────
     # Login
@@ -298,7 +298,7 @@ class FubonDownloadClient:
             taipei_tz = pytz.timezone("Asia/Taipei")
             end_date = datetime.now(taipei_tz).replace(tzinfo=None)
 
-        max_workers = getattr(settings.download, "fubon_max_workers", 5) or 5
+        max_workers = self._max_workers
         rate_limiter = _SlidingWindowRateLimiter(max_requests=self._rpm, window=60.0)
 
         total = len(all_symbols)
