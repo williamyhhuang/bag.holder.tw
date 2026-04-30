@@ -26,6 +26,8 @@ def run_download(args):
         cmd.extend(['--markets'] + args.markets)
     if hasattr(args, 'limit') and args.limit:
         cmd.extend(['--limit', str(args.limit)])
+    if hasattr(args, 'source') and args.source:
+        cmd.extend(['--source', args.source])
 
     try:
         result = subprocess.run(cmd, cwd=project_root, check=True)
@@ -154,6 +156,12 @@ def create_parser():
         '--limit',
         type=int,
         help='限制下載股票數量 (測試用)'
+    )
+    download_parser.add_argument(
+        '--source',
+        choices=['yfinance', 'fubon'],
+        default=None,
+        help='資料來源: yfinance (預設) 或 fubon'
     )
 
     # Signals command (P1 actionable buy/sell signals)
