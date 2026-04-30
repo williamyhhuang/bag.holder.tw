@@ -866,6 +866,17 @@ python scripts/test_fubon_futures.py --user-id A123456789 --no-trade
 - ⚙️ 可透過 `.env` 設定 `BACKTEST_MIN_VOLUME_LOTS=1000`（0 = 停用）
 - ✅ 新增 3 個 `TestTechnicalStrategy` 單元測試覆蓋門檻過濾、邊界值、停用情境
 
+### v3.10.0 - 2026-04-30
+- 📥 **新增 Fubon API 資料來源**：`python main.py download --source fubon` 可透過富邦 Neo API 下載今日台股快照資料
+  - 預設仍使用 yfinance；`--source fubon` 可切換至 Fubon API
+  - 快照模式：單次 2 API 請求取得全市場資料，速度比 yfinance 快 ~160 倍（0.27s vs 42.9s）
+  - 支援 TSE / OTC / TIB（臺灣創新板）三市場，與 yfinance 股票覆蓋率一致（~1967 檔）
+  - 多日歷史資料採 `ThreadPoolExecutor` 並發下載，速率限制 30 req/min 防觸發 API 限流
+  - 成交量單位修正：Fubon 快照 `tradeVolume` 為「張」（1 張 = 1000 股），自動 ×1000 轉換為「股」與 yfinance 一致
+  - TIB 市場修正：TWSE 含 TIB 於 TSE 下，Fubon 需額外 `market='TIB'` 查詢，修正後不遺漏創新板個股
+- ⚙️ 新增設定：`FUBON_API_KEY`, `FUBON_USER_ID`, `FUBON_CERT_PATH`, `FUBON_CERT_PASSWORD`, `FUBON_RATE_LIMIT_PER_MINUTE`（預設 30）, `DOWNLOAD_FUBON_MAX_WORKERS`（預設 200）
+- ✅ 新增 `tests/test_fubon_download_client.py` 共 29 個單元測試
+
 ### v3.9.0 - 2026-04-23
 - 🔕 **新增 `SIGNALS_SHOW_SELL` 開關**：可在 `settings.py` / 環境變數關閉 signals 賣出警示區塊（終端機與 Telegram）
   - 預設值：`False`（關閉）；設定 `SIGNALS_SHOW_SELL=true` 可重新開啟

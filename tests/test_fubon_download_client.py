@@ -267,14 +267,19 @@ class TestDownloadSnapshot:
     SNAPSHOT_TSE = [
         {"type": "EQUITY", "symbol": "2330", "name": "台積電",
          "openPrice": 900, "highPrice": 910, "lowPrice": 895,
-         "closePrice": 908, "tradeVolume": 39000000},
+         "closePrice": 908, "tradeVolume": 39000},   # 張
         {"type": "EQUITY", "symbol": "2317", "name": "鴻海",
          "openPrice": 150, "highPrice": 152, "lowPrice": 149,
-         "closePrice": 151, "tradeVolume": 20000000},
+         "closePrice": 151, "tradeVolume": 20000},   # 張
         # Should be filtered out – not 4-digit numeric
         {"type": "EQUITY", "symbol": "00679B", "name": "元大美債20年",
          "openPrice": 30, "highPrice": 30, "lowPrice": 30,
          "closePrice": 30, "tradeVolume": 100},
+    ]
+    SNAPSHOT_TIB = [
+        {"type": "EQUITY", "symbol": "8162", "name": "微矽電子-創",
+         "openPrice": 50, "highPrice": 53, "lowPrice": 49,
+         "closePrice": 52, "tradeVolume": 1409},     # 張
     ]
 
     def test_saves_tse_stocks_with_tw_suffix(self):
@@ -298,10 +303,46 @@ class TestDownloadSnapshot:
         saved_symbols = [call.args[0] for call in mock_save.call_args_list]
         assert "00679B.TW" not in saved_symbols
 
+    def test_volume_converted_from_zhang_to_shares(self):
+        """tradeVolume (張) must be multiplied by 1000 to match yfinance (股)."""
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE[:1]}
+
+        captured = {}
+        def fake_save(symbol, df):
+            captured[symbol] = df
+            return True
+
+        with patch.object(client, "save_stock_data", side_effect=fake_save):
+            client.download_snapshot(markets=["TSE"])
+
+        saved_vol = int(captured["2330.TW"]["volume"].iloc[0])
+        assert saved_vol == 39_000 * 1000  # 張 → 股
+
+    def test_tib_fetched_when_tse_requested(self):
+        """Requesting TSE should also query TIB (臺灣創新板) with same .TW suffix."""
+        client = _make_client()
+
+        def fake_quotes(market):
+            if market == "TSE":
+                return {"data": self.SNAPSHOT_TSE}
+            if market == "TIB":
+                return {"data": self.SNAPSHOT_TIB}
+            return {"data": []}
+
+        client._reststock.snapshot.quotes.side_effect = fake_quotes
+
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            count = client.download_snapshot(markets=["TSE"])
+
+        saved_symbols = [call.args[0] for call in mock_save.call_args_list]
+        assert "8162.TW" in saved_symbols   # TIB stock got .TW suffix
+        assert count == 3  # 2330, 2317, 8162 (00679B filtered)
+
     def test_otc_uses_two_suffix(self):
         otc_data = [{"type": "EQUITY", "symbol": "6277", "name": "宏正",
                      "openPrice": 50, "highPrice": 51, "lowPrice": 49,
-                     "closePrice": 50, "tradeVolume": 500000}]
+                     "closePrice": 50, "tradeVolume": 500}]
         client = _make_client()
         client._reststock.snapshot.quotes.return_value = {"data": otc_data}
 
@@ -329,12 +370,18 @@ class TestDownloadSnapshot:
 
     def test_returns_success_count(self):
         client = _make_client()
-        client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE}
+
+        def fake_quotes(market):
+            if market == "TSE":
+                return {"data": self.SNAPSHOT_TSE}
+            return {"data": []}
+
+        client._reststock.snapshot.quotes.side_effect = fake_quotes
 
         with patch.object(client, "save_stock_data", return_value=True):
             count = client.download_snapshot(markets=["TSE"])
 
-        assert count == 2  # 00679B filtered out
+        assert count == 2  # 00679B filtered out, TIB returns empty
 
 
 class TestSlidingWindowRateLimiter:

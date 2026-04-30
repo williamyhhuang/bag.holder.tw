@@ -388,11 +388,20 @@ class FubonDownloadClient:
         today_str = datetime.now(pytz.timezone("Asia/Taipei")).strftime("%Y-%m-%d")
         today_dt = pd.Timestamp(today_str)
 
-        # market → yfinance suffix mapping
-        suffix_map = {"TSE": ".TW", "OTC": ".TWO"}
+        # Fubon market codes → yfinance suffix
+        # TIB (臺灣創新板) stocks appear in TWSE's TSE list but as a separate
+        # market in Fubon.  We fetch TIB alongside TSE and use the same .TW suffix.
+        suffix_map = {"TSE": ".TW", "TIB": ".TW", "OTC": ".TWO"}
+
+        # Expand TSE to also include TIB (mirrors the TWSE API which bundles them)
+        fubon_markets = []
+        for m in markets:
+            fubon_markets.append(m)
+            if m == "TSE":
+                fubon_markets.append("TIB")
 
         success = 0
-        for market in markets:
+        for market in fubon_markets:
             suffix = suffix_map.get(market, ".TW")
             try:
                 result = self._reststock.snapshot.quotes(market=market)
@@ -402,6 +411,8 @@ class FubonDownloadClient:
                 continue
 
             # Filter to plain 4-digit numeric symbols only (same as yfinance)
+            # Fubon tradeVolume is in 張 (1 張 = 1000 shares); multiply to match
+            # yfinance's shares-based volume.
             rows_by_symbol: dict = {}
             for item in raw:
                 d = item if isinstance(item, dict) else vars(item)
@@ -415,7 +426,7 @@ class FubonDownloadClient:
                     "high": float(d.get("highPrice", 0) or 0),
                     "low": float(d.get("lowPrice", 0) or 0),
                     "close": float(d.get("closePrice", 0) or 0),
-                    "volume": int(d.get("tradeVolume", 0) or 0),
+                    "volume": int(d.get("tradeVolume", 0) or 0) * 1000,  # 張→股
                     "symbol": yf_symbol,
                 }
 
