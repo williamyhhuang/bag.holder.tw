@@ -3,17 +3,21 @@ main:
     - init:
         assign:
           - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_NUMBER")}
+          - region: "asia-east1"
+          - base_url: ${"https://asia-east1-run.googleapis.com/v1/namespaces/" + project_id + "/jobs/"}
 
     - run_download:
-        call: googleapis.run.v1.namespaces.jobs.run
+        call: http.post
         args:
-          name: ${"namespaces/" + project_id + "/jobs/bag-holder-download"}
+          url: ${base_url + "bag-holder-download:run"}
+          auth:
+            type: OAuth2
         result: download_execution
 
     - wait_for_download:
         call: wait_for_execution
         args:
-          execution_name: ${download_execution.metadata.name}
+          execution_name: ${download_execution.body.metadata.name}
         result: download_status
 
     - check_download:
@@ -22,15 +26,17 @@ main:
             raise: '${"bag-holder-download failed with status: " + download_status}'
 
     - run_signals:
-        call: googleapis.run.v1.namespaces.jobs.run
+        call: http.post
         args:
-          name: ${"namespaces/" + project_id + "/jobs/bag-holder-signals"}
+          url: ${base_url + "bag-holder-signals:run"}
+          auth:
+            type: OAuth2
         result: signals_execution
 
     - wait_for_signals:
         call: wait_for_execution
         args:
-          execution_name: ${signals_execution.metadata.name}
+          execution_name: ${signals_execution.body.metadata.name}
         result: signals_status
 
     - check_signals:
@@ -53,7 +59,7 @@ wait_for_execution:
     - get_status:
         call: http.get
         args:
-          url: ${"https://run.googleapis.com/v1/" + execution_name}
+          url: ${"https://asia-east1-run.googleapis.com/v1/" + execution_name}
           auth:
             type: OAuth2
         result: exec_resp
