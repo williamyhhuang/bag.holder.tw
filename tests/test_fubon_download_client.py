@@ -263,6 +263,80 @@ class TestDownloadAllStocks:
 # download_recent_data
 # ─────────────────────────────────────────────────────────────────────────────
 
+class TestDownloadSnapshot:
+    SNAPSHOT_TSE = [
+        {"type": "EQUITY", "symbol": "2330", "name": "台積電",
+         "openPrice": 900, "highPrice": 910, "lowPrice": 895,
+         "closePrice": 908, "tradeVolume": 39000000},
+        {"type": "EQUITY", "symbol": "2317", "name": "鴻海",
+         "openPrice": 150, "highPrice": 152, "lowPrice": 149,
+         "closePrice": 151, "tradeVolume": 20000000},
+        # Should be filtered out – not 4-digit numeric
+        {"type": "EQUITY", "symbol": "00679B", "name": "元大美債20年",
+         "openPrice": 30, "highPrice": 30, "lowPrice": 30,
+         "closePrice": 30, "tradeVolume": 100},
+    ]
+
+    def test_saves_tse_stocks_with_tw_suffix(self):
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE}
+
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            count = client.download_snapshot(markets=["TSE"])
+
+        saved_symbols = [call.args[0] for call in mock_save.call_args_list]
+        assert "2330.TW" in saved_symbols
+        assert "2317.TW" in saved_symbols
+
+    def test_filters_non_4digit_symbols(self):
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE}
+
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            client.download_snapshot(markets=["TSE"])
+
+        saved_symbols = [call.args[0] for call in mock_save.call_args_list]
+        assert "00679B.TW" not in saved_symbols
+
+    def test_otc_uses_two_suffix(self):
+        otc_data = [{"type": "EQUITY", "symbol": "6277", "name": "宏正",
+                     "openPrice": 50, "highPrice": 51, "lowPrice": 49,
+                     "closePrice": 50, "tradeVolume": 500000}]
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": otc_data}
+
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            client.download_snapshot(markets=["OTC"])
+
+        saved_symbols = [call.args[0] for call in mock_save.call_args_list]
+        assert "6277.TWO" in saved_symbols
+
+    def test_snapshot_df_has_correct_columns(self):
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE[:1]}
+
+        captured = {}
+        def fake_save(symbol, df):
+            captured[symbol] = df
+            return True
+
+        with patch.object(client, "save_stock_data", side_effect=fake_save):
+            client.download_snapshot(markets=["TSE"])
+
+        df = captured["2330.TW"]
+        for col in ("date", "open", "high", "low", "close", "volume", "symbol"):
+            assert col in df.columns
+
+    def test_returns_success_count(self):
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE}
+
+        with patch.object(client, "save_stock_data", return_value=True):
+            count = client.download_snapshot(markets=["TSE"])
+
+        assert count == 2  # 00679B filtered out
+
+
 class TestSlidingWindowRateLimiter:
     def test_allows_up_to_max_requests_immediately(self):
         limiter = _SlidingWindowRateLimiter(max_requests=5, window=60.0)
@@ -310,11 +384,25 @@ class TestSlidingWindowRateLimiter:
 
 
 class TestDownloadRecentData:
-    def test_calls_download_all_stocks(self):
+    def test_single_day_uses_snapshot(self):
+        """days_back=1 should call download_snapshot, not download_all_stocks."""
         client = _make_client()
-        with patch.object(client, "get_last_trading_date", return_value=datetime(2024, 1, 2)), \
-             patch.object(client, "download_all_stocks", return_value=5) as mock_dl:
+        with patch.object(client, "download_snapshot", return_value=1943) as mock_snap, \
+             patch.object(client, "download_all_stocks") as mock_hist:
             result = client.download_recent_data(days_back=1)
 
+        assert result == 1943
+        mock_snap.assert_called_once()
+        mock_hist.assert_not_called()
+
+    def test_multi_day_uses_historical(self):
+        """days_back>1 should call download_all_stocks, not download_snapshot."""
+        client = _make_client()
+        with patch.object(client, "get_last_trading_date", return_value=datetime(2024, 1, 2)), \
+             patch.object(client, "download_snapshot") as mock_snap, \
+             patch.object(client, "download_all_stocks", return_value=5) as mock_hist:
+            result = client.download_recent_data(days_back=3)
+
         assert result == 5
-        mock_dl.assert_called_once()
+        mock_hist.assert_called_once()
+        mock_snap.assert_not_called()

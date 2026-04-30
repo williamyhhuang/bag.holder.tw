@@ -361,18 +361,93 @@ class FubonDownloadClient:
 
         return success
 
-    def download_recent_data(self, days_back: int = 2) -> int:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Snapshot bulk download (today's data only – 2 API calls for all stocks)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def download_snapshot(self, markets: List[str] = None) -> int:
         """
-        Download recent data (mirrors YFinanceClient.download_recent_data).
+        Download today's OHLCV for ALL stocks using the snapshot API.
+
+        One request per market (TSE / OTC) → entire market in a single call.
+        Much faster than per-symbol historical queries for today-only data.
 
         Args:
-            days_back: How many trading days back to cover.
+            markets: ["TSE"], ["OTC"], or ["TSE", "OTC"] (default).
 
         Returns:
             Number of stocks successfully saved.
         """
-        import pytz
+        if not self._logged_in:
+            self.login()
 
+        if markets is None:
+            markets = ["TSE", "OTC"]
+
+        import pytz
+        today_str = datetime.now(pytz.timezone("Asia/Taipei")).strftime("%Y-%m-%d")
+        today_dt = pd.Timestamp(today_str)
+
+        # market → yfinance suffix mapping
+        suffix_map = {"TSE": ".TW", "OTC": ".TWO"}
+
+        success = 0
+        for market in markets:
+            suffix = suffix_map.get(market, ".TW")
+            try:
+                result = self._reststock.snapshot.quotes(market=market)
+                raw = result.get("data", []) if isinstance(result, dict) else []
+            except Exception as e:
+                logger.error(f"Snapshot failed for {market}: {e}")
+                continue
+
+            # Filter to plain 4-digit numeric symbols only (same as yfinance)
+            rows_by_symbol: dict = {}
+            for item in raw:
+                d = item if isinstance(item, dict) else vars(item)
+                sym_code = str(d.get("symbol", ""))
+                if not (sym_code.isdigit() and len(sym_code) == 4):
+                    continue
+                yf_symbol = f"{sym_code}{suffix}"
+                rows_by_symbol[yf_symbol] = {
+                    "date": today_dt,
+                    "open": float(d.get("openPrice", 0) or 0),
+                    "high": float(d.get("highPrice", 0) or 0),
+                    "low": float(d.get("lowPrice", 0) or 0),
+                    "close": float(d.get("closePrice", 0) or 0),
+                    "volume": int(d.get("tradeVolume", 0) or 0),
+                    "symbol": yf_symbol,
+                }
+
+            logger.info(f"Snapshot {market}: {len(rows_by_symbol)} stocks fetched")
+
+            for yf_symbol, row in rows_by_symbol.items():
+                df = pd.DataFrame([row])
+                if self.save_stock_data(yf_symbol, df):
+                    success += 1
+
+        logger.info(f"Snapshot download done: {success} stocks saved")
+        return success
+
+    def download_recent_data(self, days_back: int = 2) -> int:
+        """
+        Download recent trading data.
+
+        When days_back == 1 (today only): uses the snapshot API
+        (2 requests for all stocks, extremely fast).
+        When days_back > 1: falls back to concurrent per-symbol historical queries.
+
+        Args:
+            days_back: Number of trading days back to cover.
+
+        Returns:
+            Number of stocks successfully saved.
+        """
+        if days_back <= 1:
+            logger.info("days_back=1 → using Fubon snapshot API (2 requests for all stocks)")
+            return self.download_snapshot()
+
+        import pytz
         taipei_tz = pytz.timezone("Asia/Taipei")
         today_taipei = datetime.now(taipei_tz)
         end_date = today_taipei.replace(tzinfo=None)
