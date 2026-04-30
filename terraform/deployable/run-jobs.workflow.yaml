@@ -2,9 +2,9 @@ main:
   steps:
     - init:
         assign:
-          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_NUMBER")}
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
           - region: "asia-east1"
-          - base_url: ${"https://asia-east1-run.googleapis.com/v1/namespaces/" + project_id + "/jobs/"}
+          - base_url: ${"https://asia-east1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/" + project_id + "/jobs/"}
 
     - run_download:
         call: http.post
@@ -59,7 +59,7 @@ wait_for_execution:
     - get_status:
         call: http.get
         args:
-          url: ${"https://asia-east1-run.googleapis.com/v1/" + execution_name}
+          url: ${"https://asia-east1-run.googleapis.com/apis/run.googleapis.com/v1/" + execution_name}
           auth:
             type: OAuth2
         result: exec_resp
