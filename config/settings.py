@@ -74,6 +74,8 @@ class FubonAPISettings(BaseSettings):
     class Config:
         extra = 'ignore'
         env_prefix = "FUBON_"
+        env_file = str(PROJECT_ROOT / ".env")
+        env_file_encoding = "utf-8"
 
 class TelegramSettings(BaseSettings):
     """Telegram bot configuration"""

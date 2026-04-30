@@ -162,10 +162,14 @@ class FubonDownloadClient:
             logger.warning(f"Fubon candles error for {symbol}: {e}")
             return None
 
-        if not result or not getattr(result, "data", None):
+        if not result:
             return None
 
-        raw = result.data if isinstance(result.data, list) else []
+        # SDK returns a plain dict: {"symbol": ..., "data": [...], ...}
+        if isinstance(result, dict):
+            raw = result.get("data") or []
+        else:
+            raw = getattr(result, "data", None) or []
         rows = []
         for item in raw:
             d = item if isinstance(item, dict) else vars(item)
