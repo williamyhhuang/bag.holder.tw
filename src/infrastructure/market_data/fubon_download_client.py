@@ -211,13 +211,25 @@ class FubonDownloadClient:
         from_str = start_date.strftime("%Y-%m-%d")
         to_str = end_date.strftime("%Y-%m-%d")
 
-        try:
-            result = self._reststock.historical.candles(
-                **{"symbol": fubon_sym, "from": from_str, "to": to_str}
-            )
-        except Exception as e:
-            logger.warning(f"Fubon candles error for {symbol}: {e}")
-            return None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                result = self._reststock.historical.candles(
+                    **{"symbol": fubon_sym, "from": from_str, "to": to_str}
+                )
+                break
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "Rate limit" in err_str:
+                    wait = 60 * (attempt + 1)
+                    logger.warning(f"Rate limit hit for {symbol}, retrying in {wait}s ({attempt+1}/{max_retries})")
+                    time.sleep(wait)
+                    if attempt == max_retries - 1:
+                        logger.warning(f"Fubon candles error for {symbol}: {e}")
+                        return None
+                else:
+                    logger.warning(f"Fubon candles error for {symbol}: {e}")
+                    return None
 
         if not result:
             return None
