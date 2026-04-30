@@ -3,6 +3,7 @@ Unit tests for FubonDownloadClient
 """
 import os
 import tempfile
+import time
 from datetime import datetime
 from unittest.mock import MagicMock, patch, PropertyMock
 
@@ -12,6 +13,7 @@ import pytest
 from src.infrastructure.market_data.fubon_download_client import (
     FubonDownloadClient,
     FubonDownloadError,
+    _SlidingWindowRateLimiter,
     _to_fubon_symbol,
 )
 
@@ -260,6 +262,52 @@ class TestDownloadAllStocks:
 # ─────────────────────────────────────────────────────────────────────────────
 # download_recent_data
 # ─────────────────────────────────────────────────────────────────────────────
+
+class TestSlidingWindowRateLimiter:
+    def test_allows_up_to_max_requests_immediately(self):
+        limiter = _SlidingWindowRateLimiter(max_requests=5, window=60.0)
+        start = time.monotonic()
+        for _ in range(5):
+            limiter.acquire()
+        elapsed = time.monotonic() - start
+        assert elapsed < 1.0, "First 5 requests should be immediate"
+
+    def test_blocks_when_limit_reached(self):
+        limiter = _SlidingWindowRateLimiter(max_requests=2, window=1.0)
+        limiter.acquire()
+        limiter.acquire()
+        start = time.monotonic()
+        limiter.acquire()  # 3rd request should wait ~1s
+        elapsed = time.monotonic() - start
+        assert elapsed >= 0.8, f"Should have waited ~1s, waited {elapsed:.2f}s"
+
+    def test_concurrent_threads_respect_limit(self):
+        """N concurrent threads should never exceed max_requests in any window."""
+        import threading
+
+        max_req = 5
+        window = 1.0
+        limiter = _SlidingWindowRateLimiter(max_requests=max_req, window=window)
+        timestamps = []
+        lock = threading.Lock()
+
+        def worker():
+            limiter.acquire()
+            with lock:
+                timestamps.append(time.monotonic())
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        timestamps.sort()
+        # Sliding check: no window of *window* seconds should contain more than max_req
+        for i in range(len(timestamps)):
+            count = sum(1 for ts in timestamps if timestamps[i] <= ts < timestamps[i] + window)
+            assert count <= max_req, f"Rate limit exceeded: {count} requests in {window}s"
+
 
 class TestDownloadRecentData:
     def test_calls_download_all_stocks(self):

@@ -5,10 +5,12 @@ Uses the same interface as YFinanceClient so they can be swapped transparently.
 Authentication: apikey_login(user_id, api_key, cert_path, cert_password)
 or              login(user_id, password, cert_path, cert_password)
 """
+import threading
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import pandas as pd
 from tqdm import tqdm
@@ -28,15 +30,51 @@ def _to_fubon_symbol(symbol: str) -> str:
     return symbol.split(".")[0]
 
 
+class _SlidingWindowRateLimiter:
+    """
+    Thread-safe sliding window rate limiter.
+
+    Allows at most *max_requests* in any rolling *window* second interval.
+    Multiple threads can call acquire() concurrently; each call blocks until
+    a slot is available, then records its timestamp and returns.
+    """
+
+    def __init__(self, max_requests: int, window: float = 60.0):
+        self._max = max_requests
+        self._window = window
+        self._times: deque = deque()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                # Evict timestamps that have left the window
+                while self._times and now - self._times[0] >= self._window:
+                    self._times.popleft()
+
+                if len(self._times) < self._max:
+                    self._times.append(now)
+                    return  # slot claimed; proceed with the request
+
+                # Wait until the oldest slot expires, then retry
+                wait = self._window - (now - self._times[0]) + 0.05
+            time.sleep(max(0.05, wait))
+
+
 class FubonDownloadClient:
     """
-    Synchronous Fubon SDK client for bulk historical stock data download.
+    Fubon SDK client for bulk historical stock data download.
 
     Compatible with YFinanceClient – provides the same
     download_all_stocks() / download_recent_data() / get_last_trading_date() API
     so it can be swapped in without changing callers.
 
-    Rate limit: 30 requests / 60 s (configurable via settings.fubon.rate_limit_per_minute).
+    Downloads run concurrently (ThreadPoolExecutor) while a shared sliding-window
+    rate limiter keeps total requests within the API limit.
+
+    Rate limit:  settings.fubon.rate_limit_per_minute  (default 30 req/min)
+    Concurrency: settings.download.fubon_max_workers    (default 5 threads)
     """
 
     def __init__(
@@ -58,8 +96,7 @@ class FubonDownloadClient:
         self._logged_in = False
 
         rpm = getattr(settings.fubon, "rate_limit_per_minute", 30) or 30
-        # minimum seconds between requests to stay under rate limit
-        self._min_interval = 60.0 / rpm
+        self._rpm = rpm
 
     # ─────────────────────────────────────────────────────────────────────────
     # Login
@@ -170,6 +207,7 @@ class FubonDownloadClient:
             raw = result.get("data") or []
         else:
             raw = getattr(result, "data", None) or []
+
         rows = []
         for item in raw:
             d = item if isinstance(item, dict) else vars(item)
@@ -215,17 +253,20 @@ class FubonDownloadClient:
         end_date: Optional[datetime] = None,
         markets: List[str] = None,
         limit: Optional[int] = None,
-        batch_size: Optional[int] = None,  # ignored – Fubon API is per-symbol
+        batch_size: Optional[int] = None,  # unused – kept for interface compat
     ) -> int:
         """
         Download historical OHLCV data for all listed stocks via Fubon API.
 
+        Requests run concurrently in a thread pool.  A shared sliding-window
+        rate limiter ensures the total request rate never exceeds the API limit.
+
         Args:
-            start_date: Start of the date range (defaults to last trading day).
-            end_date:   End of the date range (defaults to today).
-            markets:    ["TSE"], ["OTC"], or ["TSE", "OTC"] (default).
-            limit:      Cap on number of stocks (useful for testing).
-            batch_size: Ignored; Fubon API is called one symbol at a time.
+            start_date:  Start of the date range (defaults to last trading day).
+            end_date:    End of the date range (defaults to today).
+            markets:     ["TSE"], ["OTC"], or ["TSE", "OTC"] (default).
+            limit:       Cap on number of stocks (useful for testing).
+            batch_size:  Unused; kept for interface compatibility with YFinanceClient.
 
         Returns:
             Number of symbols successfully saved.
@@ -257,50 +298,59 @@ class FubonDownloadClient:
             taipei_tz = pytz.timezone("Asia/Taipei")
             end_date = datetime.now(taipei_tz).replace(tzinfo=None)
 
+        max_workers = getattr(settings.download, "fubon_max_workers", 5) or 5
+        rate_limiter = _SlidingWindowRateLimiter(max_requests=self._rpm, window=60.0)
+
         total = len(all_symbols)
         logger.info(
-            f"Starting Fubon download for {total} stocks "
-            f"({start_date.date()} → {end_date.date()}, "
-            f"rate limit: {int(60 / self._min_interval)} req/min)"
+            f"Starting Fubon concurrent download: {total} stocks, "
+            f"{max_workers} workers, {self._rpm} req/min "
+            f"({start_date.date()} → {end_date.date()})"
         )
 
         success = 0
         failed = 0
-        _last_call = 0.0
+        counter_lock = threading.Lock()
 
         progress_bar = tqdm(
-            all_symbols,
-            desc="富邦下載",
+            total=total,
+            desc="富邦批次下載",
             unit="支",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} 支 [{elapsed}<{remaining}]",
         )
 
-        for symbol in progress_bar:
-            progress_bar.set_description(f"富邦下載 {symbol}")
-
-            # Respect rate limit
-            elapsed = time.monotonic() - _last_call
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-
+        def _download_one(symbol: str):
+            """Fetch + save one symbol; returns (symbol, ok, error_msg)."""
+            rate_limiter.acquire()
             try:
                 df = self.get_stock_data(symbol, start_date, end_date)
-                _last_call = time.monotonic()
-
                 if df is not None and not df.empty:
-                    if self.save_stock_data(symbol, df):
-                        success += 1
-                    else:
-                        failed += 1
-                        progress_bar.write(f"⚠️ 儲存失敗: {symbol}")
+                    saved = self.save_stock_data(symbol, df)
+                    return symbol, saved, None
                 else:
-                    failed += 1
-                    progress_bar.write(f"⚠️ 無資料: {symbol}")
-
+                    return symbol, False, "無資料"
             except Exception as e:
-                _last_call = time.monotonic()
-                failed += 1
-                progress_bar.write(f"❌ 下載失敗 {symbol}: {e}")
+                return symbol, False, str(e)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_download_one, sym): sym for sym in all_symbols}
+            for future in as_completed(futures):
+                sym = futures[future]
+                try:
+                    symbol, ok, err = future.result()
+                    with counter_lock:
+                        if ok:
+                            success += 1
+                        else:
+                            failed += 1
+                            if err:
+                                progress_bar.write(f"⚠️ {symbol}: {err}")
+                        progress_bar.update(1)
+                except Exception as e:
+                    with counter_lock:
+                        failed += 1
+                        progress_bar.write(f"❌ {sym}: {e}")
+                        progress_bar.update(1)
 
         progress_bar.close()
 
