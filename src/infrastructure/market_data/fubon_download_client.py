@@ -460,7 +460,7 @@ class FubonDownloadClient:
         logger.info(f"Snapshot download done: {success} stocks saved")
         return success
 
-    def download_recent_data(self, days_back: int = 2) -> int:
+    def download_recent_data(self, days_back: int = 1) -> int:
         """
         Download recent trading data.
 
@@ -469,7 +469,7 @@ class FubonDownloadClient:
         When days_back > 1: falls back to concurrent per-symbol historical queries.
 
         Args:
-            days_back: Number of trading days back to cover.
+            days_back: Number of trading days back to cover. Defaults to 1 (snapshot).
 
         Returns:
             Number of stocks successfully saved.
