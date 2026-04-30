@@ -5,6 +5,8 @@ Uses the same interface as YFinanceClient so they can be swapped transparently.
 Authentication: apikey_login(user_id, api_key, cert_path, cert_password)
 or              login(user_id, password, cert_path, cert_password)
 """
+import base64
+import tempfile
 import threading
 import time
 from collections import deque
@@ -87,9 +89,18 @@ class FubonDownloadClient:
     ):
         self.user_id = user_id or settings.fubon.user_id
         self.api_key = api_key or settings.fubon.api_key
-        self.cert_path = cert_path or settings.fubon.cert_path
         self.cert_password = cert_password or settings.fubon.cert_password or self.user_id
         self.password = password or settings.fubon.password
+
+        # Resolve cert path: explicit path → env FUBON_CERT_PATH → decode FUBON_CERT_BASE64 to tmp file
+        self.cert_path = cert_path or settings.fubon.cert_path
+        self._cert_tmpfile = None  # keep reference so it isn't GC'd during login
+        if not self.cert_path and settings.fubon.cert_base64:
+            self._cert_tmpfile = tempfile.NamedTemporaryFile(suffix=".p12", delete=False)
+            self._cert_tmpfile.write(base64.b64decode(settings.fubon.cert_base64))
+            self._cert_tmpfile.flush()
+            self.cert_path = self._cert_tmpfile.name
+            logger.debug("Decoded FUBON_CERT_BASE64 to temp file: %s", self.cert_path)
 
         self._sdk = None
         self._reststock = None
@@ -143,6 +154,15 @@ class FubonDownloadClient:
         self._reststock = sdk.marketdata.rest_client.stock
         self._logged_in = True
         logger.info(f"Fubon SDK logged in ({method})")
+
+        # Clean up temp cert file after successful login (cert is loaded into SDK memory)
+        if self._cert_tmpfile:
+            try:
+                import os
+                os.unlink(self._cert_tmpfile.name)
+            except OSError:
+                pass
+            self._cert_tmpfile = None
 
     def logout(self) -> None:
         if self._sdk and self._logged_in:

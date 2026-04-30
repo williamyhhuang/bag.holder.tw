@@ -96,6 +96,28 @@ class TestFubonDownloadClientLogin:
         with pytest.raises(FubonDownloadError, match="auth not configured"):
             client.login()
 
+    def test_cert_base64_decoded_to_temp_file(self):
+        """FUBON_CERT_BASE64 should be decoded to a temp .p12 file when no cert_path given."""
+        import base64
+        fake_cert = b"FAKE_CERT_BYTES"
+        b64 = base64.b64encode(fake_cert).decode()
+
+        mock_settings = MagicMock()
+        mock_settings.fubon.cert_path = None
+        mock_settings.fubon.cert_base64 = b64
+        mock_settings.fubon.user_id = "U1"
+        mock_settings.fubon.api_key = "K1"
+        mock_settings.fubon.cert_password = "P1"
+        mock_settings.fubon.password = None
+        mock_settings.fubon.rate_limit_per_minute = 30
+        mock_settings.download.fubon_max_workers = 5
+
+        with patch("src.infrastructure.market_data.fubon_download_client.settings", mock_settings):
+            client = FubonDownloadClient(user_id="U1", api_key="K1", cert_password="P1")
+
+        assert client.cert_path is not None
+        assert client.cert_path.endswith(".p12")
+
     def test_login_raises_on_sdk_not_installed(self):
         client = FubonDownloadClient(
             user_id="U", api_key="K", cert_path="/c.p12"

@@ -874,7 +874,7 @@ python scripts/test_fubon_futures.py --user-id A123456789 --no-trade
   - 多日歷史資料採 `ThreadPoolExecutor` 並發下載，速率限制 30 req/min 防觸發 API 限流
   - 成交量單位修正：Fubon 快照 `tradeVolume` 為「張」（1 張 = 1000 股），自動 ×1000 轉換為「股」與 yfinance 一致
   - TIB 市場修正：TWSE 含 TIB 於 TSE 下，Fubon 需額外 `market='TIB'` 查詢，修正後不遺漏創新板個股
-- ⚙️ 新增設定：`FUBON_API_KEY`, `FUBON_USER_ID`, `FUBON_CERT_PATH`, `FUBON_CERT_PASSWORD`, `FUBON_RATE_LIMIT_PER_MINUTE`（預設 30）, `DOWNLOAD_FUBON_MAX_WORKERS`（預設 200）
+- ⚙️ 新增設定：`FUBON_API_KEY`, `FUBON_USER_ID`, `FUBON_CERT_PATH`, `FUBON_CERT_BASE64`（GCP/CI 用，base64 編碼的 .p12，與 FUBON_CERT_PATH 二擇一）, `FUBON_CERT_PASSWORD`, `FUBON_RATE_LIMIT_PER_MINUTE`（預設 30）, `DOWNLOAD_FUBON_MAX_WORKERS`（預設 200）
 - ✅ 新增 `tests/test_fubon_download_client.py` 共 29 個單元測試
 
 ### v3.9.0 - 2026-04-23

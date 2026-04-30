@@ -51,6 +51,7 @@ class FubonAPISettings(BaseSettings):
     user_id: Optional[str] = Field(default=None, env="FUBON_USER_ID")
     password: Optional[str] = Field(default=None, env="FUBON_PASSWORD")
     cert_path: Optional[str] = Field(default=None, env="FUBON_CERT_PATH")
+    cert_base64: Optional[str] = Field(default=None, env="FUBON_CERT_BASE64")  # base64 of .p12, for GCP/CI
     cert_password: Optional[str] = Field(default=None, env="FUBON_CERT_PASSWORD")
 
     # Environment settings
@@ -63,13 +64,17 @@ class FubonAPISettings(BaseSettings):
         # This validation will be performed when the settings are initialized
         return v
 
+    def has_cert_source(self) -> bool:
+        """True if cert is available either as a file path or base64 string."""
+        return bool(self.cert_path or self.cert_base64)
+
     def has_api_key_auth(self) -> bool:
         """Check if API key authentication is configured (apikey_login: user_id + api_key + cert)"""
-        return bool(self.api_key and self.user_id and self.cert_path)
+        return bool(self.api_key and self.user_id and self.has_cert_source())
 
     def has_cert_auth(self) -> bool:
         """Check if certificate + password authentication is configured"""
-        return bool(self.user_id and self.password and self.cert_path)
+        return bool(self.user_id and self.password and self.has_cert_source())
 
     class Config:
         extra = 'ignore'
