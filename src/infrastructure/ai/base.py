@@ -98,6 +98,11 @@ class BaseAIAnalyzer(ABC):
     # 子類別可覆寫預設模型名稱
     DEFAULT_MODEL: str = ""
 
+    @property
+    def model(self) -> str:
+        """回傳實際使用的模型名稱（子類別以 self._model 儲存）"""
+        return getattr(self, "_model", self.DEFAULT_MODEL)
+
     def analyze_signals(
         self, signals_result: dict, max_stocks_per_batch: int = 50
     ) -> dict:
@@ -139,7 +144,8 @@ class BaseAIAnalyzer(ABC):
         watch = result.get("watch", [])
         avoid = result.get("avoid", [])
 
-        lines = [f"🤖 AI 二次過濾分析 {target_date}\n"]
+        model_tag = f" ({self.model})" if self.model else ""
+        lines = [f"🤖 AI 二次過濾分析{model_tag} {target_date}\n"]
 
         sections = [
             ("🔥 強烈建議買入", strong_buy),

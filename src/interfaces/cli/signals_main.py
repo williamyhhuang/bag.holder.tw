@@ -199,7 +199,7 @@ def _split_into_chunks(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list
     return chunks
 
 
-def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
+def run_ai_analysis(result: dict, send_telegram: bool = False) -> bool:
     """執行 AI 二次過濾分析（provider 由 settings.ai_analyzer.provider 決定）"""
     cfg = settings.ai_analyzer
     api_key = cfg.get_api_key()
@@ -210,13 +210,13 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
             provider.lower(), f"{provider.upper()}_API_KEY"
         )
         print(f"❌ AI 分析失敗：未設定 {key_var} 環境變數")
-        return
+        return False
 
     try:
         from src.infrastructure.ai.factory import create_analyzer
     except ImportError as e:
         print(f"❌ 無法載入 AI 分析器：{e}")
-        return
+        return False
 
     print(f"\n🤖 正在呼叫 {provider} 進行二次過濾分析...")
     try:
@@ -227,7 +227,7 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
     except Exception as e:
         logger.error(f"AI 分析失敗: {e}")
         print(f"❌ AI 分析失敗: {e}")
-        return
+        return False
 
     # ── 終端顯示 ──
     target_date = ai_result.get("target_date", "")
@@ -275,6 +275,9 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
             print(f"AI 分析 Telegram 發送成功{sent}")
         else:
             print("AI 分析 Telegram 發送失敗")
+            return False
+
+    return True
 
 
 def run_signals(args):
@@ -299,9 +302,12 @@ def run_signals(args):
                 print(f"Telegram 訊息發送成功{sent}")
             else:
                 print("Telegram 發送失敗")
+                sys.exit(1)
 
         if ai_filter:
-            run_ai_analysis(result, send_telegram=send_telegram)
+            ok = run_ai_analysis(result, send_telegram=send_telegram)
+            if not ok and send_telegram:
+                sys.exit(1)
 
     except Exception as e:
         logger.error(f"訊號掃描失敗: {e}")

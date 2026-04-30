@@ -1050,6 +1050,10 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 ### v3.0.3 - 2026-04-28
 - 💰 **Artifact Registry cleanup policy**：自動保留最新 5 個 image，舊版自動刪除（原本 43 個 image 累積 14 GB → 降至 5 個）
 
+### v3.0.4 - 2026-04-30
+- 🤖 **AI 分析 Telegram 訊息包含模型名稱**：Telegram 推送的 AI 二次過濾分析標題現在會顯示所使用的 AI 模型（例如 `🤖 AI 二次過濾分析 (claude-sonnet-4-6) 2026-04-30`）
+- 🚨 **Telegram 發送失敗時 Cloud Run Job 標示為失敗**：`--send-telegram` 模式下，若 Telegram 推送失敗，程式以 `exit(1)` 退出，讓 GCP Cloud Run Job 正確標記為失敗並觸發警報
+
 ### v3.0.3 - 2026-04-30
 - 🐛 修正 Cloud Run signals job AI 分析 Telegram 發送失敗的問題
   - AI 產生的 `reason` 文字含 `_`、`[`、`*` 等字元時，Telegram 以 Markdown 解析會回傳 400 錯誤
