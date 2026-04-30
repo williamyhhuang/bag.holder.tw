@@ -269,7 +269,7 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> None:
     if send_telegram:
         notifier = TelegramNotifier()
         chunks = analyzer.format_for_telegram(ai_result)
-        ok = all(notifier.send_message(chunk) for chunk in chunks)
+        ok = all(notifier.send_message(chunk, parse_mode=None) for chunk in chunks)
         if ok:
             sent = f"（共 {len(chunks)} 則）" if len(chunks) > 1 else ""
             print(f"AI 分析 Telegram 發送成功{sent}")

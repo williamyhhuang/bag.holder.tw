@@ -51,8 +51,9 @@ class TelegramNotifier:
             payload = {
                 'chat_id': target_chat_id,
                 'text': message,
-                'parse_mode': parse_mode
             }
+            if parse_mode:
+                payload['parse_mode'] = parse_mode
 
             response = requests.post(url, json=payload, timeout=30)
 
