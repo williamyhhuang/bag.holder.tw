@@ -1050,6 +1050,12 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 ### v3.0.3 - 2026-04-28
 - 💰 **Artifact Registry cleanup policy**：自動保留最新 5 個 image，舊版自動刪除（原本 43 個 image 累積 14 GB → 降至 5 個）
 
+### v3.0.3 - 2026-04-30
+- 🐛 修正 Cloud Run signals job AI 分析 Telegram 發送失敗的問題
+  - AI 產生的 `reason` 文字含 `_`、`[`、`*` 等字元時，Telegram 以 Markdown 解析會回傳 400 錯誤
+  - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
+  - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
+
 ### v3.0.2 - 2026-04-28
 - 🐛 修正 Cloud Scheduler cron 時間錯誤：`5 0 * * 1-5` → `5 8 * * 1-5`（台北時間 08:05，原本實際執行於 00:05）
 - 🆕 **GCP Monitoring 失敗告警**：新增三條 alert policy，任一步驟失敗即寄 email 通知
