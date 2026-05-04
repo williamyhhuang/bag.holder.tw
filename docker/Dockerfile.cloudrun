@@ -50,8 +50,9 @@ COPY config/ ./config/
 COPY docker/entrypoint-download.sh /entrypoint-download.sh
 COPY docker/entrypoint-signals.sh /entrypoint-signals.sh
 COPY docker/entrypoint-webhook.sh /entrypoint-webhook.sh
+COPY docker/entrypoint-check-holdings.sh /entrypoint-check-holdings.sh
 
-RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh && \
+RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh /entrypoint-check-holdings.sh && \
     mkdir -p /app/data /app/logs /app/reports /app/data/stocks
 
 ENV PYTHONPATH=/app

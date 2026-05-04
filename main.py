@@ -102,6 +102,20 @@ def run_futures(args):
         logger.error(f"Futures command failed: {e}")
         return False
 
+def run_check_holdings(args):
+    """Run check-holdings command"""
+    cmd = ['python', '-m', 'src.interfaces.cli.check_holdings_main', 'check-holdings']
+
+    if getattr(args, 'send_telegram', False):
+        cmd.append('--send-telegram')
+
+    try:
+        result = subprocess.run(cmd, cwd=project_root, check=True)
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Check-holdings command failed: {e}")
+        return False
+
 def create_parser():
     """Create main argument parser"""
     parser = argparse.ArgumentParser(
@@ -129,6 +143,10 @@ def create_parser():
 
   # 期貨分析
   python main.py futures --send-telegram
+
+  # 持倉賣出檢查（讀 Google Sheets，判斷是否應賣出，含 AI 分析）
+  python main.py check-holdings
+  python main.py check-holdings --send-telegram
         """
     )
 
@@ -212,6 +230,17 @@ def create_parser():
         help='發送結果到 Telegram'
     )
 
+    # Check-holdings command
+    check_holdings_parser = subparsers.add_parser(
+        'check-holdings',
+        help='持倉賣出檢查：讀 Google Sheets 持倉，判斷是否應賣出（含 AI 判斷）'
+    )
+    check_holdings_parser.add_argument(
+        '--send-telegram',
+        action='store_true',
+        help='發送結果到 Telegram'
+    )
+
     return parser
 
 def main():
@@ -238,6 +267,8 @@ def main():
             success = run_backtest(args)
         elif args.command == 'futures':
             success = run_futures(args)
+        elif args.command == 'check-holdings':
+            success = run_check_holdings(args)
         else:
             parser.print_help()
             sys.exit(1)

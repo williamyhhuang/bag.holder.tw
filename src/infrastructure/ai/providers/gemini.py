@@ -1,7 +1,7 @@
 """
 Google Gemini AI 分析器實作（使用 google-genai 新版 SDK）
 """
-from ..base import SYSTEM_PROMPT, BaseAIAnalyzer
+from ..base import SELL_SYSTEM_PROMPT, SYSTEM_PROMPT, BaseAIAnalyzer
 from ....utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -84,4 +84,57 @@ class GeminiAnalyzer(BaseAIAnalyzer):
             return {"strong_buy": [], "buy": [], "watch": [], "avoid": []}
         except Exception as e:
             logger.error(f"Gemini API 呼叫失敗: {e}")
+            raise
+
+    def _analyze_holdings_batch(self, stocks: list[dict]) -> dict:
+        types = self._types
+        try:
+            item_schema = types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "symbol": types.Schema(type=types.Type.STRING),
+                    "name": types.Schema(type=types.Type.STRING),
+                    "reason": types.Schema(type=types.Type.STRING),
+                },
+                required=["symbol", "name", "reason"],
+            )
+            array_schema = types.Schema(type=types.Type.ARRAY, items=item_schema)
+            tool = types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration(
+                        name="classify_holdings_sell_decision",
+                        description="判斷持倉股票是否應出場，分類為確認賣出、設停損觀察、繼續持有",
+                        parameters=types.Schema(
+                            type=types.Type.OBJECT,
+                            properties={
+                                "sell": array_schema,
+                                "watch": array_schema,
+                                "hold": array_schema,
+                            },
+                            required=["sell", "watch", "hold"],
+                        ),
+                    )
+                ]
+            )
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=self._build_holdings_message(stocks),
+                config=types.GenerateContentConfig(
+                    system_instruction=SELL_SYSTEM_PROMPT,
+                    tools=[tool],
+                    thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                ),
+            )
+            for part in response.candidates[0].content.parts:
+                if part.function_call and part.function_call.name == "classify_holdings_sell_decision":
+                    args = dict(part.function_call.args)
+                    return {
+                        "sell": list(args.get("sell", [])),
+                        "watch": list(args.get("watch", [])),
+                        "hold": list(args.get("hold", [])),
+                    }
+            logger.warning("Gemini 未回傳持倉分析 function_call")
+            return {"sell": [], "watch": [], "hold": []}
+        except Exception as e:
+            logger.error(f"Gemini API 持倉分析呼叫失敗: {e}")
             raise

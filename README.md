@@ -118,6 +118,10 @@ python main.py download
 # 今日買賣訊號（P1 完整策略，建議進出場）
 python main.py signals
 
+# 持倉賣出檢查（讀 Google Sheets，判斷是否應賣出，含 AI 分析）
+python main.py check-holdings
+python main.py check-holdings --send-telegram
+
 # 執行股票觀察清單
 python main.py scan
 
@@ -526,6 +530,45 @@ python -m src.interfaces.trade_bot_main
 docker compose up trade-recorder
 ```
 
+### 持倉賣出檢查
+
+每日 10:00 自動檢查 Google Sheets 記錄的持倉，判斷是否應賣出。
+
+**流程：**
+1. 讀取 Google Sheets 交易記錄，取每支股票最後一筆 action：`買入` = 未平倉，`賣出` = 已平倉（略過）
+2. 執行全市場 P1 訊號掃描，取得賣出訊號（RSI Momentum Loss / MACD Death Cross / Death Cross）
+3. 篩選持倉中有賣出訊號的股票，enrichment：現金損益%、持有天數、族群強弱、月營收年增率
+4. 呼叫 AI（Claude/OpenAI/Gemini）做最終判斷：**確認賣出 / 設停損觀察 / 繼續持有**
+5. 發送 Telegram 通知
+
+**本地執行：**
+```bash
+# 僅顯示結果
+python main.py check-holdings
+
+# 同時發送 Telegram
+python main.py check-holdings --send-telegram
+```
+
+**Telegram 通知範例：**
+```
+📋 持倉賣出檢查 2024-05-01
+持倉 3 支，賣出訊號 1 支
+
+⚠️ P1 賣出訊號（持倉中）1 支
+  2330 台積電 [MACD Death Cross] -2.3% 持有15天
+
+🤖 AI 持倉分析
+
+🔴 建議出場 (1 支)
+【2330 台積電】
+└ 族群轉弱、MACD 訊號明確，建議立即出場
+
+✅ 繼續持有 (0 支)
+```
+
+> **說明：** 若 Google Sheets 無任何持倉記錄，或持倉股票今日無賣出訊號，則發送「無賣出訊號」的簡短通知。
+
 ### GCP 生產部署（Terraform IaC）
 
 本專案使用 Terraform 管理所有 GCP 資源，CI/CD（GitHub Actions）於每次推送 `main` 分支時自動執行 `terraform apply`。
@@ -539,6 +582,15 @@ Cloud Scheduler (台北時間 08:05 週一至五)
 GCP Workflows (bag-holder-run-jobs)
     ├─ Cloud Run Job: bag-holder-download   # 下載台股資料
     └─ Cloud Run Job: bag-holder-signals    # 產生買賣訊號並推送 Telegram
+
+Cloud Scheduler (台北時間 10:00 週一至五)
+    │
+    ▼
+GCP Workflows (bag-holder-run-jobs-10)
+    ├─ Cloud Run Job: bag-holder-download        # 重新下載最新資料
+    ├─ Cloud Run Job: bag-holder-signals         # 再次產生買賣訊號
+    └─ Cloud Run Job: bag-holder-check-holdings  # 持倉賣出檢查（含 AI 判斷）
+
 Cloud Run Service: bag-holder-webhook       # Telegram Webhook Bot
 ```
 
@@ -548,8 +600,10 @@ Cloud Run Service: bag-holder-webhook       # Telegram Webhook Bot
 |---|---|---|
 | Cloud Run Job | `bag-holder-download` | 每日下載股票資料 |
 | Cloud Run Job | `bag-holder-signals` | 每日產生買賣訊號 |
+| Cloud Run Job | `bag-holder-check-holdings` | 持倉賣出檢查（含 AI 判斷） |
 | Cloud Run Service | `bag-holder-webhook` | Telegram Webhook Bot |
-| GCP Workflows | `bag-holder-run-jobs` | 依序執行 download → signals |
+| GCP Workflows | `bag-holder-run-jobs` | 08:05 依序執行 download → signals |
+| GCP Workflows | `bag-holder-run-jobs-10` | 10:00 依序執行 download → signals → check-holdings |
 | Cloud Scheduler | `bag-holder-run-jobs-trigger` | UTC 00:05（台北 08:05）觸發 |
 
 #### Terraform 結構
@@ -1102,6 +1156,19 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - AI 產生的 `reason` 文字含 `_`、`[`、`*` 等字元時，Telegram 以 Markdown 解析會回傳 400 錯誤
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
+
+### v3.1.0 - 2026-05-04
+- 🆕 **10:00 Signals 排程**：新增台北時間 10:00 (M-F) 的第二次 signals 掃描（download → signals → Telegram + AI 過濾）
+- 🆕 **持倉賣出檢查（`python main.py check-holdings`）**：
+  - 讀取 Google Sheets 交易記錄，自動判斷未平倉持倉（最後 action = 買入）
+  - 比對當日 P1 賣出訊號（RSI Momentum Loss / MACD Death Cross / Death Cross）
+  - Enrich 每筆警示：現金損益%、持有天數、族群強弱、月營收年增率
+  - AI（Claude/OpenAI/Gemini）三分類判斷：確認賣出 / 設停損觀察 / 繼續持有
+  - 結果推送 Telegram
+  - 已有「賣出」記錄的股票自動略過
+- 🆕 **新增 Cloud Run Job `bag-holder-check-holdings`**
+- 🆕 **新增 GCP Workflow `bag-holder-run-jobs-10`**（10:00 workflow）
+- 🆕 **AI 持倉分析擴充**：`BaseAIAnalyzer` 新增 `analyze_holdings()` / `format_holdings_for_telegram()` 方法
 
 ### v3.0.2 - 2026-04-28
 - 🐛 修正 Cloud Scheduler cron 時間錯誤：`5 0 * * 1-5` → `5 8 * * 1-5`（台北時間 08:05，原本實際執行於 00:05）

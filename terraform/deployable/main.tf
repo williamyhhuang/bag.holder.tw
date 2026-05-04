@@ -66,6 +66,24 @@ module "job_signals" {
   env_vars              = local.common_env_vars
 }
 
+# ── Cloud Run Job: bag-holder-check-holdings ─────────────────────────────────
+module "job_check_holdings" {
+  source = "../modules/cloud_run_job"
+
+  name                  = "bag-holder-check-holdings"
+  project_id            = var.project_id
+  region                = var.region
+  image                 = var.image
+  service_account_email = local.runner_sa_email
+  command               = ["/entrypoint-check-holdings.sh"]
+  memory                = "2Gi"
+  cpu                   = "2"
+  task_timeout_seconds  = 600
+  max_retries           = 1
+  secret_env_vars       = local.common_secret_env_vars
+  env_vars              = local.common_env_vars
+}
+
 # ── Cloud Run Service: bag-holder-webhook ─────────────────────────────────────
 module "service_webhook" {
   source = "../modules/cloud_run_service"
@@ -87,7 +105,7 @@ module "service_webhook" {
   env_vars              = local.common_env_vars
 }
 
-# ── GCP Workflows: download → signals 依序執行 ───────────────────────────────
+# ── GCP Workflows: download → signals 依序執行（08:05）────────────────────────
 resource "google_workflows_workflow" "run_jobs" {
   name            = "bag-holder-run-jobs"
   region          = var.region
@@ -96,6 +114,17 @@ resource "google_workflows_workflow" "run_jobs" {
   source_contents = file("${path.module}/run-jobs.workflow.yaml")
 
   depends_on = [module.job_download, module.job_signals]
+}
+
+# ── GCP Workflows: download → signals → check-holdings 依序執行（10:00）────────
+resource "google_workflows_workflow" "run_jobs_10" {
+  name            = "bag-holder-run-jobs-10"
+  region          = var.region
+  project         = var.project_id
+  service_account = local.runner_sa_email
+  source_contents = file("${path.module}/run-jobs-10.workflow.yaml")
+
+  depends_on = [module.job_download, module.job_signals, module.job_check_holdings]
 }
 
 # ── Cloud Scheduler → GCP Workflows ──────────────────────────────────────────
@@ -119,6 +148,28 @@ resource "google_cloud_scheduler_job" "run_jobs" {
   }
 
   depends_on = [google_workflows_workflow.run_jobs]
+}
+
+# 台北時間 10:00 週一至週五（signals + 持倉賣出檢查）
+resource "google_cloud_scheduler_job" "run_jobs_10" {
+  name             = "bag-holder-run-jobs-10-trigger"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "0 10 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "320s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.run_jobs_10.id}/executions"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = local.runner_sa_email
+    }
+  }
+
+  depends_on = [google_workflows_workflow.run_jobs_10]
 }
 
 # ── Monitoring: Email notification channel ────────────────────────────────────
