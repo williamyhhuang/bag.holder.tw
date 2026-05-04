@@ -3,7 +3,9 @@ Utility for fetching and caching Taiwan stock names from TWSE/TPEX APIs
 """
 import json
 import requests
+import urllib3
 import pandas as pd
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Optional
@@ -25,7 +27,7 @@ def _fetch_tse_names() -> Dict[str, str]:
     try:
         url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
         headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=10, verify=False)
         resp.raise_for_status()
         data = resp.json()
         return {
@@ -43,7 +45,7 @@ def _fetch_otc_names() -> Dict[str, str]:
     try:
         url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
         headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=10, verify=False)
         resp.raise_for_status()
         data = resp.json()
         return {

@@ -5,6 +5,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 import json
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 import os
@@ -40,7 +42,7 @@ class YFinanceClient:
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
             }
 
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10, verify=False)
             response.raise_for_status()
 
             data = response.json()
@@ -83,7 +85,7 @@ class YFinanceClient:
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
             }
 
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10, verify=False)
             response.raise_for_status()
 
             data = response.json()

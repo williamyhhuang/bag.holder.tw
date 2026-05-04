@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Dict, Optional, Set
 
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,7 @@ def _fetch_from_twse() -> Dict[str, str]:
         (_TWSE_NOTETRANS_URL, "注意股"),
     ]:
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, timeout=15, verify=False)
             resp.raise_for_status()
 
             text = resp.text.strip()

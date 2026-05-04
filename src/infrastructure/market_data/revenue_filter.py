@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +61,7 @@ def _fetch_revenue_from_api() -> Dict[str, dict]:
 
     for url, market in [(_TSE_URL, "TSE"), (_OTC_URL, "OTC")]:
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, timeout=15, verify=False)
             resp.raise_for_status()
 
             # 部分端點在無資料時回傳 HTML

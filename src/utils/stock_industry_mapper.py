@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from src.utils.logger import get_logger
 
@@ -82,7 +84,7 @@ def _fetch_twse_industries() -> Dict[str, str]:
     """
     url = "https://openapi.twse.com.tw/v1/opendata/t187ap03_L"
     try:
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15, verify=False)
         resp.raise_for_status()
         result = {}
         for item in resp.json():
@@ -103,7 +105,7 @@ def _fetch_tpex_industries() -> Dict[str, str]:
     """
     url = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O"
     try:
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15, verify=False)
         resp.raise_for_status()
         result = {}
         for item in resp.json():
