@@ -7,12 +7,13 @@ from zoneinfo import ZoneInfo
 from typing import Optional
 
 from ...utils.logger import get_logger
+from ...utils.stock_name_mapper import lookup_name
 
 logger = get_logger(__name__)
 
 # 工作表欄位定義（順序即 Google Sheets 欄位順序）
 SHEET_HEADERS = [
-    "timestamp", "date", "time", "stock_code", "action",
+    "timestamp", "date", "time", "stock_code", "stock_name", "action",
     "price", "quantity", "amount", "notes"
 ]
 
@@ -108,12 +109,16 @@ class GoogleSheetsRecorder:
             ws = self._get_worksheet()
             now = datetime.now(ZoneInfo("Asia/Taipei"))
             amount = round(price * quantity, 2)
+            # stock_code 可能是 "2330" 或 "2330.TW"；lookup_name 需要帶市場後綴
+            _code = stock_code.split(".")[0]  # 取純代號
+            stock_name = lookup_name(f"{_code}_TW") or lookup_name(f"{_code}_TWO") or ""
 
             row = [
                 now.isoformat(timespec="seconds"),   # timestamp
                 now.strftime("%Y-%m-%d"),             # date
                 now.strftime("%H:%M:%S"),             # time
                 stock_code,                           # stock_code
+                stock_name,                           # stock_name
                 action,                               # action
                 price,                                # price
                 quantity,                             # quantity

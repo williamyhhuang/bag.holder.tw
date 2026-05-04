@@ -694,6 +694,7 @@ curl https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo
 | date | 交易日期 (YYYY-MM-DD) |
 | time | 交易時間 (HH:MM:SS) |
 | stock_code | 股票代號 |
+| stock_name | 股票名稱（從 TWSE/TPEX 查詢，查無則空白） |
 | action | 買入 / 賣出 |
 | price | 成交價格 |
 | quantity | 股數 |
@@ -1010,6 +1011,10 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - 新設定 `BACKTEST_MIN_REVENUE_YOY_PCT`（預設 0=停用）
 - ⚙️ **新增 settings.py 參數**（共 7 個）：`enable_disposal_filter`、`filter_attention_stocks`、`enable_institutional_filter`、`institutional_min_foreign_net_shares`、`institutional_min_trust_net_shares`、`institutional_require_any`、`min_revenue_yoy_pct`
 - ✅ **新增 65 個單元測試**：`test_disposal_filter.py`（18）、`test_institutional_filter.py`（18）、`test_revenue_filter.py` 擴增（29 → 29）
+
+### v3.4.1 - 2026-05-04
+- 📋 **Google Sheets 交易記錄新增「股票名稱」欄位**：`stock_code` 欄位後新增 `stock_name`，自動從 TWSE/TPEX API 查詢中文名稱（如「台積電」），查無時留空
+- ✅ 更新 `test_google_sheets_recorder.py` 以反映新欄位順序，修正測試正確使用 mock 隔離環境設定
 
 ### v3.4.0 - 2026-04-10
 - 📁 **signals 歷史記錄自動儲存**：每次執行 `python main.py signals` 自動將結果（買入、賣出、族群摘要）存為 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比對

@@ -11,11 +11,17 @@ class TestGoogleSheetsRecorderAvailability:
     def test_not_available_when_disabled(self):
         from src.infrastructure.persistence.google_sheets_recorder import GoogleSheetsRecorder
 
-        with patch("src.infrastructure.persistence.google_sheets_recorder.logger"):
-            recorder = GoogleSheetsRecorder()
+        recorder = GoogleSheetsRecorder()
 
-        # settings.google_sheets.enabled = False by default
-        assert recorder.is_available() is False
+        mock_cfg = MagicMock()
+        mock_cfg.enabled = False
+        mock_cfg.spreadsheet_id = "fake_id"
+        mock_cfg.credentials_json = '{"type":"service_account"}'
+        mock_cfg.credentials_file = None
+
+        with patch("config.settings.settings") as mock_settings:
+            mock_settings.google_sheets = mock_cfg
+            assert recorder.is_available() is False
 
     def test_not_available_missing_spreadsheet_id(self):
         from src.infrastructure.persistence.google_sheets_recorder import GoogleSheetsRecorder
@@ -93,32 +99,35 @@ class TestGoogleSheetsRecorderWrite:
         recorder, mock_ws = self._make_recorder_with_mock_ws()
         mock_ws.append_row.return_value = None
 
-        result = recorder.record_trade(
-            stock_code="2330",
-            action="買入",
-            price=150.5,
-            quantity=1000,
-            notes="test",
-        )
+        with patch("src.infrastructure.persistence.google_sheets_recorder.lookup_name", return_value="台積電"):
+            result = recorder.record_trade(
+                stock_code="2330",
+                action="買入",
+                price=150.5,
+                quantity=1000,
+                notes="test",
+            )
 
         assert result is True
         mock_ws.append_row.assert_called_once()
         row = mock_ws.append_row.call_args[0][0]
-        assert row[3] == "2330"
-        assert row[4] == "買入"
-        assert row[5] == 150.5
-        assert row[6] == 1000
-        assert row[7] == pytest.approx(150500.0)
+        assert row[3] == "2330"        # stock_code
+        assert row[4] == "台積電"      # stock_name
+        assert row[5] == "買入"        # action
+        assert row[6] == 150.5         # price
+        assert row[7] == 1000          # quantity
+        assert row[8] == pytest.approx(150500.0)  # amount
 
     def test_record_trade_returns_false_on_exception(self):
         recorder, mock_ws = self._make_recorder_with_mock_ws()
         mock_ws.append_row.side_effect = Exception("network error")
 
-        result = recorder.record_trade(
-            stock_code="2330",
-            action="賣出",
-            price=160.0,
-        )
+        with patch("src.infrastructure.persistence.google_sheets_recorder.lookup_name", return_value=""):
+            result = recorder.record_trade(
+                stock_code="2330",
+                action="賣出",
+                price=160.0,
+            )
 
         assert result is False
 
@@ -126,7 +135,8 @@ class TestGoogleSheetsRecorderWrite:
         recorder, mock_ws = self._make_recorder_with_mock_ws()
         mock_ws.append_row.return_value = None
 
-        recorder.record_trade(stock_code="2454", action="買入", price=200.0)
+        with patch("src.infrastructure.persistence.google_sheets_recorder.lookup_name", return_value=""):
+            recorder.record_trade(stock_code="2454", action="買入", price=200.0)
 
         row = mock_ws.append_row.call_args[0][0]
-        assert row[6] == 1000  # default quantity
+        assert row[7] == 1000  # default quantity (index shifted by stock_name)
