@@ -652,7 +652,12 @@ class GoogleSheetsSettings(BaseSettings):
     # 是否啟用 Google Sheets 同步
     enabled: bool = Field(default=False, validation_alias=AliasChoices("GOOGLE_SHEETS_ENABLED"))
 
-    model_config = {"extra": "ignore", "populate_by_name": True}
+    model_config = {
+        "extra": "ignore",
+        "populate_by_name": True,
+        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file_encoding": "utf-8",
+    }
 
 
 class AIAnalyzerSettings(BaseSettings):
