@@ -7,6 +7,7 @@ from typing import Optional
 
 from ...infrastructure.persistence.user_trades_recorder import UserTradesRecorder
 from ...infrastructure.persistence.google_sheets_recorder import GoogleSheetsRecorder
+from ...infrastructure.persistence.google_sheets_reader import GoogleSheetsReader
 from .telegram_notifier import TelegramNotifier
 from ...utils.logger import get_logger
 
@@ -19,6 +20,7 @@ class TradingBot:
     def __init__(self):
         self.trade_recorder = UserTradesRecorder()
         self.sheets_recorder = GoogleSheetsRecorder()
+        self.sheets_reader = GoogleSheetsReader()
         self.notifier = TelegramNotifier()
         self.logger = get_logger(self.__class__.__name__)
 
@@ -212,11 +214,92 @@ class TradingBot:
             "  買入 2330 150.5        (預設 1000 股)\n\n"
             "記錄賣出:\n"
             "  賣出 2330 165 1000\n\n"
+            "查看損益: /pnl\n"
             "查看統計: /stats\n"
             "查看記錄: /trades\n\n"
             "格式說明:\n"
             "[買入|賣出] [股票代號] [價格] [股數(選填)]"
         )
+
+    def handle_pnl_command(self) -> str:
+        """
+        讀取 Google Sheets 交易記錄，計算未實現損益與已實現損益並格式化輸出。
+        指令：/pnl
+        """
+        if not self.sheets_recorder.is_available():
+            return "❌ Google Sheets 未設定，無法查詢損益\n請確認 GOOGLE_SHEETS_ENABLED=true 及相關憑證"
+
+        try:
+            summary = self.sheets_reader.get_pnl_summary()
+        except Exception as e:
+            self.logger.error(f"get_pnl_summary error: {e}")
+            return f"❌ 讀取損益資料失敗：{e}"
+
+        if summary is None:
+            return "❌ 無法讀取 Google Sheets，請檢查連線設定"
+
+        lines: list[str] = []
+        lines.append(f"📊 *損益摘要*")
+        lines.append(f"🕐 {summary.fetch_time}")
+        lines.append("")
+
+        # ── 未實現損益 ──────────────────────
+        lines.append("━━━ 未實現損益 ━━━")
+        if not summary.unrealized:
+            lines.append("  目前無持倉")
+        else:
+            for pos in summary.unrealized:
+                name_str = f" {pos.stock_name}" if pos.stock_name else ""
+                emoji = "📈" if pos.unrealized_pnl >= 0 else "📉"
+                sign = "+" if pos.unrealized_pnl >= 0 else ""
+                pnl_sign = "+" if pos.pnl_pct >= 0 else ""
+
+                if pos.current_price > 0:
+                    lines.append(
+                        f"{emoji} *{pos.stock_code}*{name_str}\n"
+                        f"  買入 {pos.entry_price:.2f} → 現價 {pos.current_price:.2f}\n"
+                        f"  {pos.quantity:,} 股｜{sign}{pos.unrealized_pnl:,.0f} ({pnl_sign}{pos.pnl_pct:.1f}%)"
+                    )
+                else:
+                    lines.append(
+                        f"⚠️ *{pos.stock_code}*{name_str}\n"
+                        f"  買入 {pos.entry_price:.2f}｜{pos.quantity:,} 股\n"
+                        f"  （無法取得即時股價）"
+                    )
+                lines.append("")
+
+        unrealized_sign = "+" if summary.total_unrealized_pnl >= 0 else ""
+        lines.append(f"未實現合計：*{unrealized_sign}{summary.total_unrealized_pnl:,.0f}*")
+        lines.append("")
+
+        # ── 已實現損益 ──────────────────────
+        lines.append("━━━ 已實現損益 ━━━")
+        if not summary.realized:
+            lines.append("  尚無已實現交易")
+        else:
+            for trade in summary.realized:
+                name_str = f" {trade.stock_name}" if trade.stock_name else ""
+                emoji = "✅" if trade.realized_pnl >= 0 else "🔴"
+                sign = "+" if trade.realized_pnl >= 0 else ""
+                pnl_sign = "+" if trade.pnl_pct >= 0 else ""
+                lines.append(
+                    f"{emoji} *{trade.stock_code}*{name_str} ({trade.exit_date})\n"
+                    f"  {trade.entry_price:.2f} → {trade.exit_price:.2f}｜{trade.quantity:,} 股\n"
+                    f"  {sign}{trade.realized_pnl:,.0f} ({pnl_sign}{trade.pnl_pct:.1f}%)"
+                )
+                lines.append("")
+
+        realized_sign = "+" if summary.total_realized_pnl >= 0 else ""
+        lines.append(f"已實現合計：*{realized_sign}{summary.total_realized_pnl:,.0f}*")
+        lines.append("")
+
+        # ── 總損益 ──────────────────────────
+        total = summary.total_unrealized_pnl + summary.total_realized_pnl
+        total_sign = "+" if total >= 0 else ""
+        total_emoji = "💰" if total >= 0 else "💸"
+        lines.append(f"{total_emoji} 總損益：*{total_sign}{total:,.0f}*")
+
+        return "\n".join(lines)
 
     def handle_scan_command(self) -> str:
         """
@@ -264,6 +347,8 @@ class TradingBot:
 
             if message.startswith('/scan'):
                 return self.handle_scan_command()
+            elif message.startswith('/pnl'):
+                return self.handle_pnl_command()
             elif message.startswith('/stats'):
                 return self.handle_stats_request()
             elif message.startswith('/trades'):

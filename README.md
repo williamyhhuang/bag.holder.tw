@@ -476,9 +476,44 @@ trade_id,timestamp,symbol,action,quantity,price,status,notes
 | `買入 股票代號 價格 [股數]` | 記錄買入（股數預設 1000） | `買入 2330 150.5 1000` |
 | `賣出 股票代號 價格 [股數]` | 記錄賣出 | `賣出 2330 165` |
 | `/scan` | 觸發 GCP download + signals，結果自動傳送至 Telegram | `/scan` |
+| `/pnl` | 查看未實現損益與已實現損益摘要 | `/pnl` |
 | `/stats` | 近 30 天交易統計 | `/stats` |
 | `/trades` | 最近 10 筆記錄 | `/trades` |
 | `/help` | 顯示說明 | `/help` |
+
+### `/pnl` — 損益查詢
+
+在 Telegram 輸入 `/pnl` 後，系統會：
+1. 讀取 Google Sheets 全部交易記錄
+2. 以 FIFO 配對計算**已實現損益**（歷史賣出配對買入）
+3. 從 yfinance 取得即時股價，計算**未實現損益**（現有持倉）
+4. 以手機易讀格式回傳摘要
+
+**回應格式範例：**
+```
+📊 損益摘要
+🕐 2026-05-08 14:30
+
+━━━ 未實現損益 ━━━
+📈 2330 台積電
+  買入 150.00 → 現價 180.00
+  1,000 股｜+30,000 (+20.0%)
+
+未實現合計：+30,000
+
+━━━ 已實現損益 ━━━
+✅ 2330 台積電 (2026-04-10)
+  140.00 → 160.00｜1,000 股
+  +20,000 (+14.3%)
+
+已實現合計：+20,000
+
+💰 總損益：+50,000
+```
+
+**需求：**
+- Google Sheets 需啟用（`GOOGLE_SHEETS_ENABLED=true`）且已有交易記錄
+- yfinance 需可連線（取得即時股價），若無法取得則顯示「無法取得即時股價」
 
 ### `/scan` — 手動觸發掃描
 
@@ -815,6 +850,13 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.6.0 - 2026-05-08
+- 📊 **Telegram `/pnl` 指令**：在 Telegram 輸入 `/pnl` 即可查看未實現損益與已實現損益摘要，格式針對手機閱讀最佳化
+  - 更新 `src/infrastructure/persistence/google_sheets_reader.py`：新增 `get_pnl_summary()`，以 FIFO 配對已實現損益，用 yfinance 取得即時股價計算未實現損益
+  - 更新 `src/infrastructure/notification/telegram_trade_bot.py`：新增 `handle_pnl_command()`，`process_telegram_command()` 加入 `/pnl` 分派，`/help` 加入 `/pnl` 說明
+  - 新增 `tests/test_google_sheets_reader_pnl.py`：14 個 P&L 計算單元測試
+  - 更新 `tests/test_trade_bot_commands.py`：新增 11 個 `/pnl` 指令測試
 
 ### v5.5.0 - 2026-05-08
 - 📲 **Telegram `/scan` 指令**：在 Telegram 輸入 `/scan` 即可手動觸發 GCP download + signals 工作流程，結果自動推送至 Telegram
