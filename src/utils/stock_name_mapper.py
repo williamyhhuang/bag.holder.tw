@@ -22,6 +22,22 @@ CACHE_FILE = project_root / "data" / "cache" / "stock_names.json"
 CACHE_TTL_HOURS = 24
 
 
+def _is_valid_tw_code(code: str) -> bool:
+    """
+    Accept regular stock codes (4-digit) and ETF codes (5-6 chars).
+    Also accepts leveraged/inverse ETF codes ending with a letter, e.g. 00631L, 00632R.
+    """
+    if not code:
+        return False
+    # Pure digits: 4-digit stocks (2330) or 6-digit ETFs (006208)
+    if code.isdigit():
+        return True
+    # Digits + one trailing letter: leveraged/inverse ETFs (00631L, 00632R)
+    if len(code) >= 2 and code[:-1].isdigit() and code[-1].isalpha():
+        return True
+    return False
+
+
 def _fetch_tse_names() -> Dict[str, str]:
     """Fetch stock names from TWSE API"""
     try:
@@ -33,7 +49,7 @@ def _fetch_tse_names() -> Dict[str, str]:
         return {
             f"{item['Code']}.TW": item["Name"]
             for item in data
-            if "Code" in item and "Name" in item and item["Code"].isdigit() and len(item["Code"]) == 4
+            if "Code" in item and "Name" in item and _is_valid_tw_code(item["Code"])
         }
     except Exception as e:
         logger.warning(f"Failed to fetch TSE stock names: {e}")
@@ -53,8 +69,7 @@ def _fetch_otc_names() -> Dict[str, str]:
             for item in data
             if "SecuritiesCompanyCode" in item
             and "CompanyName" in item
-            and item["SecuritiesCompanyCode"].isdigit()
-            and len(item["SecuritiesCompanyCode"]) == 4
+            and _is_valid_tw_code(item["SecuritiesCompanyCode"])
         }
     except Exception as e:
         logger.warning(f"Failed to fetch OTC stock names: {e}")
