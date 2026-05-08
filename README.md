@@ -853,7 +853,7 @@ docker compose up -d
 
 ### v5.6.0 - 2026-05-08
 - 📊 **Telegram `/pnl` 指令**：在 Telegram 輸入 `/pnl` 即可查看未實現損益與已實現損益摘要，格式針對手機閱讀最佳化
-  - 更新 `src/infrastructure/persistence/google_sheets_reader.py`：新增 `get_pnl_summary()`，以 FIFO 配對已實現損益，用 yfinance 取得即時股價計算未實現損益
+  - 更新 `src/infrastructure/persistence/google_sheets_reader.py`：`get_pnl_summary()` 直接讀取「未實現損益」（Apps Script 即時股價）與「已實現損益」兩個專屬工作表，不再呼叫 yfinance；新增 `unrealized_pnl_worksheet_name`（預設「未實現損益」）與 `realized_pnl_worksheet_name`（預設「已實現損益」）設定
   - 更新 `src/infrastructure/notification/telegram_trade_bot.py`：新增 `handle_pnl_command()`，`process_telegram_command()` 加入 `/pnl` 分派，`/help` 加入 `/pnl` 說明
   - 更新 `src/interfaces/api/webhook_app.py`：`/pnl` 以 background task 執行（同 `/scan`）；新增 `_send_sync()` 使用 sync httpx，並在 Telegram Markdown 解析失敗（400）時自動 fallback 純文字重試，避免訊息靜默消失
   - 新增 `tests/test_google_sheets_reader_pnl.py`：14 個 P&L 計算單元測試

@@ -656,6 +656,10 @@ class GoogleSheetsSettings(BaseSettings):
     spreadsheet_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("GOOGLE_SHEETS_SPREADSHEET_ID"))
     # 工作表名稱（預設：交易記錄）
     worksheet_name: str = Field(default="交易記錄", validation_alias=AliasChoices("GOOGLE_SHEETS_WORKSHEET_NAME"))
+    # 未實現損益工作表名稱（Apps Script 計算即時股價）
+    unrealized_pnl_worksheet_name: str = Field(default="未實現損益", validation_alias=AliasChoices("GOOGLE_SHEETS_UNREALIZED_WORKSHEET"))
+    # 已實現損益工作表名稱
+    realized_pnl_worksheet_name: str = Field(default="已實現損益", validation_alias=AliasChoices("GOOGLE_SHEETS_REALIZED_WORKSHEET"))
     # Service Account JSON 憑證（可直接貼整個 JSON 字串，或設為檔案路徑）
     credentials_json: Optional[str] = Field(default=None, validation_alias=AliasChoices("GOOGLE_CREDENTIALS_JSON"))
     # 或使用憑證檔案路徑

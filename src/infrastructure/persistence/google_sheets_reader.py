@@ -1,17 +1,24 @@
 """
-Google Sheets trade reader — reads existing records to determine open positions
-and compute unrealized / realized P&L.
+Google Sheets trade reader.
+
+Reads three worksheets managed by the 台股套牢指南 spreadsheet:
+  - 交易記錄     : raw trade log  → open positions (for holdings checker)
+  - 未實現損益   : Apps-Script computed unrealized P&L with live prices
+  - 已實現損益   : Apps-Script computed realized P&L from trade history
 """
 import json
-from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Domain models
+# ---------------------------------------------------------------------------
 
 @dataclass
 class HoldingRecord:
@@ -25,24 +32,24 @@ class HoldingRecord:
 class UnrealizedPosition:
     stock_code: str
     stock_name: str
-    entry_price: float
-    entry_date: str
+    entry_price: float      # 平均成本
+    entry_date: str         # not available from this sheet; kept for compat
     quantity: int
-    current_price: float        # fetched from yfinance
-    unrealized_pnl: float       # (current_price - entry_price) * quantity
-    pnl_pct: float              # percentage change
+    current_price: float    # 即時股價 (from Apps Script)
+    unrealized_pnl: float   # 未實現損益(元)
+    pnl_pct: float          # 報酬率 (%)
 
 
 @dataclass
 class RealizedTrade:
     stock_code: str
     stock_name: str
-    entry_price: float
-    exit_price: float
-    exit_date: str
-    quantity: int
-    realized_pnl: float
-    pnl_pct: float
+    entry_price: float      # 買入均價
+    exit_price: float       # 賣出均價
+    exit_date: str          # 出場日期
+    quantity: int           # 賣出股數
+    realized_pnl: float     # 已實現損益(元)
+    pnl_pct: float          # 報酬率 (%)
 
 
 @dataclass
@@ -54,15 +61,55 @@ class PnlSummary:
     fetch_time: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _parse_pct(val) -> float:
+    """
+    Parse a percentage value from Google Sheets.
+    Handles both formatted strings ('32.74%') and raw decimals (0.3274).
+    Returns the value as a plain percentage float (e.g. 32.74).
+    """
+    if isinstance(val, str):
+        cleaned = val.strip().rstrip('%')
+        return float(cleaned) if cleaned else 0.0
+    # Sheets stores percentages internally as decimals (0.3274 → 32.74%)
+    return round(float(val) * 100, 2)
+
+
+def _parse_num(val, default: float = 0.0) -> float:
+    """Parse a number that may be formatted with thousands commas or be empty."""
+    if val is None or val == '':
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    return float(str(val).replace(',', ''))
+
+
+# ---------------------------------------------------------------------------
+# Reader
+# ---------------------------------------------------------------------------
+
 class GoogleSheetsReader:
-    """讀取 Google Sheets 交易紀錄，判斷未平倉持倉"""
+    """讀取 Google Sheets 三個工作表的損益資料"""
 
     def __init__(self):
-        self._worksheet = None
+        self._client = None
+        self._spreadsheet = None
+        # Cached worksheet handles
+        self._trade_ws = None
+        self._unrealized_ws = None
+        self._realized_ws = None
 
-    def _get_worksheet(self):
-        if self._worksheet is not None:
-            return self._worksheet
+    # ------------------------------------------------------------------
+    # Internal: credential + connection setup
+    # ------------------------------------------------------------------
+
+    def _connect(self):
+        """Lazy-init: authenticate and open the spreadsheet."""
+        if self._spreadsheet is not None:
+            return
 
         try:
             import gspread
@@ -95,43 +142,63 @@ class GoogleSheetsReader:
                 "請設定 GOOGLE_CREDENTIALS_JSON（JSON 字串）或 GOOGLE_CREDENTIALS_FILE（檔案路徑）"
             )
 
-        client = gspread.authorize(creds)
-        spreadsheet = client.open_by_key(gs_cfg.spreadsheet_id)
+        self._client = gspread.authorize(creds)
+        self._spreadsheet = self._client.open_by_key(gs_cfg.spreadsheet_id)
 
+    def _get_worksheet(self, name: str):
+        """Open a worksheet by name (from the cached spreadsheet connection)."""
+        self._connect()
         try:
-            self._worksheet = spreadsheet.worksheet(gs_cfg.worksheet_name)
+            return self._spreadsheet.worksheet(name)
         except Exception:
-            raise RuntimeError(
-                f"找不到工作表 '{gs_cfg.worksheet_name}'，請先有交易記錄"
-            )
+            raise RuntimeError(f"找不到工作表 '{name}'，請確認試算表內有此 tab")
 
-        return self._worksheet
+    def _trade_worksheet(self):
+        if self._trade_ws is None:
+            from config.settings import settings
+            self._trade_ws = self._get_worksheet(settings.google_sheets.worksheet_name)
+        return self._trade_ws
+
+    def _unrealized_worksheet(self):
+        if self._unrealized_ws is None:
+            from config.settings import settings
+            self._unrealized_ws = self._get_worksheet(
+                settings.google_sheets.unrealized_pnl_worksheet_name
+            )
+        return self._unrealized_ws
+
+    def _realized_worksheet(self):
+        if self._realized_ws is None:
+            from config.settings import settings
+            self._realized_ws = self._get_worksheet(
+                settings.google_sheets.realized_pnl_worksheet_name
+            )
+        return self._realized_ws
+
+    # ------------------------------------------------------------------
+    # Public: open positions (for holdings checker, unchanged)
+    # ------------------------------------------------------------------
 
     def get_open_positions(self) -> List[HoldingRecord]:
         """
-        讀取所有交易記錄，依 timestamp 升序排序後，取每支股票的最後一筆 action：
+        讀取交易記錄，依 timestamp 升序排序後，取每支股票的最後一筆 action：
           - 最後一筆為 '買入' → 未平倉，回傳 HoldingRecord
           - 最後一筆為 '賣出' → 已平倉，略過
-
-        Returns:
-            List of HoldingRecord for open positions
         """
         try:
-            ws = self._get_worksheet()
-            records = ws.get_all_records()  # list of dicts, header row is excluded
+            ws = self._trade_worksheet()
+            records = ws.get_all_records()
         except Exception as e:
-            logger.error(f"無法讀取 Google Sheets: {e}")
+            logger.error(f"無法讀取交易記錄工作表: {e}")
             return []
 
         if not records:
             logger.info("Google Sheets 無交易記錄")
             return []
 
-        # Sort by timestamp ascending (ISO format sorts correctly as string)
         records_sorted = sorted(records, key=lambda r: str(r.get("timestamp", "")))
 
-        # Track last action per stock_code
-        last_record: dict[str, dict] = {}
+        last_record: Dict[str, dict] = {}
         for r in records_sorted:
             code = str(r.get("stock_code", "")).strip()
             action = str(r.get("action", "")).strip()
@@ -142,17 +209,12 @@ class GoogleSheetsReader:
         for code, r in last_record.items():
             if str(r.get("action", "")).strip() == "買入":
                 try:
-                    entry_price = float(r.get("price", 0))
-                    entry_date = str(r.get("date", "")).strip()
-                    quantity = int(r.get("quantity", 0))
-                    open_positions.append(
-                        HoldingRecord(
-                            stock_code=code,
-                            entry_price=entry_price,
-                            entry_date=entry_date,
-                            quantity=quantity,
-                        )
-                    )
+                    open_positions.append(HoldingRecord(
+                        stock_code=code,
+                        entry_price=float(r.get("price", 0)),
+                        entry_date=str(r.get("date", "")).strip(),
+                        quantity=int(r.get("quantity", 0)),
+                    ))
                 except (ValueError, TypeError) as e:
                     logger.warning(f"無法解析 {code} 的持倉資料: {e}")
 
@@ -160,212 +222,101 @@ class GoogleSheetsReader:
         return open_positions
 
     # ------------------------------------------------------------------
-    # P&L helpers
+    # Public: P&L summary (reads dedicated P&L sheets directly)
     # ------------------------------------------------------------------
-
-    def _fetch_current_prices(self, codes: List[str]) -> Dict[str, float]:
-        """
-        從 yfinance 批次取得最新股價。
-        嘗試 .TW 後綴，若無資料再試 .TWO。
-
-        Returns:
-            dict of {stock_code: price}  (price=0.0 if unavailable)
-        """
-        if not codes:
-            return {}
-
-        try:
-            import yfinance as yf
-        except ImportError:
-            logger.warning("yfinance 未安裝，無法取得即時股價")
-            return {c: 0.0 for c in codes}
-
-        prices: Dict[str, float] = {}
-        tw_symbols = [f"{c}.TW" for c in codes]
-
-        try:
-            data = yf.download(
-                tw_symbols,
-                period="5d",
-                progress=False,
-                auto_adjust=True,
-            )
-            close = data.get("Close", data) if isinstance(data.columns, object) and "Close" in data.columns else data
-
-            for code in codes:
-                sym = f"{code}.TW"
-                try:
-                    if hasattr(close, 'columns') and sym in close.columns:
-                        series = close[sym].dropna()
-                    elif len(codes) == 1:
-                        series = close.dropna()
-                    else:
-                        series = None
-
-                    if series is not None and len(series) > 0:
-                        prices[code] = float(series.iloc[-1])
-                    else:
-                        prices[code] = 0.0
-                except Exception:
-                    prices[code] = 0.0
-        except Exception as e:
-            logger.warning(f"yfinance 批次下載失敗: {e}")
-            for code in codes:
-                prices[code] = 0.0
-
-        # Retry missing with .TWO suffix
-        missing = [c for c, p in prices.items() if p == 0.0]
-        if missing:
-            two_symbols = [f"{c}.TWO" for c in missing]
-            try:
-                data2 = yf.download(
-                    two_symbols,
-                    period="5d",
-                    progress=False,
-                    auto_adjust=True,
-                )
-                close2 = data2.get("Close", data2) if "Close" in data2.columns else data2
-                for code in missing:
-                    sym = f"{code}.TWO"
-                    try:
-                        if hasattr(close2, 'columns') and sym in close2.columns:
-                            series = close2[sym].dropna()
-                        elif len(missing) == 1:
-                            series = close2.dropna()
-                        else:
-                            series = None
-
-                        if series is not None and len(series) > 0:
-                            prices[code] = float(series.iloc[-1])
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        return prices
 
     def get_pnl_summary(self) -> Optional[PnlSummary]:
         """
-        計算未實現損益與已實現損益。
-
-        未實現損益：最後一筆 action = '買入' 的持倉，以 yfinance 即時股價計算。
-        已實現損益：使用 FIFO 配對，每筆賣出與最早買入配對計算損益。
+        讀取「未實現損益」與「已實現損益」工作表（由 Apps Script 即時計算），
+        組合成 PnlSummary。不呼叫任何外部 API。
 
         Returns:
             PnlSummary，或 None（無法讀取 Sheets）
         """
-        try:
-            ws = self._get_worksheet()
-            raw_records = ws.get_all_records()
-        except Exception as e:
-            logger.error(f"無法讀取 Google Sheets: {e}")
+        unrealized = self._read_unrealized_sheet()
+        realized = self._read_realized_sheet()
+
+        if unrealized is None and realized is None:
             return None
 
-        if not raw_records:
-            return PnlSummary(
-                fetch_time=datetime.now().strftime("%Y-%m-%d %H:%M"),
-            )
-
-        # Sort ascending by timestamp
-        records_sorted = sorted(raw_records, key=lambda r: str(r.get("timestamp", "")))
-
-        # Per-stock FIFO buy queue: deque of (price, quantity, date, stock_name)
-        buy_queues: Dict[str, deque] = defaultdict(deque)
-        realized_trades: List[RealizedTrade] = []
-        # Track last seen stock_name per code (may be empty string)
-        stock_names: Dict[str, str] = {}
-
-        for r in records_sorted:
-            code = str(r.get("stock_code", "")).strip()
-            action = str(r.get("action", "")).strip()
-            if not code or action not in ("買入", "賣出"):
-                continue
-
-            name = str(r.get("stock_name", "")).strip()
-            if name:
-                stock_names[code] = name
-
-            try:
-                price = float(r.get("price", 0))
-                quantity = int(r.get("quantity", 0))
-                date = str(r.get("date", "")).strip()
-            except (ValueError, TypeError):
-                continue
-
-            if action == "買入":
-                buy_queues[code].append((price, quantity, date))
-            elif action == "賣出":
-                # FIFO match against buy queue
-                remaining_sell = quantity
-                while remaining_sell > 0 and buy_queues[code]:
-                    buy_price, buy_qty, buy_date = buy_queues[code][0]
-                    matched = min(remaining_sell, buy_qty)
-
-                    pnl = (price - buy_price) * matched
-                    pnl_pct = ((price - buy_price) / buy_price * 100) if buy_price else 0.0
-
-                    realized_trades.append(RealizedTrade(
-                        stock_code=code,
-                        stock_name=stock_names.get(code, ""),
-                        entry_price=buy_price,
-                        exit_price=price,
-                        exit_date=date,
-                        quantity=matched,
-                        realized_pnl=round(pnl, 2),
-                        pnl_pct=round(pnl_pct, 2),
-                    ))
-
-                    remaining_sell -= matched
-                    if matched == buy_qty:
-                        buy_queues[code].popleft()
-                    else:
-                        buy_queues[code][0] = (buy_price, buy_qty - matched, buy_date)
-
-        # Remaining buy queues → open (unrealized) positions
-        open_codes = [c for c, q in buy_queues.items() if q]
-        current_prices = self._fetch_current_prices(open_codes)
-
-        unrealized_positions: List[UnrealizedPosition] = []
-        for code, queue in buy_queues.items():
-            if not queue:
-                continue
-            # Use VWAP of remaining lots as effective entry
-            total_qty = sum(qty for _, qty, _ in queue)
-            if total_qty == 0:
-                continue
-            vwap = sum(p * qty for p, qty, _ in queue) / total_qty
-            earliest_date = queue[0][2]
-
-            current_price = current_prices.get(code, 0.0)
-            if current_price > 0:
-                pnl = (current_price - vwap) * total_qty
-                pnl_pct = (current_price - vwap) / vwap * 100 if vwap else 0.0
-            else:
-                pnl = 0.0
-                pnl_pct = 0.0
-
-            unrealized_positions.append(UnrealizedPosition(
-                stock_code=code,
-                stock_name=stock_names.get(code, ""),
-                entry_price=round(vwap, 2),
-                entry_date=earliest_date,
-                quantity=total_qty,
-                current_price=round(current_price, 2),
-                unrealized_pnl=round(pnl, 2),
-                pnl_pct=round(pnl_pct, 2),
-            ))
-
-        # Sort: unrealized by pnl desc, realized by exit_date desc
-        unrealized_positions.sort(key=lambda x: x.unrealized_pnl, reverse=True)
-        realized_trades.sort(key=lambda x: x.exit_date, reverse=True)
-
-        total_unrealized = sum(p.unrealized_pnl for p in unrealized_positions)
-        total_realized = sum(t.realized_pnl for t in realized_trades)
+        unrealized = unrealized or []
+        realized = realized or []
 
         return PnlSummary(
-            unrealized=unrealized_positions,
-            realized=realized_trades,
-            total_unrealized_pnl=round(total_unrealized, 2),
-            total_realized_pnl=round(total_realized, 2),
+            unrealized=unrealized,
+            realized=realized,
+            total_unrealized_pnl=round(sum(p.unrealized_pnl for p in unrealized), 2),
+            total_realized_pnl=round(sum(t.realized_pnl for t in realized), 2),
             fetch_time=datetime.now().strftime("%Y-%m-%d %H:%M"),
         )
+
+    def _read_unrealized_sheet(self) -> Optional[List[UnrealizedPosition]]:
+        """
+        讀取「未實現損益」工作表。
+        欄位：股票代號, 股票名稱, 持倉股數, 平均成本(元), 即時股價, 未實現損益(元), 報酬率
+        """
+        try:
+            ws = self._unrealized_worksheet()
+            records = ws.get_all_records()
+        except Exception as e:
+            logger.error(f"無法讀取未實現損益工作表: {e}")
+            return None
+
+        positions: List[UnrealizedPosition] = []
+        for r in records:
+            code = str(r.get("股票代號", "")).strip()
+            if not code:
+                continue
+            try:
+                positions.append(UnrealizedPosition(
+                    stock_code=code,
+                    stock_name=str(r.get("股票名稱", "")).strip(),
+                    entry_price=_parse_num(r.get("平均成本(元)", 0)),
+                    entry_date="",
+                    quantity=int(_parse_num(r.get("持倉股數", 0))),
+                    current_price=_parse_num(r.get("即時股價", 0)),
+                    unrealized_pnl=_parse_num(r.get("未實現損益(元)", 0)),
+                    pnl_pct=_parse_pct(r.get("報酬率", 0)),
+                ))
+            except Exception as e:
+                logger.warning(f"無法解析未實現損益列 {code}: {e}")
+
+        logger.info(f"未實現損益：讀取 {len(positions)} 筆")
+        return positions
+
+    def _read_realized_sheet(self) -> Optional[List[RealizedTrade]]:
+        """
+        讀取「已實現損益」工作表。
+        欄位：股票代號, 股票名稱, 賣出股數, 買入均價(元), 賣出均價(元),
+              出場日期, 已實現損益(元), 報酬率
+        """
+        try:
+            ws = self._realized_worksheet()
+            records = ws.get_all_records()
+        except Exception as e:
+            logger.error(f"無法讀取已實現損益工作表: {e}")
+            return None
+
+        trades: List[RealizedTrade] = []
+        for r in records:
+            code = str(r.get("股票代號", "")).strip()
+            if not code:
+                continue
+            try:
+                trades.append(RealizedTrade(
+                    stock_code=code,
+                    stock_name=str(r.get("股票名稱", "")).strip(),
+                    quantity=int(_parse_num(r.get("賣出股數", 0))),
+                    entry_price=_parse_num(r.get("買入均價(元)", 0)),
+                    exit_price=_parse_num(r.get("賣出均價(元)", 0)),
+                    exit_date=str(r.get("出場日期", "")).strip(),
+                    realized_pnl=_parse_num(r.get("已實現損益(元)", 0)),
+                    pnl_pct=_parse_pct(r.get("報酬率", 0)),
+                ))
+            except Exception as e:
+                logger.warning(f"無法解析已實現損益列 {code}: {e}")
+
+        # 最新賣出排最前面
+        trades.sort(key=lambda t: t.exit_date, reverse=True)
+        logger.info(f"已實現損益：讀取 {len(trades)} 筆")
+        return trades
