@@ -85,6 +85,18 @@ def _run_scan_in_background(chat_id: str) -> None:
         logger.error(f"Background scan trigger failed: {exc}", exc_info=True)
 
 
+def _run_pnl_in_background(chat_id: str) -> None:
+    """Background task: compute P&L from Google Sheets + yfinance, then send reply."""
+    try:
+        reply = _use_case._bot.handle_pnl_command()
+        import asyncio
+        asyncio.run(_send_reply(chat_id, reply))
+    except Exception as exc:
+        logger.error(f"Background pnl task failed: {exc}", exc_info=True)
+        import asyncio
+        asyncio.run(_send_reply(chat_id, f"❌ 損益計算失敗：{exc}"))
+
+
 @app.post("/webhook")
 async def telegram_webhook(
     request: Request,
@@ -97,8 +109,8 @@ async def telegram_webhook(
     Telegram always expects HTTP 200; errors are logged and swallowed so
     Telegram does not retry the same message.
 
-    /scan is handled as a background task so Telegram receives an immediate
-    200 response while the GCP Workflow execution is being triggered.
+    /scan and /pnl are handled as background tasks so Telegram receives an
+    immediate 200 response while the slow operation executes asynchronously.
     """
     _verify_secret(x_telegram_bot_api_secret_token)
 
@@ -120,6 +132,10 @@ async def telegram_webhook(
             # Acknowledge immediately; GCP trigger runs in background
             await _send_reply(chat_id, "⏳ 正在觸發掃描，請稍候...")
             background_tasks.add_task(_run_scan_in_background, chat_id)
+        elif text.strip().startswith("/pnl"):
+            # Acknowledge immediately; Google Sheets + yfinance runs in background
+            await _send_reply(chat_id, "⏳ 正在計算損益，請稍候...")
+            background_tasks.add_task(_run_pnl_in_background, chat_id)
         else:
             reply = _use_case.execute(text, chat_id)
             await _send_reply(chat_id, reply)

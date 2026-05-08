@@ -137,3 +137,15 @@ class TestWebhookEndpoint:
         resp = tc.post("/webhook", json=self._update())
         # Telegram must always get HTTP 200
         assert resp.status_code == 200
+
+    def test_pnl_command_sends_ack_and_uses_background_task(self, client):
+        tc, mock_uc, mock_send, _ = client
+        with patch("src.interfaces.api.webhook_app._run_pnl_in_background") as mock_bg:
+            resp = tc.post("/webhook", json=self._update(text="/pnl"))
+        assert resp.status_code == 200
+        # Should NOT call use_case.execute for /pnl
+        mock_uc.execute.assert_not_called()
+        # Should send immediate acknowledgement
+        mock_send.assert_awaited_once()
+        ack_text = mock_send.call_args[0][1]
+        assert "正在計算" in ack_text or "⏳" in ack_text
