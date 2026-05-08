@@ -159,9 +159,11 @@ async def telegram_webhook(
             await _send_reply(chat_id, "⏳ 正在觸發掃描，請稍候...")
             background_tasks.add_task(_run_scan_in_background, chat_id)
         elif text.strip().startswith("/pnl"):
-            # Acknowledge immediately; Google Sheets + yfinance runs in background
-            await _send_reply(chat_id, "⏳ 正在計算損益，請稍候...")
-            background_tasks.add_task(_run_pnl_in_background, chat_id)
+            # Read directly from Google Sheets — fast enough to handle synchronously
+            import asyncio
+            loop = asyncio.get_event_loop()
+            reply = await loop.run_in_executor(None, _use_case._bot.handle_pnl_command)
+            await _send_reply(chat_id, reply)
         else:
             reply = _use_case.execute(text, chat_id)
             await _send_reply(chat_id, reply)
