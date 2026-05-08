@@ -101,9 +101,18 @@ class AppSettings(BaseSettings):
     debug: bool = Field(default=True, env="APP_DEBUG")
     host: str = Field(default="0.0.0.0", env="APP_HOST")
     port: int = Field(default=8000, env="APP_PORT")
-    gcp_project_id: Optional[str] = Field(default=None, env="GCP_PROJECT_ID")
-    gcp_workflow_name: str = Field(default="bag-holder-run-jobs", env="GCP_WORKFLOW_NAME")
-    gcp_workflow_location: str = Field(default="asia-east1", env="GCP_WORKFLOW_LOCATION")
+    gcp_project_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("GCP_PROJECT_ID", "APP_GCP_PROJECT_ID"),
+    )
+    gcp_workflow_name: str = Field(
+        default="bag-holder-run-jobs",
+        validation_alias=AliasChoices("GCP_WORKFLOW_NAME", "APP_GCP_WORKFLOW_NAME"),
+    )
+    gcp_workflow_location: str = Field(
+        default="asia-east1",
+        validation_alias=AliasChoices("GCP_WORKFLOW_LOCATION", "APP_GCP_WORKFLOW_LOCATION"),
+    )
 
     class Config:
         extra = 'ignore'
