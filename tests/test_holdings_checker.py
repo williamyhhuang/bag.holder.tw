@@ -17,7 +17,7 @@ class TestGetOpenPositions:
         reader = GoogleSheetsReader()
         mock_ws = MagicMock()
         mock_ws.get_all_records.return_value = records
-        reader._worksheet = mock_ws
+        reader._trade_ws = mock_ws
         return reader
 
     def test_basic_open_position(self):
@@ -122,8 +122,8 @@ class TestGetOpenPositions:
         """無法連線 → 回傳空清單（不拋例外）"""
         from src.infrastructure.persistence.google_sheets_reader import GoogleSheetsReader
         reader = GoogleSheetsReader()
-        reader._worksheet = MagicMock()
-        reader._worksheet.get_all_records.side_effect = Exception("network error")
+        reader._trade_ws = MagicMock()
+        reader._trade_ws.get_all_records.side_effect = Exception("network error")
         positions = reader.get_open_positions()
         assert positions == []
 
