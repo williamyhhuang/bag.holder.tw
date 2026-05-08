@@ -75,26 +75,52 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _send_sync(chat_id: str, text: str) -> None:
+    """
+    Send a Telegram message synchronously (for use in background tasks).
+    Tries with Markdown first; if Telegram rejects it (e.g., bad parse), retries as plain text.
+    """
+    token = settings.telegram.bot_token
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(url, json={
+                "chat_id": chat_id, "text": text, "parse_mode": "Markdown"
+            })
+            if resp.status_code == 200:
+                return
+            # Telegram rejected Markdown — retry without parse_mode
+            logger.warning(
+                f"Telegram Markdown sendMessage failed ({resp.status_code}): "
+                f"{resp.text[:200]} — retrying as plain text"
+            )
+            resp2 = client.post(url, json={"chat_id": chat_id, "text": text})
+            if resp2.status_code != 200:
+                logger.error(
+                    f"Telegram plain sendMessage also failed ({resp2.status_code}): {resp2.text[:200]}"
+                )
+    except Exception as exc:
+        logger.error(f"_send_sync failed: {exc}")
+
+
 def _run_scan_in_background(chat_id: str) -> None:
     """Background task: trigger GCP workflow and send reply via Telegram."""
     try:
         reply = _use_case._bot.handle_scan_command()
-        import asyncio
-        asyncio.run(_send_reply(chat_id, reply))
+        _send_sync(chat_id, reply)
     except Exception as exc:
         logger.error(f"Background scan trigger failed: {exc}", exc_info=True)
+        _send_sync(chat_id, f"❌ 掃描觸發失敗：{exc}")
 
 
 def _run_pnl_in_background(chat_id: str) -> None:
     """Background task: compute P&L from Google Sheets + yfinance, then send reply."""
     try:
         reply = _use_case._bot.handle_pnl_command()
-        import asyncio
-        asyncio.run(_send_reply(chat_id, reply))
+        _send_sync(chat_id, reply)
     except Exception as exc:
         logger.error(f"Background pnl task failed: {exc}", exc_info=True)
-        import asyncio
-        asyncio.run(_send_reply(chat_id, f"❌ 損益計算失敗：{exc}"))
+        _send_sync(chat_id, f"❌ 損益計算失敗：{exc}")
 
 
 @app.post("/webhook")

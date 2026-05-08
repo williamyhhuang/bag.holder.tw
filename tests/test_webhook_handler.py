@@ -140,7 +140,7 @@ class TestWebhookEndpoint:
 
     def test_pnl_command_sends_ack_and_uses_background_task(self, client):
         tc, mock_uc, mock_send, _ = client
-        with patch("src.interfaces.api.webhook_app._run_pnl_in_background") as mock_bg:
+        with patch("src.interfaces.api.webhook_app._run_pnl_in_background"):
             resp = tc.post("/webhook", json=self._update(text="/pnl"))
         assert resp.status_code == 200
         # Should NOT call use_case.execute for /pnl
@@ -149,3 +149,41 @@ class TestWebhookEndpoint:
         mock_send.assert_awaited_once()
         ack_text = mock_send.call_args[0][1]
         assert "正在計算" in ack_text or "⏳" in ack_text
+
+
+class TestSendSync:
+    """Tests for _send_sync Markdown fallback logic."""
+
+    def test_send_sync_success_with_markdown(self):
+        from src.interfaces.api.webhook_app import _send_sync
+        with patch("src.interfaces.api.webhook_app.settings") as mock_settings, \
+             patch("httpx.Client") as mock_client_cls:
+            mock_settings.telegram.bot_token = "test_token"
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_client_cls.return_value.__enter__.return_value.post.return_value = mock_resp
+
+            _send_sync("123", "hello")
+
+            mock_client_cls.return_value.__enter__.return_value.post.assert_called_once()
+            call_kwargs = mock_client_cls.return_value.__enter__.return_value.post.call_args[1]
+            assert call_kwargs["json"]["parse_mode"] == "Markdown"
+
+    def test_send_sync_fallback_to_plain_on_4xx(self):
+        from src.interfaces.api.webhook_app import _send_sync
+        with patch("src.interfaces.api.webhook_app.settings") as mock_settings, \
+             patch("httpx.Client") as mock_client_cls:
+            mock_settings.telegram.bot_token = "test_token"
+            bad_resp = MagicMock()
+            bad_resp.status_code = 400
+            bad_resp.text = '{"error_code":400}'
+            ok_resp = MagicMock()
+            ok_resp.status_code = 200
+            mock_client_cls.return_value.__enter__.return_value.post.side_effect = [bad_resp, ok_resp]
+
+            _send_sync("123", "hello *world*")
+
+            assert mock_client_cls.return_value.__enter__.return_value.post.call_count == 2
+            # Second call should not have parse_mode
+            second_call = mock_client_cls.return_value.__enter__.return_value.post.call_args_list[1]
+            assert "parse_mode" not in second_call[1]["json"]
