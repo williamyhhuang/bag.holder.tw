@@ -475,9 +475,29 @@ trade_id,timestamp,symbol,action,quantity,price,status,notes
 |------|------|------|
 | `買入 股票代號 價格 [股數]` | 記錄買入（股數預設 1000） | `買入 2330 150.5 1000` |
 | `賣出 股票代號 價格 [股數]` | 記錄賣出 | `賣出 2330 165` |
+| `/scan` | 觸發 GCP download + signals，結果自動傳送至 Telegram | `/scan` |
 | `/stats` | 近 30 天交易統計 | `/stats` |
 | `/trades` | 最近 10 筆記錄 | `/trades` |
 | `/help` | 顯示說明 | `/help` |
+
+### `/scan` — 手動觸發掃描
+
+在 Telegram 輸入 `/scan` 後，webhook 會：
+1. 立即回覆「⏳ 正在觸發掃描，請稍候...」
+2. 在背景呼叫 GCP Workflows API，啟動 `bag-holder-run-jobs` 工作流程
+3. 工作流程依序執行 `bag-holder-download` → `bag-holder-signals` Cloud Run Job
+4. `signals` Job 完成後自動將訊號結果推送至 Telegram
+
+**需求：**
+- `GCP_PROJECT_ID` 環境變數需設定（已有 Cloud Run 部署即已設定）
+- Webhook Service Account 需有 `roles/workflows.invoker` 權限
+
+**選用設定（預設值即可用）：**
+
+| 環境變數 | 預設值 | 說明 |
+|----------|--------|------|
+| `GCP_WORKFLOW_NAME` | `bag-holder-run-jobs` | 要觸發的 GCP Workflow 名稱 |
+| `GCP_WORKFLOW_LOCATION` | `asia-east1` | Workflow 所在 Region |
 
 ### Google Sheets 設定
 
@@ -795,6 +815,14 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.5.0 - 2026-05-08
+- 📲 **Telegram `/scan` 指令**：在 Telegram 輸入 `/scan` 即可手動觸發 GCP download + signals 工作流程，結果自動推送至 Telegram
+  - 新增 `src/infrastructure/gcp/workflow_trigger.py`：`GcpWorkflowTrigger`，使用 `google-auth` ADC 呼叫 GCP Workflows REST API
+  - 更新 `src/infrastructure/notification/telegram_trade_bot.py`：新增 `handle_scan_command()`，`process_telegram_command()` 加入 `/scan` 分派
+  - 更新 `src/interfaces/api/webhook_app.py`：`/scan` 以 FastAPI `BackgroundTasks` 執行，Telegram 立即收到確認回覆
+  - 新增 `config/settings.py`：`GCP_WORKFLOW_NAME`（預設 `bag-holder-run-jobs`）、`GCP_WORKFLOW_LOCATION`（預設 `asia-east1`）兩個可選設定
+  - 新增 9 個單元測試（`tests/test_gcp_workflow_trigger.py`）
 
 ### v5.4.0 - 2026-04-30
 - 🏦 **新增富邦 API 資料來源**：`download` 指令新增 `--source fubon` 參數，可切換至富邦 Neo API 下載歷史股價，預設仍為 yfinance

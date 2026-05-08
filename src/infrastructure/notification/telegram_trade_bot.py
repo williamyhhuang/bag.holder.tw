@@ -218,6 +218,36 @@ class TradingBot:
             "[買入|賣出] [股票代號] [價格] [股數(選填)]"
         )
 
+    def handle_scan_command(self) -> str:
+        """
+        Trigger GCP download + signals workflow and return an immediate reply.
+
+        The workflow itself runs asynchronously in GCP; the signals job will
+        push results to Telegram once complete.
+        """
+        from config.settings import settings
+        from ...infrastructure.gcp.workflow_trigger import GcpWorkflowTrigger
+
+        project_id = settings.app.gcp_project_id
+        if not project_id:
+            return "❌ GCP_PROJECT_ID 未設定，無法觸發掃描"
+
+        try:
+            trigger = GcpWorkflowTrigger(
+                project_id=project_id,
+                location=settings.app.gcp_workflow_location,
+                workflow_name=settings.app.gcp_workflow_name,
+            )
+            trigger.trigger()
+            return (
+                "⏳ 已觸發下載與訊號掃描\n"
+                f"工作流程：{settings.app.gcp_workflow_name}\n"
+                "結果完成後將自動傳送至此頻道"
+            )
+        except Exception as exc:
+            self.logger.error(f"Failed to trigger GCP workflow: {exc}")
+            return f"❌ 觸發掃描失敗：{exc}"
+
     def process_telegram_command(self, message: str, chat_id: str) -> str:
         """
         Process incoming Telegram command.
@@ -232,7 +262,9 @@ class TradingBot:
         try:
             message = message.strip()
 
-            if message.startswith('/stats'):
+            if message.startswith('/scan'):
+                return self.handle_scan_command()
+            elif message.startswith('/stats'):
                 return self.handle_stats_request()
             elif message.startswith('/trades'):
                 return self.handle_recent_trades()

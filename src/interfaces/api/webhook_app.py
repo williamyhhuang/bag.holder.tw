@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -75,9 +75,20 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _run_scan_in_background(chat_id: str) -> None:
+    """Background task: trigger GCP workflow and send reply via Telegram."""
+    try:
+        reply = _use_case._bot.handle_scan_command()
+        import asyncio
+        asyncio.run(_send_reply(chat_id, reply))
+    except Exception as exc:
+        logger.error(f"Background scan trigger failed: {exc}", exc_info=True)
+
+
 @app.post("/webhook")
 async def telegram_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ) -> JSONResponse:
     """
@@ -85,6 +96,9 @@ async def telegram_webhook(
 
     Telegram always expects HTTP 200; errors are logged and swallowed so
     Telegram does not retry the same message.
+
+    /scan is handled as a background task so Telegram receives an immediate
+    200 response while the GCP Workflow execution is being triggered.
     """
     _verify_secret(x_telegram_bot_api_secret_token)
 
@@ -102,8 +116,13 @@ async def telegram_webhook(
         return JSONResponse({"ok": True})
 
     try:
-        reply = _use_case.execute(text, chat_id)
-        await _send_reply(chat_id, reply)
+        if text.strip().startswith("/scan"):
+            # Acknowledge immediately; GCP trigger runs in background
+            await _send_reply(chat_id, "⏳ 正在觸發掃描，請稍候...")
+            background_tasks.add_task(_run_scan_in_background, chat_id)
+        else:
+            reply = _use_case.execute(text, chat_id)
+            await _send_reply(chat_id, reply)
     except Exception as exc:
         logger.error(f"Unhandled error in webhook handler: {exc}", exc_info=True)
 
