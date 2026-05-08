@@ -52,8 +52,8 @@ def display_signals(result: dict, show_watch: bool = False):
     # ── 建議買入 ──
     print(f"\n✅ 建議買入 ({len(buy_list)} 支)  [P1 策略完整過濾通過]")
     if buy_list:
-        print(f"  {'代號':<16} {'名稱':<10} {'族群':<10} {'觸發訊號':<30} {'價格':>9} {'RSI':>6}  備註")
-        print("  " + "-" * 106)
+        print(f"  {'代號':<16} {'名稱':<10} {'族群':<10} {'觸發訊號':<30} {'現價':>9} {'進場區間':>16} {'停損':>8} {'RSI':>6}  備註")
+        print("  " + "-" * 125)
         for s in buy_list:
             name = (s["name"] or "")[:8]
             sector = (s.get("sector") or "")[:8]
@@ -61,7 +61,9 @@ def display_signals(result: dict, show_watch: bool = False):
             rsi_str = f"{s['rsi']:.1f}" if s["rsi"] else "-"
             note = s.get("note", "")
             note_str = f"⚠️{note}" if note else ""
-            print(f"  {s['symbol']:<16} {name:<10} {sector:<10} {signal:<30} {s['price']:>9.2f} {rsi_str:>6}  {note_str}")
+            range_str = f"{s['entry_low']:.1f}–{s['entry_high']:.1f}" if s.get("entry_low") else "-"
+            stop_str = f"{s['stop_loss']:.1f}" if s.get("stop_loss") else "-"
+            print(f"  {s['symbol']:<16} {name:<10} {sector:<10} {signal:<30} {s['price']:>9.2f} {range_str:>16} {stop_str:>8} {rsi_str:>6}  {note_str}")
     else:
         print("  （今日無 P1 買入訊號）")
 
@@ -156,6 +158,8 @@ def format_for_telegram(result: dict) -> list[str]:
             note = _escape_md(s.get("note", ""))
             note_tag = f" ⚠️{note}" if note else ""
             lines.append(f"  {s['symbol']} {name}{sector_tag}{note_tag}")
+            if s.get("entry_low") and s.get("entry_high") and s.get("stop_loss"):
+                lines.append(f"    📌 進場 {s['entry_low']:.1f}–{s['entry_high']:.1f}  🛑 停損 {s['stop_loss']:.1f}")
         lines.append("")
 
     if sell_list and settings.scanner.show_sell_signals:
@@ -218,6 +222,12 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> bool:
         print(f"❌ 無法載入 AI 分析器：{e}")
         return False
 
+    # 建立 symbol → price_range lookup（供 AI 結果注入用）
+    price_range_by_symbol = {
+        s["symbol"]: {k: s[k] for k in ("entry_low", "entry_high", "stop_loss") if k in s}
+        for s in result.get("buy", [])
+    }
+
     print(f"\n🤖 正在呼叫 {provider} 進行二次過濾分析...")
     try:
         analyzer = create_analyzer(provider=provider, api_key=api_key, model=cfg.model)
@@ -228,6 +238,12 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> bool:
         logger.error(f"AI 分析失敗: {e}")
         print(f"❌ AI 分析失敗: {e}")
         return False
+
+    # AI 結果注入 price_range（依 symbol 對應回原始 scanner 資料）
+    for category in ("strong_buy", "buy"):
+        for s in ai_result.get(category, []):
+            pr = price_range_by_symbol.get(s.get("symbol", ""), {})
+            s.update(pr)
 
     # ── 終端顯示 ──
     target_date = ai_result.get("target_date", "")
@@ -259,6 +275,8 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> bool:
             print(f"  【{symbol} {name}】{note_tag}")
             if reason:
                 print(f"    └ {reason}")
+            if s.get("entry_low") and s.get("entry_high") and s.get("stop_loss"):
+                print(f"    📌 進場 {s['entry_low']:.1f}–{s['entry_high']:.1f}  🛑 停損 {s['stop_loss']:.1f}")
             print()
 
     total = len(strong_buy) + len(buy) + len(watch) + len(avoid)

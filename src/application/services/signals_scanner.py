@@ -99,6 +99,50 @@ def _watch_reason_with_price(
     return "未達進場條件"
 
 
+def _calculate_price_range(
+    signal_name: str,
+    price: Decimal,
+    indicators: TechnicalIndicators,
+) -> Optional[dict]:
+    """依訊號類型計算建議進場區間與停損位，回傳 dict 或 None（指標不足時）"""
+    ma20 = indicators.ma20
+    bb_upper = indicators.bb_upper
+    bb_middle = indicators.bb_middle
+    bb_lower = indicators.bb_lower
+    try:
+        if signal_name in ("Golden Cross", "MACD Golden Cross"):
+            if ma20 is None:
+                return None
+            entry_low = float(min(ma20, price))
+            entry_high = float(max(ma20, price))
+            stop = float(ma20 * Decimal("0.97"))
+        elif signal_name == "RSI Oversold":
+            entry_low = float(price)
+            entry_high = float(price * Decimal("1.02"))
+            stop = float(bb_lower) if bb_lower else float(price * Decimal("0.95"))
+        elif signal_name == "BB Squeeze Break":
+            if bb_middle is None or bb_upper is None:
+                return None
+            entry_low = float(bb_middle)
+            entry_high = float(bb_upper)
+            stop = float(bb_middle * Decimal("0.97"))
+        elif signal_name == "Donchian Breakout":
+            entry_low = float(price)
+            entry_high = float(price * Decimal("1.03"))
+            stop = float(ma20 * Decimal("0.97")) if ma20 else float(price * Decimal("0.95"))
+        else:
+            entry_low = float(price * Decimal("0.99"))
+            entry_high = float(price * Decimal("1.01"))
+            stop = float(price * Decimal("0.95"))
+        return {
+            "entry_low": round(entry_low, 2),
+            "entry_high": round(entry_high, 2),
+            "stop_loss": round(stop, 2),
+        }
+    except Exception:
+        return None
+
+
 class SignalsScanner:
     """今日 P1 策略訊號掃描器"""
 
@@ -307,6 +351,11 @@ class SignalsScanner:
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
 
+                # 計算建議進場區間與停損
+                price_range = _calculate_price_range(sig.signal_name, sig.price, sig.indicators)
+                if price_range:
+                    entry.update(price_range)
+
                 # 族群趨勢過濾
                 stock_sector = self.sector_analyzer.get_stock_sector(sig.symbol)
                 entry["sector"] = stock_sector
@@ -408,7 +457,13 @@ class SignalsScanner:
             if sym not in buy_by_symbol:
                 buy_by_symbol[sym] = dict(entry, signals=[entry["signal"]])
             else:
-                buy_by_symbol[sym]["signals"].append(entry["signal"])
+                existing = buy_by_symbol[sym]
+                existing["signals"].append(entry["signal"])
+                # 合併進場區間：取更寬的範圍，停損取較高（更保守）
+                if "entry_low" in entry and "entry_low" in existing:
+                    existing["entry_low"] = min(existing["entry_low"], entry["entry_low"])
+                    existing["entry_high"] = max(existing["entry_high"], entry["entry_high"])
+                    existing["stop_loss"] = max(existing["stop_loss"], entry["stop_loss"])
         for entry in buy_by_symbol.values():
             entry["signal"] = " + ".join(sorted(set(entry["signals"])))
             del entry["signals"]

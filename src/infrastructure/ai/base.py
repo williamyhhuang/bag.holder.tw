@@ -308,6 +308,8 @@ class BaseAIAnalyzer(ABC):
                 lines.append(f"【{symbol} {name}】{note_tag}")
                 if reason:
                     lines.append(f"└ {reason}")
+                if s.get("entry_low") and s.get("entry_high") and s.get("stop_loss"):
+                    lines.append(f"📌 {s['entry_low']:.1f}–{s['entry_high']:.1f}  🛑 {s['stop_loss']:.1f}")
                 lines.append("")
 
         total = len(strong_buy) + len(buy) + len(watch) + len(avoid)
@@ -330,6 +332,8 @@ class BaseAIAnalyzer(ABC):
                 "sector": s.get("sector", ""),
                 "revenue_yoy_pct": s.get("revenue_yoy_pct"),
                 "note": s.get("note", ""),
+                "entry_range": f"{s['entry_low']:.1f}–{s['entry_high']:.1f}" if s.get("entry_low") else None,
+                "stop_loss": s.get("stop_loss"),
             }
             for s in stocks
         ]

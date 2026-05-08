@@ -1234,6 +1234,16 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.11.0 - 2026-05-09
+- 🆕 **買入訊號進場價格區間**：訊號掃描後自動計算建議進場區間與停損位
+  - 依訊號類型（Golden Cross / MACD Golden Cross / RSI Oversold / BB Squeeze Break / Donchian Breakout）搭配技術指標（MA20、布林通道）推算
+  - 終端輸出新增「進場區間」與「停損」欄位
+  - Telegram 訊號每支股票加一行 `📌 進場 X–Y  🛑 停損 Z`
+  - AI 二次過濾後的 strong_buy / buy 同樣顯示進場區間與停損
+  - AI 分析時將進場區間作為附加背景資訊（`entry_range`、`stop_loss`）
+  - 多訊號合併時取最寬進場範圍、最保守（較高）停損
+  - 新增 `tests/test_price_range.py` 15 個單元測試
+
 ### v3.1.0 - 2026-05-04
 - 🆕 **10:00 Signals 排程**：新增台北時間 10:00 (M-F) 的第二次 signals 掃描（download → signals → Telegram + AI 過濾）
 - 🆕 **持倉賣出檢查（`python main.py check-holdings`）**：
