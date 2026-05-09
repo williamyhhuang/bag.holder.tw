@@ -127,6 +127,7 @@ class FubonDownloadClient:
                 "or FUBON_USER_ID + FUBON_PASSWORD + FUBON_CERT_PATH."
             )
 
+        print("[fubon] importing FubonSDK...", flush=True)
         try:
             from fubon_neo.sdk import FubonSDK
         except ImportError:
@@ -135,8 +136,10 @@ class FubonDownloadClient:
                 "Download from: https://www.fbs.com.tw/TradeAPI/docs/download.txt"
             )
 
+        print("[fubon] creating FubonSDK instance...", flush=True)
         sdk = FubonSDK()
 
+        print(f"[fubon] calling {method} login...", flush=True)
         if method == "API Key":
             result = sdk.apikey_login(
                 self.user_id, self.api_key, self.cert_path, self.cert_password
@@ -146,13 +149,17 @@ class FubonDownloadClient:
                 self.user_id, self.password, self.cert_path, self.cert_password
             )
 
+        print(f"[fubon] login result: is_success={result.is_success}", flush=True)
         if not result.is_success:
             raise FubonDownloadError(f"Fubon login ({method}) failed: {result.message}")
 
+        print("[fubon] calling init_realtime()...", flush=True)
         sdk.init_realtime()
+        print("[fubon] init_realtime() done, getting rest_client...", flush=True)
         self._sdk = sdk
         self._reststock = sdk.marketdata.rest_client.stock
         self._logged_in = True
+        print("[fubon] login complete.", flush=True)
         logger.info(f"Fubon SDK logged in ({method})")
 
         # Clean up temp cert file after successful login (cert is loaded into SDK memory)
