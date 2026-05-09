@@ -471,6 +471,7 @@ class FubonDownloadClient:
                     "symbol": yf_symbol,
                 }
 
+            print(f"[fubon] snapshot {market}: {len(rows_by_symbol)} stocks, starting save...", flush=True)
             logger.info(f"Snapshot {market}: {len(rows_by_symbol)} stocks fetched")
 
             for yf_symbol, row in rows_by_symbol.items():
@@ -478,6 +479,11 @@ class FubonDownloadClient:
                 if self.save_stock_data(yf_symbol, df):
                     success += 1
 
+            print(f"[fubon] snapshot {market}: save complete, success={success}", flush=True)
+
+        print(f"[fubon] all snapshots done, calling logout...", flush=True)
+        self.logout()
+        print(f"[fubon] logout done.", flush=True)
         logger.info(f"Snapshot download done: {success} stocks saved")
         return success
 
