@@ -1234,6 +1234,10 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.12.2 - 2026-05-09
+- 🐛 **修正 Workflow YAML KeyError**：`wait_for_execution` 中 `determine_result` 改用 `"succeededCount" in status` 防護，避免 job 失敗時 Cloud Run 不回傳 succeededCount 而拋出 KeyError
+- 🔑 **APP_SECRETS 補充 Fubon 憑證**：新增 `FUBON_USER_ID`、`FUBON_API_KEY`、`FUBON_CERT_PASSWORD`、`FUBON_IS_SIMULATION`
+
 ### v3.12.1 - 2026-05-09
 - 🐛 **修正 Cloud Run 缺少 fubon_neo Linux SDK**：`Dockerfile.cloudrun` builder stage 新增從富邦官方伺服器下載並安裝 Linux x86_64 版 `fubon_neo-2.2.8` whl，修復 GCP Workflow 因 `ImportError` 導致 download job 失敗的問題
 - 📝 **更新 requirements.txt 說明**：補充各平台 fubon_neo 下載連結

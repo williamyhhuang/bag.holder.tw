@@ -95,7 +95,7 @@ wait_for_execution:
 
     - determine_result:
         switch:
-          - condition: ${exec_resp.body.status.succeededCount > 0}
+          - condition: ${"succeededCount" in exec_resp.body.status and exec_resp.body.status.succeededCount > 0}
             return: "succeeded"
           - condition: true
             return: "failed"
