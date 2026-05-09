@@ -436,6 +436,8 @@ class TestFubonClientFuturesAPI:
         settings = FubonAPISettings(
             user_id='A123456789',
             api_key='testkey',
+            cert_path=None,
+            cert_base64=None,
         )
         assert settings.has_api_key_auth() is False
 
