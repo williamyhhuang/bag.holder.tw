@@ -443,7 +443,9 @@ class FubonDownloadClient:
         for market in fubon_markets:
             suffix = suffix_map.get(market, ".TW")
             try:
+                print(f"[fubon] calling snapshot.quotes(market={market})...", flush=True)
                 result = self._reststock.snapshot.quotes(market=market)
+                print(f"[fubon] snapshot.quotes({market}) returned type={type(result)}", flush=True)
                 raw = result.get("data", []) if isinstance(result, dict) else []
             except Exception as e:
                 logger.error(f"Snapshot failed for {market}: {e}")
