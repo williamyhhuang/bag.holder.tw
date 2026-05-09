@@ -45,7 +45,9 @@ module "job_download" {
   task_timeout_seconds  = 3600
   max_retries           = 1
   secret_env_vars       = local.common_secret_env_vars
-  env_vars              = local.common_env_vars
+  env_vars = merge(local.common_env_vars, {
+    DOWNLOAD_DATA_SOURCE = "fubon"
+  })
 }
 
 # ── Cloud Run Job: bag-holder-signals ─────────────────────────────────────────
@@ -150,12 +152,34 @@ resource "google_cloud_scheduler_job" "run_jobs" {
   depends_on = [google_workflows_workflow.run_jobs]
 }
 
-# 台北時間 10:00 週一至週五（signals + 持倉賣出檢查）
-resource "google_cloud_scheduler_job" "run_jobs_10" {
-  name             = "bag-holder-run-jobs-10-trigger"
+# 台北時間 10:00 / 11:00 / 12:00 週一至週五（整點：signals + 持倉賣出檢查）
+resource "google_cloud_scheduler_job" "run_jobs_mid_hour" {
+  name             = "bag-holder-run-jobs-mid-hour-trigger"
   region           = var.region
   project          = var.project_id
-  schedule         = "0 10 * * 1-5"
+  schedule         = "0 10-12 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "320s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.run_jobs_10.id}/executions"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = local.runner_sa_email
+    }
+  }
+
+  depends_on = [google_workflows_workflow.run_jobs_10]
+}
+
+# 台北時間 9:30 / 10:30 / 11:30 / 12:30 週一至週五（半點：signals + 持倉賣出檢查）
+resource "google_cloud_scheduler_job" "run_jobs_half_hour" {
+  name             = "bag-holder-run-jobs-half-hour-trigger"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "30 9-12 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "320s"
 

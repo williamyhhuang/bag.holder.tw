@@ -1234,6 +1234,13 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.12.0 - 2026-05-09
+- 🔄 **Download 改用 Fubon 資料來源**：Cloud Run 下載任務改為預設使用 Fubon API（`DOWNLOAD_DATA_SOURCE=fubon`），透過 Terraform env_vars 設定，無需修改程式碼
+- ⏰ **排程頻率提升**：原本 10:00 單次執行改為 9:30～12:30 每 30 分鐘執行一次（共 7 次：9:30、10:00、10:30、11:00、11:30、12:00、12:30）
+  - 新增 `bag-holder-run-jobs-mid-hour-trigger`（整點：10:00 / 11:00 / 12:00）
+  - 新增 `bag-holder-run-jobs-half-hour-trigger`（半點：9:30 / 10:30 / 11:30 / 12:30）
+  - 原 `bag-holder-run-jobs-10-trigger` 由上述兩個排程取代
+
 ### v3.11.0 - 2026-05-09
 - 🆕 **買入訊號進場價格區間**：訊號掃描後自動計算建議進場區間與停損位
   - 依訊號類型（Golden Cross / MACD Golden Cross / RSI Oversold / BB Squeeze Break / Donchian Breakout）搭配技術指標（MA20、布林通道）推算
