@@ -1234,6 +1234,10 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.12.1 - 2026-05-09
+- 🐛 **修正 Cloud Run 缺少 fubon_neo Linux SDK**：`Dockerfile.cloudrun` builder stage 新增從富邦官方伺服器下載並安裝 Linux x86_64 版 `fubon_neo-2.2.8` whl，修復 GCP Workflow 因 `ImportError` 導致 download job 失敗的問題
+- 📝 **更新 requirements.txt 說明**：補充各平台 fubon_neo 下載連結
+
 ### v3.12.0 - 2026-05-09
 - 🔄 **Download 改用 Fubon 資料來源**：Cloud Run 下載任務改為預設使用 Fubon API（`DOWNLOAD_DATA_SOURCE=fubon`），透過 Terraform env_vars 設定，無需修改程式碼
 - ⏰ **排程頻率提升**：原本 10:00 單次執行改為 9:30～12:30 每 30 分鐘執行一次（共 7 次：9:30、10:00、10:30、11:00、11:30、12:00、12:30）

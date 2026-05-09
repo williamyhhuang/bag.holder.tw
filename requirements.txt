@@ -5,9 +5,11 @@ pydantic==2.11.3
 pydantic-settings==2.9.1
 
 # Fubon Securities Official SDK
-# Note: fubon_neo needs to be installed from .whl file
-# Download from: https://www.fbs.com.tw/TradeAPI/docs/download/download-sdk.md
-# Install with: pip install fubon_neo-<version>-cp37-abi3-<platform>.whl
+# Note: fubon_neo is NOT on PyPI — install from Fubon's server:
+# - macOS ARM:   https://www.fbs.com.tw/TradeAPI_SDK/fubon_binary/fubon_neo-2.2.8-cp37-abi3-macosx_11_0_arm64.zip
+# - macOS x86:   https://www.fbs.com.tw/TradeAPI_SDK/fubon_binary/fubon_neo-2.2.8-cp37-abi3-macosx_10_12_x86_64.zip
+# - Linux x86_64: https://www.fbs.com.tw/TradeAPI_SDK/fubon_binary/fubon_neo-2.2.8-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.zip
+# Cloud Run (Linux x86_64) version is installed automatically in Dockerfile.cloudrun
 
 # Database
 sqlalchemy==2.0.40

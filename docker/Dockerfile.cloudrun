@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     build-essential \
     wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
@@ -24,6 +25,12 @@ RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz && \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/usr/local -r requirements.txt
+
+# Install Fubon SDK (Linux x86_64, not on PyPI — must download from Fubon's server)
+RUN wget -q "https://www.fbs.com.tw/TradeAPI_SDK/fubon_binary/fubon_neo-2.2.8-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.zip" -O /tmp/fubon_neo.zip \
+    && unzip -q /tmp/fubon_neo.zip -d /tmp/fubon_neo_pkg \
+    && pip install --no-cache-dir --prefix=/usr/local /tmp/fubon_neo_pkg/*.whl \
+    && rm -rf /tmp/fubon_neo.zip /tmp/fubon_neo_pkg
 
 # Final stage
 FROM python:3.11-slim
