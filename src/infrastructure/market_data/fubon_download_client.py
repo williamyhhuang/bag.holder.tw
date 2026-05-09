@@ -127,7 +127,6 @@ class FubonDownloadClient:
                 "or FUBON_USER_ID + FUBON_PASSWORD + FUBON_CERT_PATH."
             )
 
-        print("[fubon] importing FubonSDK...", flush=True)
         try:
             from fubon_neo.sdk import FubonSDK
         except ImportError:
@@ -136,10 +135,8 @@ class FubonDownloadClient:
                 "Download from: https://www.fbs.com.tw/TradeAPI/docs/download.txt"
             )
 
-        print("[fubon] creating FubonSDK instance...", flush=True)
         sdk = FubonSDK()
 
-        print(f"[fubon] calling {method} login...", flush=True)
         if method == "API Key":
             result = sdk.apikey_login(
                 self.user_id, self.api_key, self.cert_path, self.cert_password
@@ -149,17 +146,13 @@ class FubonDownloadClient:
                 self.user_id, self.password, self.cert_path, self.cert_password
             )
 
-        print(f"[fubon] login result: is_success={result.is_success}", flush=True)
         if not result.is_success:
             raise FubonDownloadError(f"Fubon login ({method}) failed: {result.message}")
 
-        print("[fubon] calling init_realtime()...", flush=True)
         sdk.init_realtime()
-        print("[fubon] init_realtime() done, getting rest_client...", flush=True)
         self._sdk = sdk
         self._reststock = sdk.marketdata.rest_client.stock
         self._logged_in = True
-        print("[fubon] login complete.", flush=True)
         logger.info(f"Fubon SDK logged in ({method})")
 
         # Clean up temp cert file after successful login (cert is loaded into SDK memory)
@@ -443,9 +436,7 @@ class FubonDownloadClient:
         for market in fubon_markets:
             suffix = suffix_map.get(market, ".TW")
             try:
-                print(f"[fubon] calling snapshot.quotes(market={market})...", flush=True)
                 result = self._reststock.snapshot.quotes(market=market)
-                print(f"[fubon] snapshot.quotes({market}) returned type={type(result)}", flush=True)
                 raw = result.get("data", []) if isinstance(result, dict) else []
             except Exception as e:
                 logger.error(f"Snapshot failed for {market}: {e}")
@@ -471,7 +462,6 @@ class FubonDownloadClient:
                     "symbol": yf_symbol,
                 }
 
-            print(f"[fubon] snapshot {market}: {len(rows_by_symbol)} stocks, starting save...", flush=True)
             logger.info(f"Snapshot {market}: {len(rows_by_symbol)} stocks fetched")
 
             for yf_symbol, row in rows_by_symbol.items():
@@ -479,11 +469,7 @@ class FubonDownloadClient:
                 if self.save_stock_data(yf_symbol, df):
                     success += 1
 
-            print(f"[fubon] snapshot {market}: save complete, success={success}", flush=True)
-
-        print(f"[fubon] all snapshots done, calling logout...", flush=True)
         self.logout()
-        print(f"[fubon] logout done.", flush=True)
         logger.info(f"Snapshot download done: {success} stocks saved")
         return success
 

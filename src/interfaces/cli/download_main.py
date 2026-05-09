@@ -2,6 +2,7 @@
 Main data downloader module
 """
 import argparse
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -149,6 +150,10 @@ def main():
 
     if args.command == 'download':
         cli.run_download(args)
+        # Use os._exit(0) to bypass Python's cleanup sequence which can trigger
+        # SIGSEGV in native SDK threads (fubon_neo) during garbage collection.
+        # All data is already saved and flushed at this point.
+        os._exit(0)
     else:
         parser.print_help()
         sys.exit(1)

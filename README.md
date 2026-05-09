@@ -1234,6 +1234,10 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.12.3 - 2026-05-09
+- 🐛 **修正 Fubon SDK SIGSEGV on exit**：`download_main.py` 完成下載後改用 `os._exit(0)` 退出，繞過 Python 正常清理流程（GC/執行緒清理會觸發 fubon_neo native code 崩潰）
+- 🔧 **download_snapshot 後呼叫 logout()**：確保 Fubon SDK 背景連線在 exit 前被正確關閉
+
 ### v3.12.2 - 2026-05-09
 - 🐛 **修正 Workflow YAML KeyError**：`wait_for_execution` 中 `determine_result` 改用 `"succeededCount" in status` 防護，避免 job 失敗時 Cloud Run 不回傳 succeededCount 而拋出 KeyError
 - 🔑 **APP_SECRETS 補充 Fubon 憑證**：新增 `FUBON_USER_ID`、`FUBON_API_KEY`、`FUBON_CERT_PASSWORD`、`FUBON_IS_SIMULATION`
