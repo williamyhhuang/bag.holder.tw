@@ -328,7 +328,12 @@ class FubonDownloadClient:
         if end_date is None:
             import pytz
             taipei_tz = pytz.timezone("Asia/Taipei")
-            end_date = datetime.now(taipei_tz).replace(tzinfo=None)
+            now_tw = datetime.now(taipei_tz)
+            # 週末不開盤：end_date 對齊最後交易日，避免傳入週末日期給 API
+            if now_tw.weekday() >= 5:
+                end_date = self.get_last_trading_date()
+            else:
+                end_date = now_tw.replace(tzinfo=None)
 
         max_workers = self._max_workers
         rate_limiter = _SlidingWindowRateLimiter(max_requests=self._rpm, window=60.0)
@@ -420,6 +425,14 @@ class FubonDownloadClient:
         today_str = datetime.now(pytz.timezone("Asia/Taipei")).strftime("%Y-%m-%d")
         today_dt = pd.Timestamp(today_str)
 
+        # 台股週末不開盤，不執行 snapshot 避免寫入無效資料
+        if today_dt.weekday() >= 5:
+            logger.info(
+                f"Snapshot skipped: {today_str} is a weekend (weekday={today_dt.weekday()})"
+            )
+            self.logout()
+            return 0
+
         # Fubon market codes → yfinance suffix
         # TIB (臺灣創新板) stocks appear in TWSE's TSE list but as a separate
         # market in Fubon.  We fetch TIB alongside TSE and use the same .TW suffix.
@@ -494,7 +507,11 @@ class FubonDownloadClient:
         import pytz
         taipei_tz = pytz.timezone("Asia/Taipei")
         today_taipei = datetime.now(taipei_tz)
-        end_date = today_taipei.replace(tzinfo=None)
+        # 週末不開盤：end_date 對齊最後交易日
+        if today_taipei.weekday() >= 5:
+            end_date = self.get_last_trading_date()
+        else:
+            end_date = today_taipei.replace(tzinfo=None)
         start_date = self.get_last_trading_date()
 
         if days_back > 1:

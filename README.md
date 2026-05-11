@@ -1125,6 +1125,11 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
 - ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
 
+### v2.12.1 - 2026-05-11
+- 🛡️ **Fubon 資料源週末防護**：`download_snapshot()` 在週末（Saturday/Sunday）直接跳過，不呼叫 API，避免 Fubon 回傳非交易日前填資料
+- 🛡️ **Fubon `download_all_stocks()` / `download_recent_data()`**：週末時 `end_date` 自動對齊最後交易日，不傳入週末日期給 API
+- ✅ **新增單元測試** `test_snapshot_skipped_on_weekend`：驗證週末 snapshot 回傳 0 且不呼叫 save/API
+
 ### v2.12.0 - 2026-05-11
 - 🐛 **修正 signals 盤前/週末資料污染導致 0 訊號問題**：yfinance 在盤前或週末下載時，會回傳當日/週末的前填假資料，造成 `latest` 交易日被拉到非真實交易日，訊號全數被過濾為 0
 - 🛡️ **`signals_scanner.py`**：計算 `latest` 交易日時，自動跳過週六/週日（`weekday >= 5`），以及盤前（14:00 台灣時間前）的今日資料

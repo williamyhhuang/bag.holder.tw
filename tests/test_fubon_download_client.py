@@ -406,6 +406,40 @@ class TestDownloadSnapshot:
         assert count == 2  # 00679B filtered out, TIB returns empty
 
 
+    def test_snapshot_skipped_on_weekend(self):
+        """download_snapshot should return 0 without any API calls on weekends."""
+        import pytz
+
+        # 2026-05-09 is Saturday (weekday=5) – confirmed by pd.Timestamp
+        assert pd.Timestamp("2026-05-09").weekday() == 5
+
+        client = _make_client()
+
+        # Patch pytz.timezone(...).strftime so today_str returns "2026-05-09" (Saturday)
+        mock_tz_result = MagicMock()
+        mock_tz_result.strftime.return_value = "2026-05-09"
+
+        with patch("pytz.timezone") as mock_tz, \
+             patch.object(client, "save_stock_data") as mock_save:
+            mock_tz.return_value = MagicMock(
+                **{"__call__": MagicMock(return_value=mock_tz_result)}
+            )
+
+            # We need datetime.now(tz).strftime(...) to return "2026-05-09"
+            with patch(
+                "src.infrastructure.market_data.fubon_download_client.datetime"
+            ) as mock_dt:
+                mock_now = MagicMock()
+                mock_now.strftime.return_value = "2026-05-09"
+                mock_dt.now.return_value = mock_now
+
+                count = client.download_snapshot(markets=["TSE"])
+
+        assert count == 0, "Weekend snapshot should return 0"
+        mock_save.assert_not_called()
+        client._reststock.snapshot.quotes.assert_not_called()
+
+
 class TestSlidingWindowRateLimiter:
     def test_allows_up_to_max_requests_immediately(self):
         limiter = _SlidingWindowRateLimiter(max_requests=5, window=60.0)
