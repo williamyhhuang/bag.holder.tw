@@ -110,12 +110,12 @@ class TestYFinanceClient:
                 mock_settings.data.stocks_path = temp_dir
 
                 day1 = pd.DataFrame({
-                    'date': ['2026-03-28'],
+                    'date': ['2026-03-27'],  # Friday (weekday)
                     'open': [100.0], 'high': [110.0], 'low': [95.0],
                     'close': [105.0], 'volume': [1000000], 'symbol': ['TEST.TW'],
                 })
                 day2 = pd.DataFrame({
-                    'date': ['2026-03-31'],
+                    'date': ['2026-03-31'],  # Tuesday (weekday)
                     'open': [106.0], 'high': [112.0], 'low': [104.0],
                     'close': [110.0], 'volume': [1200000], 'symbol': ['TEST.TW'],
                 })
@@ -135,12 +135,12 @@ class TestYFinanceClient:
                 mock_settings.data.stocks_path = temp_dir
 
                 original = pd.DataFrame({
-                    'date': ['2026-03-28'],
+                    'date': ['2026-03-27'],  # Friday (weekday)
                     'open': [100.0], 'high': [110.0], 'low': [95.0],
                     'close': [105.0], 'volume': [1000000], 'symbol': ['TEST.TW'],
                 })
                 updated = pd.DataFrame({
-                    'date': ['2026-03-28'],
+                    'date': ['2026-03-27'],  # Friday (weekday)
                     'open': [100.0], 'high': [115.0], 'low': [95.0],
                     'close': [112.0], 'volume': [1500000], 'symbol': ['TEST.TW'],
                 })

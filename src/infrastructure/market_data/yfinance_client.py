@@ -176,15 +176,35 @@ class YFinanceClient:
             filename = f"{clean_symbol}.csv"
             filepath = data_dir / filename
 
+            # 計算台灣盤後時間（14:00），在此之前今日資料屬於前填，不應寫入
+            import pytz as _pytz
+            from datetime import datetime as _dt, date as _date
+            _taiwan_tz = _pytz.timezone('Asia/Taipei')
+            _now_tw = _dt.now(_taiwan_tz)
+            _market_close_tw = _now_tw.replace(hour=14, minute=0, second=0, microsecond=0)
+            _today = _date.today()
+            _before_close = _now_tw < _market_close_tw
+
+            def _clean(df: 'pd.DataFrame') -> 'pd.DataFrame':
+                df = df.copy()
+                df['date'] = pd.to_datetime(df['date'])
+                # 過濾週末
+                df = df[df['date'].dt.weekday < 5]
+                # 盤前跳過今日（yfinance 可能回傳前填的今日資料）
+                if _before_close:
+                    df = df[df['date'].dt.date < _today]
+                return df
+
             # If file exists, merge with existing data to avoid overwriting history
             if filepath.exists():
                 existing = pd.read_csv(filepath)
                 combined = pd.concat([existing, data], ignore_index=True)
-                combined['date'] = pd.to_datetime(combined['date'])
+                combined = _clean(combined)
                 combined = combined.drop_duplicates(subset=['date'], keep='last')
                 combined = combined.sort_values('date').reset_index(drop=True)
                 combined.to_csv(filepath, index=False)
             else:
+                data = _clean(data)
                 data.to_csv(filepath, index=False)
 
             return True

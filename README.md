@@ -1125,6 +1125,13 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
 - ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
 
+### v2.12.0 - 2026-05-11
+- 🐛 **修正 signals 盤前/週末資料污染導致 0 訊號問題**：yfinance 在盤前或週末下載時，會回傳當日/週末的前填假資料，造成 `latest` 交易日被拉到非真實交易日，訊號全數被過濾為 0
+- 🛡️ **`signals_scanner.py`**：計算 `latest` 交易日時，自動跳過週六/週日（`weekday >= 5`），以及盤前（14:00 台灣時間前）的今日資料
+- 🛡️ **`yfinance_client.py` `save_stock_data`**：儲存前過濾週末日期；盤前執行時不寫入今日前填資料
+- 🧹 **一次性清理現有 CSV**：移除 `data/stocks/` 下 1970 支股票的週六/週日及盤前今日假資料列
+- ✅ **更新單元測試**：修正 `test_data_downloader.py` 中使用週六日期（2026-03-28）的測試資料，改為平日（2026-03-27）
+
 ### v2.11.0 - 2026-04-14
 - 💰 **新增月營收過濾（第 7 道進場過濾）**：`signals` 指令自動排除每月營收低於門檻的股票，預設 1 億元（`BACKTEST_MIN_MONTHLY_REVENUE_MILLION=100`）
 - 🌐 **新增 `src/scanner/revenue_filter.py`**：從 TWSE / TPEX OpenAPI 取得最新月營收，帶當日磁碟快取（`data/revenue_cache.json`），API 失敗時自動降級略過

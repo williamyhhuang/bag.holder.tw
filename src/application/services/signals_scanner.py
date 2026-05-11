@@ -179,11 +179,20 @@ class SignalsScanner:
         if not stock_data:
             raise RuntimeError(f"找不到股票資料：{stocks_dir}，請先執行 python main.py download")
 
-        # 找最新交易日
+        # 找最新交易日（排除週末 & 盤前今日資料，避免 yfinance 前填假日/週末/盤前資料污染）
+        import pytz as _pytz
+        from datetime import datetime as _dt
+        _taiwan_tz = _pytz.timezone('Asia/Taipei')
+        _now_tw = _dt.now(_taiwan_tz)
+        _market_close_tw = _now_tw.replace(hour=14, minute=0, second=0, microsecond=0)
+        _today = date.today()
+
         latest = max(
             r.date
             for records in stock_data.values()
             for r in records
+            if r.date.weekday() < 5  # 跳過週六(5)/週日(6)
+            and not (r.date == _today and _now_tw < _market_close_tw)  # 盤前跳過今日
         )
 
         # 產業排除
