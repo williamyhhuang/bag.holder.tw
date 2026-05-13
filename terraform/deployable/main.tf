@@ -107,7 +107,36 @@ module "service_webhook" {
   env_vars              = local.common_env_vars
 }
 
-# ── GCP Workflows: download → signals 依序執行（08:05）────────────────────────
+# ── Cloud Run Job: bag-holder-sync-trades ────────────────────────────────────
+module "job_sync_trades" {
+  source = "../modules/cloud_run_job"
+
+  name                  = "bag-holder-sync-trades"
+  project_id            = var.project_id
+  region                = var.region
+  image                 = var.image
+  service_account_email = local.runner_sa_email
+  command               = ["/entrypoint-sync-trades.sh"]
+  memory                = "512Mi"
+  cpu                   = "1"
+  task_timeout_seconds  = 300
+  max_retries           = 0
+  secret_env_vars       = local.common_secret_env_vars
+  env_vars              = local.common_env_vars
+}
+
+# ── GCP Workflows: sync-trades 單步執行（14:35）──────────────────────────────
+resource "google_workflows_workflow" "sync_trades" {
+  name            = "bag-holder-sync-trades"
+  region          = var.region
+  project         = var.project_id
+  service_account = local.runner_sa_email
+  source_contents = file("${path.module}/run-sync-trades.workflow.yaml")
+
+  depends_on = [module.job_sync_trades]
+}
+
+# ── GCP Workflows: download → signals 依序執行（14:40）────────────────────────
 resource "google_workflows_workflow" "run_jobs" {
   name            = "bag-holder-run-jobs"
   region          = var.region
@@ -130,12 +159,12 @@ resource "google_workflows_workflow" "run_jobs_10" {
 }
 
 # ── Cloud Scheduler → GCP Workflows ──────────────────────────────────────────
-# 台北時間 08:05 週一至週五
+# 台北時間 14:40 週一至週五（收盤後下載當日資料＋計算訊號）
 resource "google_cloud_scheduler_job" "run_jobs" {
   name             = "bag-holder-run-jobs-trigger"
   region           = var.region
   project          = var.project_id
-  schedule         = "5 8 * * 1-5"
+  schedule         = "40 14 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "320s"
 
@@ -194,6 +223,28 @@ resource "google_cloud_scheduler_job" "run_jobs_half_hour" {
   }
 
   depends_on = [google_workflows_workflow.run_jobs_10]
+}
+
+# 台北時間 14:35 週一至週五（收盤後同步 Fubon 今日成交記錄至 Google Sheets）
+resource "google_cloud_scheduler_job" "sync_trades" {
+  name             = "bag-holder-sync-trades-trigger"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "35 14 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "320s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.sync_trades.id}/executions"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = local.runner_sa_email
+    }
+  }
+
+  depends_on = [google_workflows_workflow.sync_trades]
 }
 
 # ── Monitoring: Email notification channel ────────────────────────────────────

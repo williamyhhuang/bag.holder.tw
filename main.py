@@ -116,6 +116,17 @@ def run_check_holdings(args):
         logger.error(f"Check-holdings command failed: {e}")
         return False
 
+def run_sync_trades(args):
+    """Run sync-trades command"""
+    cmd = ['python', '-m', 'src.interfaces.cli.sync_trades_main', 'sync-trades']
+
+    try:
+        result = subprocess.run(cmd, cwd=project_root, check=True)
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Sync-trades command failed: {e}")
+        return False
+
 def create_parser():
     """Create main argument parser"""
     parser = argparse.ArgumentParser(
@@ -147,6 +158,9 @@ def create_parser():
   # 持倉賣出檢查（讀 Google Sheets，判斷是否應賣出，含 AI 分析）
   python main.py check-holdings
   python main.py check-holdings --send-telegram
+
+  # 同步 Fubon 今日成交記錄至 Google Sheets（每日 14:35 自動執行）
+  python main.py sync-trades
         """
     )
 
@@ -241,6 +255,12 @@ def create_parser():
         help='發送結果到 Telegram'
     )
 
+    # Sync-trades command
+    subparsers.add_parser(
+        'sync-trades',
+        help='同步 Fubon 今日成交記錄至 Google Sheets 交易記錄頁籤'
+    )
+
     return parser
 
 def main():
@@ -269,6 +289,8 @@ def main():
             success = run_futures(args)
         elif args.command == 'check-holdings':
             success = run_check_holdings(args)
+        elif args.command == 'sync-trades':
+            success = run_sync_trades(args)
         else:
             parser.print_help()
             sys.exit(1)

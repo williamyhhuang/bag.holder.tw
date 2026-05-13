@@ -1,0 +1,63 @@
+main:
+  steps:
+    - init:
+        assign:
+          - project_id: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - base_url: ${"https://asia-east1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/" + project_id + "/jobs/"}
+
+    - run_sync_trades:
+        call: http.post
+        args:
+          url: ${base_url + "bag-holder-sync-trades:run"}
+          auth:
+            type: OAuth2
+        result: sync_trades_execution
+
+    - wait_for_sync_trades:
+        call: wait_for_execution
+        args:
+          self_link: ${sync_trades_execution.body.metadata.selfLink}
+        result: sync_trades_status
+
+    - check_sync_trades:
+        switch:
+          - condition: ${sync_trades_status != "succeeded"}
+            raise: '${"bag-holder-sync-trades failed with status: " + sync_trades_status}'
+
+    - done:
+        return: "Sync trades completed successfully"
+
+# 輪詢 Cloud Run Job Execution 直到完成
+wait_for_execution:
+  params: [self_link]
+  steps:
+    - initial_sleep:
+        call: sys.sleep
+        args:
+          seconds: 15
+
+    - get_status:
+        call: http.get
+        args:
+          url: ${"https://asia-east1-run.googleapis.com" + self_link}
+          auth:
+            type: OAuth2
+        result: exec_resp
+
+    - check_complete:
+        switch:
+          - condition: ${"completionTime" in exec_resp.body.status}
+            next: determine_result
+
+    - sleep_and_retry:
+        call: sys.sleep
+        args:
+          seconds: 15
+        next: get_status
+
+    - determine_result:
+        switch:
+          - condition: ${"succeededCount" in exec_resp.body.status and exec_resp.body.status.succeededCount > 0}
+            return: "succeeded"
+          - condition: true
+            return: "failed"

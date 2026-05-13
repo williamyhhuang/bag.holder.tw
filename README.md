@@ -631,7 +631,13 @@ python main.py check-holdings --send-telegram
 #### 架構
 
 ```
-Cloud Scheduler (台北時間 08:05 週一至五)
+Cloud Scheduler (台北時間 14:35 週一至五)
+    │
+    ▼
+GCP Workflows (bag-holder-sync-trades)
+    └─ Cloud Run Job: bag-holder-sync-trades  # 同步 Fubon 今日成交記錄至 Google Sheets
+
+Cloud Scheduler (台北時間 14:40 週一至五)
     │
     ▼
 GCP Workflows (bag-holder-run-jobs)
@@ -656,10 +662,13 @@ Cloud Run Service: bag-holder-webhook       # Telegram Webhook Bot
 | Cloud Run Job | `bag-holder-download` | 每日下載股票資料 |
 | Cloud Run Job | `bag-holder-signals` | 每日產生買賣訊號 |
 | Cloud Run Job | `bag-holder-check-holdings` | 持倉賣出檢查（含 AI 判斷） |
+| Cloud Run Job | `bag-holder-sync-trades` | 同步 Fubon 今日成交記錄至 Google Sheets |
 | Cloud Run Service | `bag-holder-webhook` | Telegram Webhook Bot |
-| GCP Workflows | `bag-holder-run-jobs` | 08:05 依序執行 download → signals |
+| GCP Workflows | `bag-holder-sync-trades` | 14:35 執行 sync-trades |
+| GCP Workflows | `bag-holder-run-jobs` | 14:40 依序執行 download → signals |
 | GCP Workflows | `bag-holder-run-jobs-10` | 10:00 依序執行 download → signals → check-holdings |
-| Cloud Scheduler | `bag-holder-run-jobs-trigger` | UTC 00:05（台北 08:05）觸發 |
+| Cloud Scheduler | `bag-holder-sync-trades-trigger` | 台北 14:35 觸發成交記錄同步 |
+| Cloud Scheduler | `bag-holder-run-jobs-trigger` | 台北 14:40 觸發收盤後下載+訊號 |
 
 #### Terraform 結構
 
@@ -670,7 +679,8 @@ terraform/
     ├── main.tf
     ├── variables.tf
     ├── backend.tf
-    ├── run-jobs.workflow.yaml   # GCP Workflows 定義
+    ├── run-jobs.workflow.yaml          # GCP Workflows 定義（download → signals）
+    ├── run-sync-trades.workflow.yaml   # GCP Workflows 定義（sync-trades）
     └── modules/
         ├── cloud_run_job/
         └── cloud_run_service/
@@ -859,6 +869,16 @@ docker compose up -d
   - 新增 `tests/test_google_sheets_reader_pnl.py`：14 個 P&L 計算單元測試
   - 更新 `tests/test_trade_bot_commands.py`：新增 11 個 `/pnl` 指令測試
   - 更新 `tests/test_webhook_handler.py`：新增 `/pnl` background task 與 `_send_sync` fallback 測試
+
+### v5.7.0 - 2026-05-13
+- 🕑 **調整每日主排程時間 08:05 → 14:40**：配合台股收盤後（13:30）取得完整當日資料，Cloud Scheduler `bag-holder-run-jobs-trigger` cron 由 `5 8 * * 1-5` 改為 `40 14 * * 1-5`
+- 🏦 **新增 Fubon 今日成交記錄同步至 Google Sheets（`sync-trades`）**：每日 14:35（收盤約一小時後）自動呼叫 Fubon Neo API `sdk.stock.get_order_results()` 查詢當日所有已成交委託，逐筆寫入 Google Sheets「交易記錄」頁籤
+  - 新增 `src/application/services/fubon_trades_syncer.py`：`FubonTradesSyncer` 服務；登入 Fubon SDK → 取今日委託 → 過濾 `filled_qty > 0` → 透過 `GoogleSheetsRecorder` 寫入
+  - 新增 `src/interfaces/cli/sync_trades_main.py`：CLI 入口（`python main.py sync-trades`）
+  - 新增 `docker/entrypoint-sync-trades.sh`：Cloud Run Job entrypoint
+  - 新增 `terraform/deployable/run-sync-trades.workflow.yaml`：GCP Workflow 定義
+  - Terraform：新增 Cloud Run Job `bag-holder-sync-trades`、GCP Workflow `bag-holder-sync-trades`、Cloud Scheduler `bag-holder-sync-trades-trigger`（14:35 週一至五）
+  - 新增 14 個單元測試（`tests/test_fubon_trades_syncer.py`）
 
 ### v5.5.0 - 2026-05-08
 - 📲 **Telegram `/scan` 指令**：在 Telegram 輸入 `/scan` 即可手動觸發 GCP download + signals 工作流程，結果自動推送至 Telegram
