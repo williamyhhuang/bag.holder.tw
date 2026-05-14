@@ -2,6 +2,7 @@
 CLI entry point — 同步 Fubon 今日成交記錄至 Google Sheets
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -33,12 +34,15 @@ def run_sync_trades(args):
         print(f"{'='*50}\n")
 
         if errors and synced == 0:
-            sys.exit(1)
+            os._exit(1)
+
+        # fubon_neo SDK 在 Python 正常退出時可能觸發 SIGSEGV，用 os._exit 繞過
+        os._exit(0)
 
     except Exception as e:
         logger.error(f"sync-trades 失敗：{e}")
         print(f"❌ sync-trades 失敗：{e}")
-        sys.exit(1)
+        os._exit(1)
 
 
 def create_parser():
