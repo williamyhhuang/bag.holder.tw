@@ -70,7 +70,7 @@ class FubonTradesSyncer:
                 filled_qty  = int(_get_attr(order, 'filled_qty', 'filled_quantity', default=0))
                 filled_money = float(_get_attr(order, 'filled_money', 'filled_amount', default=0))
                 order_no    = _get_attr(order, 'order_no', 'order_number', default='')
-                self.logger.debug(f"[order-raw] symbol={symbol!r} buy_sell={buy_sell!r} qty={filled_qty} money={filled_money}")
+                self.logger.info(f"[order-raw] symbol={symbol!r} buy_sell={buy_sell!r} qty={filled_qty} money={filled_money}")
 
                 # 計算每股均價
                 filled_price = round(filled_money / filled_qty, 2) if filled_qty > 0 else 0.0
@@ -119,9 +119,9 @@ class FubonTradesSyncer:
             if all_orders:
                 first = all_orders[0]
                 if isinstance(first, dict):
-                    self.logger.debug(f"[order-keys] {list(first.keys())}")
+                    self.logger.info(f"[order-keys] {list(first.keys())}")
                 else:
-                    self.logger.debug(f"[order-attrs] {[a for a in dir(first) if not a.startswith('_')]}")
+                    self.logger.info(f"[order-attrs] {[a for a in dir(first) if not a.startswith('_')]}")
             return [o for o in all_orders if int(_get_attr(o, 'filled_qty', default=0)) > 0]
         finally:
             self._logout(sdk, cert_tmp)
