@@ -30,6 +30,46 @@ locals {
   }
 }
 
+# ── VPC Network + Static IP for Fixed Egress ─────────────────────────────────
+
+# Static external IP — 固定對外 IP（用於 Fubon API Key IP 白名單）
+resource "google_compute_address" "nat_ip" {
+  name    = "bag-holder-nat-ip"
+  region  = var.region
+  project = var.project_id
+}
+
+resource "google_compute_network" "vpc" {
+  name                    = "bag-holder-vpc"
+  project                 = var.project_id
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "cloudrun" {
+  name          = "bag-holder-cloudrun"
+  region        = var.region
+  project       = var.project_id
+  network       = google_compute_network.vpc.id
+  ip_cidr_range = "10.8.0.0/24"
+}
+
+resource "google_compute_router" "router" {
+  name    = "bag-holder-router"
+  region  = var.region
+  project = var.project_id
+  network = google_compute_network.vpc.id
+}
+
+resource "google_compute_router_nat" "nat" {
+  name                               = "bag-holder-nat"
+  router                             = google_compute_router.router.name
+  region                             = var.region
+  project                            = var.project_id
+  nat_ip_allocate_option             = "MANUAL_ONLY"
+  nat_ips                            = [google_compute_address.nat_ip.self_link]
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+
 # ── Cloud Run Job: bag-holder-download ────────────────────────────────────────
 module "job_download" {
   source = "../modules/cloud_run_job"
@@ -45,6 +85,7 @@ module "job_download" {
   task_timeout_seconds  = 3600
   max_retries           = 1
   secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
   env_vars = merge(local.common_env_vars, {
     DOWNLOAD_DATA_SOURCE = "fubon"
   })
@@ -65,6 +106,7 @@ module "job_signals" {
   task_timeout_seconds  = 600
   max_retries           = 1
   secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
   env_vars              = local.common_env_vars
 }
 
@@ -83,6 +125,7 @@ module "job_check_holdings" {
   task_timeout_seconds  = 600
   max_retries           = 1
   secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
   env_vars              = local.common_env_vars
 }
 
@@ -104,6 +147,7 @@ module "service_webhook" {
   timeout_seconds       = 30
   allow_unauthenticated = true
   secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
   env_vars              = local.common_env_vars
 }
 
@@ -122,6 +166,7 @@ module "job_sync_trades" {
   task_timeout_seconds  = 300
   max_retries           = 0
   secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
   env_vars              = local.common_env_vars
 }
 

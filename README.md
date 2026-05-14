@@ -1266,6 +1266,11 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.13.0 - 2026-05-13
+- 🔒 **VPC + 固定 IP (Static NAT)**：所有 Cloud Run Jobs/Service 改走 Direct VPC Egress，透過 Cloud NAT 以固定靜態 IP 對外連線，可設定為 Fubon API Key 的 IP 白名單，防止 API Key 外流被濫用下單
+  - 新增 `google_compute_address.nat_ip`（靜態外部 IP）、VPC Network/Subnetwork、Cloud Router、Cloud NAT
+  - `terraform apply` 後由 `outputs.nat_ip` 取得固定 IP，填入 Fubon API Key 白名單
+
 ### v3.12.3 - 2026-05-09
 - 🐛 **修正 Fubon SDK SIGSEGV on exit**：`download_main.py` 完成下載後改用 `os._exit(0)` 退出，繞過 Python 正常清理流程（GC/執行緒清理會觸發 fubon_neo native code 崩潰）
 - 🔧 **download_snapshot 後呼叫 logout()**：確保 Fubon SDK 背景連線在 exit 前被正確關閉

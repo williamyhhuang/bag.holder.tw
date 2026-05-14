@@ -51,6 +51,16 @@ resource "google_cloud_run_v2_service" "this" {
         }
       }
     }
+
+    dynamic "vpc_access" {
+      for_each = var.vpc_subnet_id != null ? [1] : []
+      content {
+        network_interfaces {
+          subnetwork = var.vpc_subnet_id
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
   }
 }
 

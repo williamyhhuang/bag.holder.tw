@@ -69,3 +69,9 @@ variable "secret_env_vars" {
   }))
   default = {}
 }
+
+variable "vpc_subnet_id" {
+  description = "Subnetwork self-link for Direct VPC Egress. Leave null to skip VPC."
+  type        = string
+  default     = null
+}
