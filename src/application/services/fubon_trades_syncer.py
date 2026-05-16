@@ -49,6 +49,14 @@ class FubonTradesSyncer:
             {'synced': int, 'skipped': int, 'errors': int}
         """
         print("[sync] sync() entered", flush=True)
+        # 測試基本網路連通性
+        try:
+            import urllib.request
+            with urllib.request.urlopen("https://httpbin.org/ip", timeout=10) as r:
+                print(f"[sync] outbound IP check: {r.read().decode()[:100]}", flush=True)
+        except Exception as e:
+            print(f"[sync] outbound IP check FAILED: {e}", flush=True)
+
         from config.settings import settings
         print("[sync] settings loaded", flush=True)
 
