@@ -109,7 +109,9 @@ class FubonTradesSyncer:
                 self.logger.error("找不到證券帳戶")
                 return []
 
+            print("[fetch] calling get_order_results...", flush=True)
             result = sdk.stock.get_order_results(stock_account)
+            print(f"[fetch] get_order_results done: is_success={result.is_success}", flush=True)
             if not result.is_success:
                 self.logger.error(f"get_order_results 失敗：{result.message}")
                 return []
@@ -150,8 +152,11 @@ class FubonTradesSyncer:
         cert_password = fubon_cfg.cert_password or fubon_cfg.user_id
 
         sdk = FubonSDK()
+        print("[login] FubonSDK() initialized", flush=True)
         if fubon_cfg.api_key and fubon_cfg.user_id and cert_path:
+            print(f"[login] calling apikey_login...", flush=True)
             result = sdk.apikey_login(fubon_cfg.user_id, fubon_cfg.api_key, cert_path, cert_password)
+            print(f"[login] apikey_login done: is_success={result.is_success}", flush=True)
             method = "API Key"
         elif fubon_cfg.user_id and fubon_cfg.password and cert_path:
             result = sdk.login(fubon_cfg.user_id, fubon_cfg.password, cert_path, cert_password)
