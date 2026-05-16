@@ -164,7 +164,6 @@ class FubonTradesSyncer:
         if not result.is_success:
             raise RuntimeError(f"Fubon 登入失敗（{method}）：{result.message}")
 
-        sdk.init_realtime()
         self.logger.info(f"Fubon SDK 登入成功（{method}）")
 
         # 登入成功後即可刪除暫存憑證（已載入至 SDK 記憶體）
