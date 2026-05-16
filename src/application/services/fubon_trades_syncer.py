@@ -48,7 +48,9 @@ class FubonTradesSyncer:
         Returns:
             {'synced': int, 'skipped': int, 'errors': int}
         """
+        print("[sync] sync() entered", flush=True)
         from config.settings import settings
+        print("[sync] settings loaded", flush=True)
 
         filled_orders = self._fetch_filled_orders(settings.fubon)
         self.logger.info(f"今日已成交委託：{len(filled_orders)} 筆")
@@ -130,6 +132,7 @@ class FubonTradesSyncer:
 
     def _login(self, fubon_cfg):
         """登入 Fubon SDK，回傳 (sdk, accounts_result, cert_tmpfile_path_or_None)。"""
+        print("[login] _login() entered", flush=True)
         cert_path = fubon_cfg.cert_path
         cert_tmp: Optional[str] = None
 
@@ -142,15 +145,18 @@ class FubonTradesSyncer:
             cert_tmp = cert_path
             self.logger.debug(f"已解碼 FUBON_CERT_BASE64 至暫存檔：{cert_path}")
 
+        print("[login] about to import FubonSDK", flush=True)
         try:
             from fubon_neo.sdk import FubonSDK
         except ImportError:
             raise RuntimeError(
                 "fubon_neo SDK 未安裝，請至 https://www.fbs.com.tw/TradeAPI 下載並安裝。"
             )
+        print("[login] FubonSDK imported", flush=True)
 
         cert_password = fubon_cfg.cert_password or fubon_cfg.user_id
 
+        print("[login] about to call FubonSDK()", flush=True)
         sdk = FubonSDK()
         print("[login] FubonSDK() initialized", flush=True)
         if fubon_cfg.api_key and fubon_cfg.user_id and cert_path:
