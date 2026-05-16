@@ -285,6 +285,22 @@ class TestDownloadAllStocks:
 # download_recent_data
 # ─────────────────────────────────────────────────────────────────────────────
 
+WEEKDAY_DATE = "2026-05-15"  # Friday — used to bypass weekend guard in snapshot tests
+
+
+@pytest.fixture(autouse=False)
+def mock_weekday(monkeypatch):
+    """Patch datetime.now inside fubon_download_client to always return a weekday."""
+    import pytz
+    fixed_dt = datetime(2026, 5, 15, 15, 0, 0, tzinfo=pytz.timezone("Asia/Taipei"))
+    with patch(
+        "src.infrastructure.market_data.fubon_download_client.datetime"
+    ) as mock_dt:
+        mock_dt.now.return_value = fixed_dt
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        yield
+
+
 class TestDownloadSnapshot:
     SNAPSHOT_TSE = [
         {"type": "EQUITY", "symbol": "2330", "name": "台積電",
@@ -304,7 +320,7 @@ class TestDownloadSnapshot:
          "closePrice": 52, "tradeVolume": 1409},     # 張
     ]
 
-    def test_saves_tse_stocks_with_tw_suffix(self):
+    def test_saves_tse_stocks_with_tw_suffix(self, mock_weekday):
         client = _make_client()
         client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE}
 
@@ -315,7 +331,7 @@ class TestDownloadSnapshot:
         assert "2330.TW" in saved_symbols
         assert "2317.TW" in saved_symbols
 
-    def test_filters_non_4digit_symbols(self):
+    def test_filters_non_4digit_symbols(self, mock_weekday):
         client = _make_client()
         client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE}
 
@@ -325,7 +341,7 @@ class TestDownloadSnapshot:
         saved_symbols = [call.args[0] for call in mock_save.call_args_list]
         assert "00679B.TW" not in saved_symbols
 
-    def test_volume_converted_from_zhang_to_shares(self):
+    def test_volume_converted_from_zhang_to_shares(self, mock_weekday):
         """tradeVolume (張) must be multiplied by 1000 to match yfinance (股)."""
         client = _make_client()
         client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE[:1]}
@@ -341,7 +357,7 @@ class TestDownloadSnapshot:
         saved_vol = int(captured["2330.TW"]["volume"].iloc[0])
         assert saved_vol == 39_000 * 1000  # 張 → 股
 
-    def test_tib_fetched_when_tse_requested(self):
+    def test_tib_fetched_when_tse_requested(self, mock_weekday):
         """Requesting TSE should also query TIB (臺灣創新板) with same .TW suffix."""
         client = _make_client()
 
@@ -361,7 +377,7 @@ class TestDownloadSnapshot:
         assert "8162.TW" in saved_symbols   # TIB stock got .TW suffix
         assert count == 3  # 2330, 2317, 8162 (00679B filtered)
 
-    def test_otc_uses_two_suffix(self):
+    def test_otc_uses_two_suffix(self, mock_weekday):
         otc_data = [{"type": "EQUITY", "symbol": "6277", "name": "宏正",
                      "openPrice": 50, "highPrice": 51, "lowPrice": 49,
                      "closePrice": 50, "tradeVolume": 500}]
@@ -374,7 +390,7 @@ class TestDownloadSnapshot:
         saved_symbols = [call.args[0] for call in mock_save.call_args_list]
         assert "6277.TWO" in saved_symbols
 
-    def test_snapshot_df_has_correct_columns(self):
+    def test_snapshot_df_has_correct_columns(self, mock_weekday):
         client = _make_client()
         client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE[:1]}
 
@@ -390,7 +406,7 @@ class TestDownloadSnapshot:
         for col in ("date", "open", "high", "low", "close", "volume", "symbol"):
             assert col in df.columns
 
-    def test_returns_success_count(self):
+    def test_returns_success_count(self, mock_weekday):
         client = _make_client()
 
         def fake_quotes(market):
