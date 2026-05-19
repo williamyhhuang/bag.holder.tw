@@ -949,6 +949,10 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.2 - 2026-05-20
+- 🐛 **修復 MTX WebSocket 啟動失敗**：`fubon_neo` SDK 預設以 Speed 模式初始化，但 Speed 模式不支援 `aggregates` 頻道，導致 `run_mtx_trader.py` 啟動即崩潰
+  - 更新 `src/infrastructure/market_data/fubon_client.py`：`_initialize_sdk` 改為 `sdk.init_realtime(Mode.Normal)`，允許訂閱 `aggregates` / `candles` 頻道
+
 ### v5.8.1 - 2026-05-20
 - 🔀 **MTX Feature Toggle（`MTX_LIVE_ORDER`）**：透過環境變數切換模擬 vs 實單模式，預設模擬
   - 新增 `src/infrastructure/persistence/mtx_sheets_recorder.py`：`MTXSheetsRecorder` 將模擬進出場記錄寫入 Google Sheets「微台交易紀錄」頁籤，13 欄位（timestamp / session / symbol / direction / action / price / lots / pnl_pts / pnl_twd / reason / mode），lazy 初始化 worksheet

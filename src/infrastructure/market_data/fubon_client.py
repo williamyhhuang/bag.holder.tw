@@ -109,7 +109,7 @@ class FubonClient:
     async def _initialize_sdk(self):
         """Initialize the official Fubon SDK and login"""
         try:
-            from fubon_neo.sdk import FubonSDK
+            from fubon_neo.sdk import FubonSDK, Mode
             self.sdk = FubonSDK()
 
             if self.api_key and self.user_id and self.cert_path:
@@ -123,9 +123,9 @@ class FubonClient:
                     "(user_id + password + cert_path)"
                 )
 
-            self.sdk.init_realtime()
+            self.sdk.init_realtime(Mode.Normal)
             self.is_logged_in = True
-            logger.info("Fubon SDK initialized and logged in")
+            logger.info("Fubon SDK initialized and logged in (Normal mode)")
 
         except ImportError:
             raise FubonAPIError(
