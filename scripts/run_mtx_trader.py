@@ -12,11 +12,19 @@ MTX (微台指) Auto Trader — CLI 入口
 """
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 # ── 讓 src/ 以及 config/ 可被 import ──────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Setup logging before any imports that use loggers
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 from config.settings import settings
 from src.application.services.mtx_auto_trader import MTXAutoTrader, SessionType

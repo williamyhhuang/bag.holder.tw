@@ -285,7 +285,7 @@ class MTXAutoTrader:
         if is_night:
             sub_params["afterHours"] = True
         futopt_ws.subscribe(sub_params)
-        logger.info(f"Subscribed {self.symbol} {'[night]' if is_night else '[day]'}")
+        logger.warning(f"✅ WebSocket 已訂閱 {self.symbol} {'[夜盤]' if is_night else '[日盤]'} — 等待行情...")
 
         # ------ Main loop ------
         last_seed = datetime.now()

@@ -949,6 +949,12 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.3 - 2026-05-20
+- 🐛 **修復 run_mtx_trader.py 輸出空白（腳本看似當掉）**：未呼叫 `setup_logging`，Python 預設只輸出 WARNING+，INFO 訊息全被吃掉，導致 WebSocket 訂閱成功後畫面靜止
+  - 更新 `scripts/run_mtx_trader.py`：加入 `logging.basicConfig(INFO)` 初始化，輸出格式 `HH:MM:SS LEVEL name — msg`
+  - 更新 `src/application/services/mtx_auto_trader.py`：WebSocket 訂閱成功改用 `logger.warning` 輸出 `✅ WebSocket 已訂閱...`，讓使用者確認腳本存活
+  - 更新 `src/infrastructure/market_data/fubon_client.py`：Candles seed 失敗（404/403 換約日預期錯誤）降為 `logger.debug`，不再汙染輸出
+
 ### v5.8.2 - 2026-05-20
 - 🐛 **修復 MTX WebSocket 啟動失敗**：`fubon_neo` SDK 預設以 Speed 模式初始化，但 Speed 模式不支援 `aggregates` 頻道，導致 `run_mtx_trader.py` 啟動即崩潰
   - 更新 `src/infrastructure/market_data/fubon_client.py`：`_initialize_sdk` 改為 `sdk.init_realtime(Mode.Normal)`，允許訂閱 `aggregates` / `candles` 頻道

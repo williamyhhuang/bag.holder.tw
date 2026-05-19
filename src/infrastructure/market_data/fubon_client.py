@@ -360,7 +360,7 @@ class FubonClient:
         except FubonAPIError:
             raise
         except Exception as e:
-            logger.warning(f"Failed to get futures candles for {symbol}: {e}")
+            logger.debug(f"Failed to get futures candles for {symbol}: {e}")
             return []
 
     # ─────────────────────────────────────────────────────────────────────────
