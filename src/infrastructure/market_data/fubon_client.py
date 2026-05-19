@@ -331,13 +331,8 @@ class FubonClient:
             restfutopt = self.sdk.marketdata.rest_client.futopt
 
             if timeframe == 'D':
-                # Daily bars: use historical candles endpoint (last 60 trading days)
-                to_date = date.today()
-                from_date = to_date - timedelta(days=90)
-                result = restfutopt.historical.candles(
-                    symbol=symbol,
-                    **({'from': str(from_date), 'to': str(to_date)})
-                )
+                # Daily bars via historical.daily endpoint
+                result = restfutopt.historical.daily(symbol=symbol)
             else:
                 kwargs = {'symbol': symbol, 'timeframe': timeframe}
                 if session:
@@ -365,7 +360,7 @@ class FubonClient:
         except FubonAPIError:
             raise
         except Exception as e:
-            logger.error(f"Failed to get futures candles for {symbol}: {e}")
+            logger.warning(f"Failed to get futures candles for {symbol}: {e}")
             return []
 
     # ─────────────────────────────────────────────────────────────────────────

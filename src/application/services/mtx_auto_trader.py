@@ -180,6 +180,9 @@ class MTXAutoTrader:
 
         try:
             c1m = await self.client.get_futures_candles(self.symbol, "1", api_session)
+            # Fall back to regular session if afterhours returns no data (e.g. roll day)
+            if not c1m and api_session:
+                c1m = await self.client.get_futures_candles(self.symbol, "1", None)
             if c1m:
                 self.signal_engine.seed_1m(c1m)
                 logger.info(f"Seeded {len(c1m)} × 1-min bars")
@@ -188,6 +191,9 @@ class MTXAutoTrader:
 
         try:
             c5m = await self.client.get_futures_candles(self.symbol, "5", api_session)
+            # Fall back to regular session if afterhours returns no data (e.g. roll day)
+            if not c5m and api_session:
+                c5m = await self.client.get_futures_candles(self.symbol, "5", None)
             if c5m:
                 self.signal_engine.seed_5m(c5m)
                 logger.info(f"Seeded {len(c5m)} × 5-min bars")
