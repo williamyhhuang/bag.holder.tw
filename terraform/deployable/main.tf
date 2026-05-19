@@ -292,6 +292,94 @@ resource "google_cloud_scheduler_job" "sync_trades" {
   depends_on = [google_workflows_workflow.sync_trades]
 }
 
+# ── Cloud Run Job: bag-holder-mtx-trader-day ─────────────────────────────────
+# 日盤 08:45–13:30，任務最長 18000s (5 小時)，每周一至五自動啟動
+module "job_mtx_trader_day" {
+  source = "../modules/cloud_run_job"
+
+  name                  = "bag-holder-mtx-trader-day"
+  project_id            = var.project_id
+  region                = var.region
+  image                 = var.image
+  service_account_email = local.runner_sa_email
+  command               = ["/entrypoint-mtx-trader.sh"]
+  memory                = "1Gi"
+  cpu                   = "1"
+  task_timeout_seconds  = 18000   # 5 小時
+  max_retries           = 0       # 不重試 — 若訊號錯誤不應自動重下單
+  secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
+  env_vars = merge(local.common_env_vars, {
+    SESSION = "day"
+  })
+}
+
+# ── Cloud Run Job: bag-holder-mtx-trader-night ────────────────────────────────
+# 夜盤 15:00–05:00，任務最長 51600s (14.3 小時)，每周一至五自動啟動
+module "job_mtx_trader_night" {
+  source = "../modules/cloud_run_job"
+
+  name                  = "bag-holder-mtx-trader-night"
+  project_id            = var.project_id
+  region                = var.region
+  image                 = var.image
+  service_account_email = local.runner_sa_email
+  command               = ["/entrypoint-mtx-trader.sh"]
+  memory                = "1Gi"
+  cpu                   = "1"
+  task_timeout_seconds  = 51600   # ~14.3 小時
+  max_retries           = 0
+  secret_env_vars       = local.common_secret_env_vars
+  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
+  env_vars = merge(local.common_env_vars, {
+    SESSION = "night"
+  })
+}
+
+# ── Cloud Scheduler: 觸發日盤（台北時間 08:44 週一至週五）────────────────────
+resource "google_cloud_scheduler_job" "mtx_trader_day" {
+  name             = "bag-holder-mtx-trader-day-trigger"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "44 8 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "30s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/bag-holder-mtx-trader-day:run"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = local.runner_sa_email
+    }
+  }
+
+  depends_on = [module.job_mtx_trader_day]
+}
+
+# ── Cloud Scheduler: 觸發夜盤（台北時間 14:59 週一至週五）────────────────────
+resource "google_cloud_scheduler_job" "mtx_trader_night" {
+  name             = "bag-holder-mtx-trader-night-trigger"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "59 14 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "30s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/bag-holder-mtx-trader-night:run"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = local.runner_sa_email
+    }
+  }
+
+  depends_on = [module.job_mtx_trader_night]
+}
+
 # ── Monitoring: Email notification channel ────────────────────────────────────
 resource "google_monitoring_notification_channel" "email" {
   display_name = "bag-holder failure alerts"

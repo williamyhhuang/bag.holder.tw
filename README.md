@@ -792,6 +792,87 @@ Bot:   📊 交易統計 (近30天)
        ...
 ```
 
+## 🤖 MTX 微台指自動交易
+
+### 概述
+
+依照 `docs/SKILL.md` 極短線策略，全自動判斷進出場並透過 Fubon e01 API 下單。
+
+| 項目 | 說明 |
+|------|------|
+| 商品 | 微台指期貨（FIMTX 近月合約） |
+| 日盤 | 08:45–13:30 台灣時間 |
+| 夜盤 | 15:00–05:00 台灣時間（含跨日） |
+| 最大口數 | 3 口 |
+| 進場條件 | 日K偏多 + 5分K KD黃金交叉 + 1分K黃金交叉且收復MA5 |
+| 出場條件 | 獲利 ≥ 50 點 / 停損 ≥ 30 點 / 1分K KD反向交叉 |
+| 報價頻道 | Fubon WebSocket `aggregates`（日盤/夜盤自動切換） |
+
+### 使用方式
+
+```bash
+# 自動偵測當前時段（日盤或夜盤）
+python scripts/run_mtx_trader.py
+
+# 強制指定時段
+python scripts/run_mtx_trader.py --session day
+python scripts/run_mtx_trader.py --session night
+
+# 模擬模式（不下單，僅輸出訊號）
+python scripts/run_mtx_trader.py --dry-run
+python scripts/run_mtx_trader.py --session night --dry-run
+```
+
+### 環境變數設定
+
+所有敏感憑證已在 `.env` 設定，非敏感參數可在 `config/settings.py` 調整。
+富邦 API 憑證必填：
+
+```
+FUBON_USER_ID=<身分證字號>
+FUBON_API_KEY=<API Key>
+FUBON_CERT_PATH=<.p12 憑證路徑>
+FUBON_CERT_PASSWORD=<憑證密碼>
+FUBON_IS_SIMULATION=False   # False = 實單；True = 測試環境
+```
+
+### 策略邏輯（SKILL.md）
+
+```
+日K定方向：close > MA5 > MA10 且 KD向上 → 偏多；反之偏空
+           KD > 80 → 超買警示；KD < 20 → 超賣警示
+
+5分K確認：KD低檔（< 60）黃金交叉 或 MA5上穿MA10 → 短多
+           KD高檔（> 40）死亡交叉 或 MA5下穿MA10 → 短空
+
+1分K進場：KD黃金交叉 + close > MA5 → 做多觸發
+           KD死亡交叉 + close < MA5 → 做空觸發
+
+三層均滿足 → 送出 IOC 市價委託 1 口
+```
+
+### GCP 雲端部署（自動排程）
+
+使用 Cloud Run Job 執行，Cloud Scheduler 每個交易日自動觸發：
+
+| 任務名稱 | 觸發時間（台北） | 最長執行 |
+|---------|----------------|---------|
+| `bag-holder-mtx-trader-day` | 週一至五 08:44 | 5 小時 |
+| `bag-holder-mtx-trader-night` | 週一至五 14:59 | 14.3 小時 |
+
+部署：
+
+```bash
+cd terraform/deployable
+terraform apply -target=module.job_mtx_trader_day -target=module.job_mtx_trader_night \
+  -target=google_cloud_scheduler_job.mtx_trader_day \
+  -target=google_cloud_scheduler_job.mtx_trader_night
+```
+
+Cloud Run Job 使用固定出口 IP（Cloud NAT），需將此 IP 加入 Fubon API Key 白名單。
+
+---
+
 ## ⏰ 定時任務
 
 Docker 部署支援自動定時執行：
@@ -860,6 +941,16 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.8.0 - 2026-05-19
+- 🤖 **MTX 微台指自動交易系統**：依 SKILL.md 多重時間框架策略（日K + 5分K + 1分K KD + MA）全自動進出場，支援日盤（08:45–13:30）與夜盤（15:00–05:00）
+  - 新增 `src/application/services/mtx_signal_engine.py`：`BarManager`（逐 tick 建立 OHLCV）、`compute_stoch`（KD 9/3/3）、`compute_ma`、`golden_cross` / `death_cross` 偵測、`MTXSignalEngine` 三層訊號評估（日K偏多 + 5分K黃金交叉 + 1分K收復MA5 → 做多；反之做空）
+  - 新增 `src/application/services/mtx_auto_trader.py`：`MTXAutoTrader` 服務，訂閱 Fubon WebSocket `aggregates` 頻道（日盤 `afterHours=False` / 夜盤 `afterHours=True`）；最多 3 口倉位；IOC 市價單進出場；Telegram 推播所有委託通知
+  - 更新 `src/infrastructure/market_data/fubon_client.py`：`place_futures_order` 新增 `is_night_session` 參數，夜盤自動使用 `FutOptMarketType.FutureNight`
+  - 新增 `scripts/run_mtx_trader.py`：CLI 入口（`--session day|night|auto` / `--dry-run`）
+  - 新增 `docker/entrypoint-mtx-trader.sh`：Cloud Run Job Docker entrypoint
+  - 新增 50 個單元測試（`tests/test_mtx_auto_trader.py`）
+  - Terraform：新增 Cloud Run Job `bag-holder-mtx-trader-day`（日盤）與 `bag-holder-mtx-trader-night`（夜盤）及對應 Cloud Scheduler 觸發（`44 8 * * 1-5` / `59 14 * * 1-5` 台北時間）
 
 ### v5.6.0 - 2026-05-08
 - 📊 **Telegram `/pnl` 指令**：在 Telegram 輸入 `/pnl` 即可查看未實現損益與已實現損益摘要，格式針對手機閱讀最佳化

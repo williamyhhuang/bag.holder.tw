@@ -372,7 +372,8 @@ class FubonClient:
         time_in_force: str = 'ROD',
         order_type: str = 'Auto',
         account=None,
-        is_async: bool = False
+        is_async: bool = False,
+        is_night_session: bool = False,
     ) -> Dict[str, Any]:
         """
         Place a futures order.
@@ -419,12 +420,17 @@ class FubonClient:
                 'Close': FutOptOrderType.Close,
             }
 
+            mt = (
+                FutOptMarketType.FutureNight
+                if is_night_session
+                else FutOptMarketType.Future
+            )
             order = FutOptOrder(
                 buy_sell=bs_map.get(buy_sell, BSAction.Buy),
                 symbol=symbol,
                 price=price,
                 lot=lot,
-                market_type=FutOptMarketType.Future,
+                market_type=mt,
                 price_type=pt_map.get(price_type, FutOptPriceType.Limit),
                 time_in_force=tif_map.get(time_in_force, TimeInForce.ROD),
                 order_type=ot_map.get(order_type, FutOptOrderType.Auto),
