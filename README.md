@@ -952,6 +952,8 @@ docker compose up -d
 ### v5.8.2 - 2026-05-20
 - 🐛 **修復 MTX WebSocket 啟動失敗**：`fubon_neo` SDK 預設以 Speed 模式初始化，但 Speed 模式不支援 `aggregates` 頻道，導致 `run_mtx_trader.py` 啟動即崩潰
   - 更新 `src/infrastructure/market_data/fubon_client.py`：`_initialize_sdk` 改為 `sdk.init_realtime(Mode.Normal)`，允許訂閱 `aggregates` / `candles` 頻道
+- 🐛 **修復每日 K 線請求錯誤（`timeframe=D` → 400）**：Fugle futopt `intraday/candles` 只接受 1/5/10/15/30/60（分鐘），傳入 `"D"` 回傳 400
+  - 更新 `src/infrastructure/market_data/fubon_client.py`：`get_futures_candles` 當 `timeframe='D'` 時改呼叫 `restfutopt.historical.candles(from=..., to=...)`（近 90 日）
 
 ### v5.8.1 - 2026-05-20
 - 🔀 **MTX Feature Toggle（`MTX_LIVE_ORDER`）**：透過環境變數切換模擬 vs 實單模式，預設模擬

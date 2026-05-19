@@ -312,11 +312,12 @@ class FubonClient:
         session: str = None
     ) -> List[Dict[str, Any]]:
         """
-        Get futures intraday K-line data.
+        Get futures K-line data.
 
         Args:
             symbol: Futures symbol e.g. 'TXFE6'
-            timeframe: '1','5','10','15','30','60' (minutes)
+            timeframe: '1','5','10','15','30','60' (minutes) for intraday;
+                       'D' for daily historical candles
             session: None for regular, 'afterhours' for night session
 
         Returns:
@@ -328,11 +329,20 @@ class FubonClient:
                 raise FubonAPIError("Not logged in")
 
             restfutopt = self.sdk.marketdata.rest_client.futopt
-            kwargs = {'symbol': symbol, 'timeframe': timeframe}
-            if session:
-                kwargs['session'] = session
 
-            result = restfutopt.intraday.candles(**kwargs)
+            if timeframe == 'D':
+                # Daily bars: use historical candles endpoint (last 60 trading days)
+                to_date = date.today()
+                from_date = to_date - timedelta(days=90)
+                result = restfutopt.historical.candles(
+                    symbol=symbol,
+                    **({'from': str(from_date), 'to': str(to_date)})
+                )
+            else:
+                kwargs = {'symbol': symbol, 'timeframe': timeframe}
+                if session:
+                    kwargs['session'] = session
+                result = restfutopt.intraday.candles(**kwargs)
 
             if not result or not hasattr(result, 'data') or not result.data:
                 return []
