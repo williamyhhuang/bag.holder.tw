@@ -721,6 +721,49 @@ class AIAnalyzerSettings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
+class MTXTraderSettings(BaseSettings):
+    """
+    MTX 微台指自動交易設定
+
+    MTX_LIVE_ORDER=False（預設）→ 模擬下單，交易紀錄寫入 Google Sheets
+    MTX_LIVE_ORDER=True           → 透過富邦 API 實際下單
+    """
+    # Feature toggle：是否啟用富邦 API 實際下單（預設 False = 模擬模式）
+    live_order: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MTX_LIVE_ORDER"),
+        description="True = 實際下單；False = 模擬並記錄至 Google Sheets",
+    )
+    # Google Sheets 模擬交易記錄頁籤名稱
+    sim_worksheet_name: str = Field(
+        default="微台交易紀錄",
+        validation_alias=AliasChoices("MTX_SIM_WORKSHEET"),
+        description="模擬交易記錄寫入的工作表名稱",
+    )
+    # 停損點數
+    stop_loss_pts: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices("MTX_STOP_LOSS_PTS"),
+    )
+    # 獲利目標點數
+    take_profit_pts: float = Field(
+        default=50.0,
+        validation_alias=AliasChoices("MTX_TAKE_PROFIT_PTS"),
+    )
+    # 最大持倉口數
+    max_lots: int = Field(
+        default=3,
+        validation_alias=AliasChoices("MTX_MAX_LOTS"),
+    )
+
+    model_config = {
+        "extra": "ignore",
+        "populate_by_name": True,
+        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file_encoding": "utf-8",
+    }
+
+
 class Settings(BaseSettings):
     """Main application settings"""
     # Sub-settings
@@ -743,6 +786,7 @@ class Settings(BaseSettings):
     backtest: BacktestSettings = BacktestSettings()
     ai_analyzer: AIAnalyzerSettings = AIAnalyzerSettings()
     google_sheets: GoogleSheetsSettings = GoogleSheetsSettings()
+    mtx_trader: MTXTraderSettings = MTXTraderSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

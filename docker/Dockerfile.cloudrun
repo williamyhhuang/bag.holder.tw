@@ -53,14 +53,16 @@ WORKDIR /app
 COPY src/ ./src/
 COPY main.py ./
 COPY scripts/run_backtest.py ./
+COPY scripts/run_mtx_trader.py ./scripts/run_mtx_trader.py
 COPY config/ ./config/
 COPY docker/entrypoint-download.sh /entrypoint-download.sh
 COPY docker/entrypoint-signals.sh /entrypoint-signals.sh
 COPY docker/entrypoint-webhook.sh /entrypoint-webhook.sh
 COPY docker/entrypoint-check-holdings.sh /entrypoint-check-holdings.sh
 COPY docker/entrypoint-sync-trades.sh /entrypoint-sync-trades.sh
+COPY docker/entrypoint-mtx-trader.sh /entrypoint-mtx-trader.sh
 
-RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh /entrypoint-check-holdings.sh /entrypoint-sync-trades.sh && \
+RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh /entrypoint-check-holdings.sh /entrypoint-sync-trades.sh /entrypoint-mtx-trader.sh && \
     mkdir -p /app/data /app/logs /app/reports /app/data/stocks
 
 ENV PYTHONPATH=/app

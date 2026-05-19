@@ -8,6 +8,10 @@ MTX Auto Trader — 微台指 (MTX) 自動下單交易系統
 使用 Fubon SDK WebSocket 訂閱 aggregates 頻道取得即時報價，
 結合 MTXSignalEngine 的多重時間框架策略（日K + 5分K + 1分K）
 自動進出場，最多持倉 3 口。
+
+Feature Toggle (settings.mtx_trader.live_order)
+  False（預設）→ 模擬模式：不呼叫富邦 API，交易紀錄寫入 Google Sheets「微台交易紀錄」
+  True         → 實單模式：透過富邦 e01 SDK 下單
 """
 from __future__ import annotations
 
@@ -21,6 +25,7 @@ from typing import List, Optional
 
 from ...infrastructure.market_data.fubon_client import FubonClient, get_near_month_symbol
 from ...infrastructure.notification.telegram_notifier import TelegramNotifier
+from ...infrastructure.persistence.mtx_sheets_recorder import MTXSheetsRecorder
 from ...utils.logger import get_logger
 from .mtx_signal_engine import MTXSignalEngine, SignalDirection, TradeSignal
 
@@ -108,11 +113,26 @@ class MTXAutoTrader:
         stop_loss_pts: float = 30.0,
         take_profit_pts: float = 50.0,
         max_lots: int = 3,
+        live_order: Optional[bool] = None,
+        sheets_recorder: Optional[MTXSheetsRecorder] = None,
     ) -> None:
         self.client = fubon_client
         self.notifier = notifier
         self.dry_run = dry_run
         self.max_lots = max_lots
+
+        # Feature toggle: live_order 明確傳入時使用傳入值，否則從 settings 讀取
+        if live_order is not None:
+            self.live_order = live_order
+        else:
+            try:
+                from config.settings import settings
+                self.live_order = settings.mtx_trader.live_order
+            except Exception:
+                self.live_order = False  # 安全預設：模擬模式
+
+        # Google Sheets recorder（模擬模式使用）
+        self._sheets_recorder = sheets_recorder or MTXSheetsRecorder()
 
         self.signal_engine = MTXSignalEngine(
             stop_loss_pts=stop_loss_pts,
@@ -226,10 +246,17 @@ class MTXAutoTrader:
     # Session loop
 
     async def _run_session(self, is_night: bool) -> None:
+        if self.dry_run:
+            mode_label = "⚠️  DRY RUN（不下單、不記錄）"
+        elif not self.live_order:
+            mode_label = "📋 模擬模式（記錄至 Google Sheets 微台交易紀錄）"
+        else:
+            mode_label = "✅ 實單模式（富邦 API 下單）"
+
         await self._notify(
             f"🟢 MTX 自動交易 啟動 — {'夜盤' if is_night else '日盤'}\n"
             f"商品：{self.symbol} | 最大口數：{self.max_lots}\n"
-            + ("⚠️  DRY RUN 模式（不實際下單）" if self.dry_run else "✅ 實單模式")
+            f"{mode_label}"
         )
 
         message_queue: asyncio.Queue = asyncio.Queue()
@@ -359,17 +386,15 @@ class MTXAutoTrader:
         reason: str,
         is_night: bool,
     ) -> None:
-        buy_sell = "Buy" if direction == "LONG" else "Sell"
         logger.info(f"→ OPEN {direction} {lots}L @ {price:.0f} — {reason}")
+        session_label = "夜盤" if is_night else "日盤"
 
+        # ── DRY RUN ──
         if self.dry_run:
             self.position = Position(
-                symbol=self.symbol,
-                direction=direction,
-                entry_price=price,
-                lots=lots,
-                entry_time=datetime.now(),
-                order_no="DRY",
+                symbol=self.symbol, direction=direction,
+                entry_price=price, lots=lots,
+                entry_time=datetime.now(), order_no="DRY",
             )
             await self._notify(
                 f"📋 [DRY RUN] {'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口\n"
@@ -377,7 +402,32 @@ class MTXAutoTrader:
             )
             return
 
+        # ── 模擬模式 → Google Sheets ──
+        if not self.live_order:
+            self._sheets_recorder.record_open(
+                symbol=self.symbol,
+                direction=direction,
+                price=price,
+                lots=lots,
+                reason=reason,
+                session=session_label,
+            )
+            self.position = Position(
+                symbol=self.symbol, direction=direction,
+                entry_price=price, lots=lots,
+                entry_time=datetime.now(), order_no="SIM",
+            )
+            await self._notify(
+                f"📋 [模擬] {'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口\n"
+                f"進場：{price:.0f}　原因：{reason}\n"
+                f"目標：+{self.signal_engine.take_profit_pts:.0f}pt　"
+                f"停損：-{self.signal_engine.stop_loss_pts:.0f}pt"
+            )
+            return
+
+        # ── 實單模式 → 富邦 API ──
         try:
+            buy_sell = "Buy" if direction == "LONG" else "Sell"
             result = await self.client.place_futures_order(
                 symbol=self.symbol,
                 buy_sell=buy_sell,
@@ -389,10 +439,8 @@ class MTXAutoTrader:
                 is_night_session=is_night,
             )
             self.position = Position(
-                symbol=self.symbol,
-                direction=direction,
-                entry_price=price,
-                lots=lots,
+                symbol=self.symbol, direction=direction,
+                entry_price=price, lots=lots,
                 entry_time=datetime.now(),
                 order_no=result.get("order_no", ""),
             )
@@ -411,15 +459,33 @@ class MTXAutoTrader:
             return
 
         pos = self.position
-        buy_sell = "Sell" if pos.direction == "LONG" else "Buy"
         pnl = (
             price - pos.entry_price
             if pos.direction == "LONG"
             else pos.entry_price - price
         )
         logger.info(f"→ CLOSE {pos.direction} @ {price:.0f} | PnL={pnl:+.0f}pts — {reason}")
+        session_label = "夜盤" if is_night else "日盤"
 
-        if not self.dry_run:
+        # ── DRY RUN ── （不下單、不寫 Sheets）
+        if self.dry_run:
+            pass  # fall through to trade record
+
+        # ── 模擬模式 → Google Sheets ──
+        elif not self.live_order:
+            self._sheets_recorder.record_close(
+                symbol=pos.symbol,
+                direction=pos.direction,
+                price=price,
+                lots=pos.lots,
+                pnl_pts=pnl,
+                reason=reason,
+                session=session_label,
+            )
+
+        # ── 實單模式 → 富邦 API ──
+        else:
+            buy_sell = "Sell" if pos.direction == "LONG" else "Buy"
             try:
                 await self.client.place_futures_order(
                     symbol=self.symbol,
@@ -451,9 +517,10 @@ class MTXAutoTrader:
         )
         self.position = None
 
+        mode_tag = "[DRY RUN] " if self.dry_run else ("[模擬] " if not self.live_order else "")
         emoji = "✅" if pnl >= 0 else "🛑"
         await self._notify(
-            f"{emoji} {'平多' if pos.direction == 'LONG' else '平空'} {pos.lots}口\n"
+            f"{mode_tag}{emoji} {'平多' if pos.direction == 'LONG' else '平空'} {pos.lots}口\n"
             f"出場：{price:.0f}　損益：{pnl * pos.lots:+.0f}pt\n"
             f"原因：{reason}"
         )
