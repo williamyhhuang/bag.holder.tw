@@ -834,6 +834,13 @@ FUBON_API_KEY=<API Key>
 FUBON_CERT_PATH=<.p12 憑證路徑>
 FUBON_CERT_PASSWORD=<憑證密碼>
 FUBON_IS_SIMULATION=False   # False = 實單；True = 測試環境
+
+# MTX Feature Toggle（非敏感，可直接設在 Cloud Run 環境變數）
+MTX_LIVE_ORDER=false         # false = 模擬（寫 Google Sheets）；true = 實際下單
+MTX_SIM_WORKSHEET=微台交易紀錄  # 模擬模式寫入的 Google Sheets 頁籤名稱
+MTX_STOP_LOSS_PTS=30         # 停損點數
+MTX_TAKE_PROFIT_PTS=50       # 停利點數
+MTX_MAX_LOTS=3               # 最大持倉口數
 ```
 
 ### 策略邏輯（SKILL.md）
@@ -941,6 +948,14 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.8.1 - 2026-05-20
+- 🔀 **MTX Feature Toggle（`MTX_LIVE_ORDER`）**：透過環境變數切換模擬 vs 實單模式，預設模擬
+  - 新增 `src/infrastructure/persistence/mtx_sheets_recorder.py`：`MTXSheetsRecorder` 將模擬進出場記錄寫入 Google Sheets「微台交易紀錄」頁籤，13 欄位（timestamp / session / symbol / direction / action / price / lots / pnl_pts / pnl_twd / reason / mode），lazy 初始化 worksheet
+  - 更新 `src/application/services/mtx_auto_trader.py`：`_open_position` / `_close_position` 三路分派——`dry_run=True` → 略過全部；`live_order=False`（模擬）→ 寫 Sheets；`live_order=True` → 呼叫 Fubon API
+  - 更新 `config/settings.py`：新增 `MTXTraderSettings`，對應環境變數 `MTX_LIVE_ORDER`（bool，預設 false）、`MTX_SIM_WORKSHEET`（預設「微台交易紀錄」）、`MTX_STOP_LOSS_PTS`（預設 30）、`MTX_TAKE_PROFIT_PTS`（預設 50）、`MTX_MAX_LOTS`（預設 3）
+  - 更新 `docker/Dockerfile.cloudrun`：加入 `run_mtx_trader.py` 與 `entrypoint-mtx-trader.sh`
+  - 新增 24 個單元測試（`tests/test_mtx_sheets_recorder.py`）覆蓋三種模式路由；74/74 通過
 
 ### v5.8.0 - 2026-05-19
 - 🤖 **MTX 微台指自動交易系統**：依 SKILL.md 多重時間框架策略（日K + 5分K + 1分K KD + MA）全自動進出場，支援日盤（08:45–13:30）與夜盤（15:00–05:00）
