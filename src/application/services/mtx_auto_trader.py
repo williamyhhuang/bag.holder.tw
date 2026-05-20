@@ -381,17 +381,20 @@ class MTXAutoTrader:
 
     async def _on_ws_data(self, msg: dict, is_night: bool) -> None:
         if msg.get("event") != "data":
+            logger.debug(f"WS non-data event: {msg.get('event')} — {msg}")
             return
 
         data = msg.get("data") or {}
         price_raw = data.get("lastPrice") or data.get("closePrice")
         if price_raw is None:
+            logger.debug(f"WS data without price: {data}")
             return
 
         price = float(price_raw)
         volume = int(data.get("lastSize") or 0)
         ts = datetime.now()
 
+        logger.info(f"📊 Tick  {price:.0f}  vol={volume}  {ts.strftime('%H:%M:%S')}")
         self.signal_engine.add_tick(price, volume, ts)
 
         pos_dir = self.position.direction if self.position else None
