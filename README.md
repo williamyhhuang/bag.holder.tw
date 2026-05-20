@@ -949,6 +949,9 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.6 - 2026-05-20
+- 🐛 **修正微型臺指 symbol root `FIMTX` → `TMF`**：`FIMTX` 在 Fugle API 不存在，WebSocket 訂閱雖不報錯但永遠沒有 tick 資料；正確 product code 為 `TMF`（微型臺指期貨），近月合約 `TMFF6` 可正常訂閱並收到行情
+
 ### v5.8.5 - 2026-05-20
 - 🐛 **修復 WebSocket 重連 — 正確事件名稱 + reconnect 先 disconnect**：三個根本問題同步修復
   - `on("open")` 應為 `on("authenticated")`，`on("close")` 應為 `on("disconnect")`（fugle SDK 用 pyee，事件名稱為 `"connect"/"disconnect"/"authenticated"`）
