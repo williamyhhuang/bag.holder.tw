@@ -949,6 +949,13 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.4 - 2026-05-20
+- 🐛 **修復 MTX WebSocket 斷線後不重連**：夜盤連線約 30 分鐘後 Fubon 伺服器送 `Connection reset by peer`，原本無重連邏輯，整個盤收不到 tick，導致 0 訊號
+  - 更新 `src/application/services/mtx_auto_trader.py`：加入 `on_error` / `on_close` callback 設 `ws_connected=False`；main loop 每 10 秒偵測並自動重連（`_ws_connect()` 重新 `connect` + `subscribe`）
+- 🐛 **修復 `--session day` 啟動後立刻退出**：main loop 以 `get_session() == CLOSED` 偵測結束，但 08:45 前啟動時（如 08:31）回傳 CLOSED，導致剛連上 WebSocket 就退出
+  - 更新 `src/application/services/mtx_auto_trader.py`：改以 `_session_should_end()` 邏輯取代——日盤以 `>= 13:31`、夜盤以 `05:01–08:44` 為結束條件，開盤前啟動不再提早退出
+  - 新增 10 個迴歸單元測試（`tests/test_mtx_auto_trader.py`）：`TestSessionEndCondition` + `TestWebSocketReconnect`
+
 ### v5.8.3 - 2026-05-20
 - 🐛 **修復 run_mtx_trader.py 輸出空白（腳本看似當掉）**：未呼叫 `setup_logging`，Python 預設只輸出 WARNING+，INFO 訊息全被吃掉，導致 WebSocket 訂閱成功後畫面靜止
   - 更新 `scripts/run_mtx_trader.py`：加入 `logging.basicConfig(INFO)` 初始化，輸出格式 `HH:MM:SS LEVEL name — msg`

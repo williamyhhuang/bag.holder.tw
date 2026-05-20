@@ -270,6 +270,11 @@ class MTXAutoTrader:
 
         # ------ WebSocket setup ------
         futopt_ws = self.client.sdk.marketdata.websocket_client.futopt
+        sub_params: dict = {"channel": "aggregates", "symbol": self.symbol}
+        if is_night:
+            sub_params["afterHours"] = True
+
+        ws_connected = [False]  # mutable flag accessible from callbacks
 
         def _on_message(raw_msg) -> None:
             try:
@@ -278,26 +283,56 @@ class MTXAutoTrader:
             except Exception as exc:
                 logger.debug(f"WS message parse error: {exc}")
 
-        futopt_ws.on("message", _on_message)
-        futopt_ws.connect()
+        def _on_disconnect(*_args) -> None:
+            if ws_connected[0]:
+                ws_connected[0] = False
+                logger.warning("⚠️  WebSocket 斷線，等待重連...")
 
-        sub_params: dict = {"channel": "aggregates", "symbol": self.symbol}
-        if is_night:
-            sub_params["afterHours"] = True
-        futopt_ws.subscribe(sub_params)
-        logger.warning(f"✅ WebSocket 已訂閱 {self.symbol} {'[夜盤]' if is_night else '[日盤]'} — 等待行情...")
+        futopt_ws.on("message", _on_message)
+        futopt_ws.on("error", _on_disconnect)
+        futopt_ws.on("close", _on_disconnect)
+
+        def _ws_connect() -> None:
+            futopt_ws.connect()
+            futopt_ws.subscribe(sub_params)
+            ws_connected[0] = True
+            logger.warning(f"✅ WebSocket 已訂閱 {self.symbol} {'[夜盤]' if is_night else '[日盤]'} — 等待行情...")
+
+        _ws_connect()
+
+        # ------ Session end condition ------
+        # Use expected session boundary instead of get_session() to avoid
+        # exiting immediately when forced session starts before official open.
+        session_end: time = time(13, 31) if not is_night else time(5, 1)
+
+        def _session_should_end() -> bool:
+            t = datetime.now().time()
+            if not is_night:
+                return t >= session_end
+            # Night session crosses midnight: end when 05:01 reached from above
+            return time(5, 1) <= t < time(8, 45)
 
         # ------ Main loop ------
         last_seed = datetime.now()
+        last_reconnect = datetime.now()
 
         while self.running:
             # Check if session ended
-            if get_session() == SessionType.CLOSED:
+            if _session_should_end():
                 logger.info("Session window closed — exiting loop")
                 break
 
-            # Periodic bar refresh (every 5 min) to stay in sync with REST API
+            # Reconnect if WebSocket dropped (throttle: max once per 10s)
             now = datetime.now()
+            if not ws_connected[0] and (now - last_reconnect).seconds >= 10:
+                last_reconnect = now
+                try:
+                    logger.info("🔄 WebSocket 重連中...")
+                    _ws_connect()
+                except Exception as exc:
+                    logger.warning(f"WebSocket 重連失敗：{exc}")
+
+            # Periodic bar refresh (every 5 min) to stay in sync with REST API
             if (now - last_seed).seconds >= 300:
                 await self._seed_bars()
                 last_seed = now

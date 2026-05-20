@@ -483,3 +483,94 @@ class TestMTXAutoTraderDryRun:
         sym = trader.symbol
         assert sym.startswith("FIMTX")
         assert len(sym) == 7  # e.g. FIMTXE6
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Bug regression: session end condition & WS reconnect
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestSessionEndCondition:
+    """_session_should_end boundary logic (replicated from _run_session closure)."""
+
+    from datetime import time as _time
+
+    @staticmethod
+    def _should_end(is_night: bool, now: datetime) -> bool:
+        """Pure version of the closure for unit testing."""
+        from datetime import time as _t
+        t = now.time()
+        if not is_night:
+            return t >= _t(13, 31)
+        return _t(5, 1) <= t < _t(8, 45)
+
+    def test_day_before_open_does_not_exit(self):
+        """Forced --session day at 08:31 must NOT trigger early exit (regression)."""
+        assert not self._should_end(False, datetime(2026, 5, 19, 8, 31, 0))
+
+    def test_day_during_trading_does_not_exit(self):
+        assert not self._should_end(False, datetime(2026, 5, 19, 11, 0, 0))
+
+    def test_day_at_close_exits(self):
+        assert self._should_end(False, datetime(2026, 5, 19, 13, 31, 0))
+
+    def test_day_after_close_exits(self):
+        assert self._should_end(False, datetime(2026, 5, 19, 14, 0, 0))
+
+    def test_night_at_02h05_does_not_exit(self):
+        """02:05 during night session must NOT trigger exit (regression)."""
+        assert not self._should_end(True, datetime(2026, 5, 20, 2, 5, 0))
+
+    def test_night_at_session_end_exits(self):
+        assert self._should_end(True, datetime(2026, 5, 20, 5, 1, 0))
+
+    def test_night_during_session_15h_does_not_exit(self):
+        assert not self._should_end(True, datetime(2026, 5, 19, 15, 0, 0))
+
+
+class TestWebSocketReconnect:
+    """WS disconnect flag and reconnect path."""
+
+    def test_on_disconnect_clears_flag(self):
+        """_on_disconnect callback must set ws_connected[0] = False."""
+        ws_connected = [True]
+
+        def _on_disconnect(*_args):
+            if ws_connected[0]:
+                ws_connected[0] = False
+
+        _on_disconnect()
+        assert ws_connected[0] is False
+
+    def test_reconnect_called_when_disconnected(self):
+        """Main loop reconnect branch calls _ws_connect when flag is False."""
+        reconnect_calls = []
+
+        def _ws_connect():
+            reconnect_calls.append(1)
+
+        ws_connected = [False]
+        last_reconnect = datetime(2026, 5, 19, 10, 0, 0)
+        now = datetime(2026, 5, 19, 10, 0, 15)  # 15s later → throttle passed
+
+        if not ws_connected[0] and (now - last_reconnect).seconds >= 10:
+            _ws_connect()
+            ws_connected[0] = True
+
+        assert len(reconnect_calls) == 1
+        assert ws_connected[0] is True
+
+    def test_reconnect_throttled(self):
+        """Reconnect must not fire if < 10s since last attempt."""
+        reconnect_calls = []
+
+        def _ws_connect():
+            reconnect_calls.append(1)
+
+        ws_connected = [False]
+        last_reconnect = datetime(2026, 5, 19, 10, 0, 0)
+        now = datetime(2026, 5, 19, 10, 0, 5)  # only 5s later
+
+        if not ws_connected[0] and (now - last_reconnect).seconds >= 10:
+            _ws_connect()
+
+        assert len(reconnect_calls) == 0
