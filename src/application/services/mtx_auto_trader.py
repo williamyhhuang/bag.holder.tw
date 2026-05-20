@@ -283,20 +283,36 @@ class MTXAutoTrader:
             except Exception as exc:
                 logger.debug(f"WS message parse error: {exc}")
 
+        def _on_open(*_args) -> None:
+            """Called whenever the WebSocket (re)connects — subscribe and mark connected."""
+            try:
+                futopt_ws.subscribe(sub_params)
+            except Exception as exc:
+                logger.warning(f"訂閱失敗：{exc}")
+            ws_connected[0] = True
+            logger.warning(
+                f"✅ WebSocket 已訂閱 {self.symbol} "
+                f"{'[夜盤]' if is_night else '[日盤]'} — 等待行情..."
+            )
+
         def _on_disconnect(*_args) -> None:
             if ws_connected[0]:
                 ws_connected[0] = False
                 logger.warning("⚠️  WebSocket 斷線，等待重連...")
 
+        futopt_ws.on("open", _on_open)
         futopt_ws.on("message", _on_message)
         futopt_ws.on("error", _on_disconnect)
         futopt_ws.on("close", _on_disconnect)
 
         def _ws_connect() -> None:
-            futopt_ws.connect()
-            futopt_ws.subscribe(sub_params)
-            ws_connected[0] = True
-            logger.warning(f"✅ WebSocket 已訂閱 {self.symbol} {'[夜盤]' if is_night else '[日盤]'} — 等待行情...")
+            """Initiate WebSocket connection; subscribe is handled by _on_open."""
+            try:
+                futopt_ws.connect()
+            except Exception as exc:
+                # SDK raises if socket is already open/connecting — log and let
+                # _on_open handle the subscribe when connection settles.
+                logger.debug(f"connect() raised (may be transient): {exc}")
 
         _ws_connect()
 
@@ -326,11 +342,8 @@ class MTXAutoTrader:
             now = datetime.now()
             if not ws_connected[0] and (now - last_reconnect).seconds >= 10:
                 last_reconnect = now
-                try:
-                    logger.info("🔄 WebSocket 重連中...")
-                    _ws_connect()
-                except Exception as exc:
-                    logger.warning(f"WebSocket 重連失敗：{exc}")
+                logger.info("🔄 WebSocket 重連中...")
+                _ws_connect()
 
             # Periodic bar refresh (every 5 min) to stay in sync with REST API
             if (now - last_seed).seconds >= 300:
