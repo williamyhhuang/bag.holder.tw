@@ -103,7 +103,7 @@ class MTXAutoTrader:
         Maximum position size (default 3).
     """
 
-    SYMBOL_ROOT = "FIMTX"
+    SYMBOL_ROOT = "TMF"  # 微型臺指期貨，Fugle product code (非 FIMTX)
 
     def __init__(
         self,
@@ -279,6 +279,7 @@ class MTXAutoTrader:
         def _on_message(raw_msg) -> None:
             try:
                 data = json.loads(raw_msg) if isinstance(raw_msg, str) else raw_msg
+                logger.info(f"📨 WS raw: {data}")
                 loop.call_soon_threadsafe(message_queue.put_nowait, data)
             except Exception as exc:
                 logger.debug(f"WS message parse error: {exc}")
@@ -381,7 +382,7 @@ class MTXAutoTrader:
 
     async def _on_ws_data(self, msg: dict, is_night: bool) -> None:
         if msg.get("event") != "data":
-            logger.debug(f"WS non-data event: {msg.get('event')} — {msg}")
+            logger.info(f"WS non-data event: {msg.get('event')} — {msg}")
             return
 
         data = msg.get("data") or {}

@@ -380,7 +380,7 @@ class TestMTXAutoTraderDryRun:
         client = _mock_client()
         trader = MTXAutoTrader(client, dry_run=True)
         trader.position = Position(
-            symbol="FIMTXE6", direction="LONG",
+            symbol="TMFE6", direction="LONG",
             entry_price=20000.0, lots=1,
             entry_time=datetime(2026, 5, 19, 9, 0, 0),
         )
@@ -397,7 +397,7 @@ class TestMTXAutoTraderDryRun:
         client = _mock_client()
         trader = MTXAutoTrader(client, dry_run=True)
         trader.position = Position(
-            symbol="FIMTXE6", direction="SHORT",
+            symbol="TMFE6", direction="SHORT",
             entry_price=20000.0, lots=2,
             entry_time=datetime(2026, 5, 19, 9, 0, 0),
         )
@@ -413,7 +413,7 @@ class TestMTXAutoTraderDryRun:
         client = _mock_client()
         trader = MTXAutoTrader(client, dry_run=True, max_lots=3)
         trader.position = Position(
-            symbol="FIMTXE6", direction="LONG",
+            symbol="TMFE6", direction="LONG",
             entry_price=20000.0, lots=3,
             entry_time=datetime.now(),
         )
@@ -450,7 +450,7 @@ class TestMTXAutoTraderDryRun:
         trader = MTXAutoTrader(client, dry_run=True)
         trader.signal_engine.last_price = 20000.0
         trader.position = Position(
-            symbol="FIMTXE6", direction="SHORT",
+            symbol="TMFE6", direction="SHORT",
             entry_price=20000.0, lots=1,
             entry_time=datetime.now(),
         )
@@ -481,8 +481,8 @@ class TestMTXAutoTraderDryRun:
         client = _mock_client()
         trader = MTXAutoTrader(client)
         sym = trader.symbol
-        assert sym.startswith("FIMTX")
-        assert len(sym) == 7  # e.g. FIMTXE6
+        assert sym.startswith("TMF")
+        assert len(sym) == 5  # e.g. TMFF6
 
 
 # ──────────────────────────────────────────────────────────────────────────────

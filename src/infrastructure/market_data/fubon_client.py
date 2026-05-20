@@ -32,10 +32,11 @@ def get_near_month_symbol(product: str) -> str:
     Taiwan index futures expire on the 3rd Wednesday of each month.
 
     Args:
-        product: Product prefix e.g. 'TXF', 'MXF', 'MTX'
+        product: Fugle/TAIFEX product code e.g. 'TXF' (台指期), 'MXF' (小台),
+                 'TMF' (微型臺指期貨). Note: 微型臺指 = TMF, not FIMTX.
 
     Returns:
-        Near-month symbol, e.g. 'TXFE6'
+        Near-month symbol, e.g. 'TXFF6', 'TMFF6'
     """
     today = date.today()
 
