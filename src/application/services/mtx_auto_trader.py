@@ -283,13 +283,13 @@ class MTXAutoTrader:
             except Exception as exc:
                 logger.debug(f"WS message parse error: {exc}")
 
-        def _on_open(*_args) -> None:
-            """Called whenever the WebSocket (re)connects — subscribe and mark connected."""
+        def _on_authenticated(*_args) -> None:
+            """Called after WebSocket auth completes — safe to subscribe."""
+            ws_connected[0] = True
             try:
                 futopt_ws.subscribe(sub_params)
             except Exception as exc:
                 logger.warning(f"訂閱失敗：{exc}")
-            ws_connected[0] = True
             logger.warning(
                 f"✅ WebSocket 已訂閱 {self.symbol} "
                 f"{'[夜盤]' if is_night else '[日盤]'} — 等待行情..."
@@ -300,19 +300,25 @@ class MTXAutoTrader:
                 ws_connected[0] = False
                 logger.warning("⚠️  WebSocket 斷線，等待重連...")
 
-        futopt_ws.on("open", _on_open)
+        # Correct fugle SDK event names: "connect"/"disconnect"/"authenticated"
+        futopt_ws.on("authenticated", _on_authenticated)
         futopt_ws.on("message", _on_message)
         futopt_ws.on("error", _on_disconnect)
-        futopt_ws.on("close", _on_disconnect)
+        futopt_ws.on("disconnect", _on_disconnect)
 
-        def _ws_connect() -> None:
-            """Initiate WebSocket connection; subscribe is handled by _on_open."""
+        def _ws_connect(reconnect: bool = False) -> None:
+            """Connect (or reconnect) WebSocket; subscribe is handled by _on_authenticated."""
+            import time
+            if reconnect:
+                try:
+                    futopt_ws.disconnect()
+                except Exception:
+                    pass
+                time.sleep(1)  # let old run_forever thread exit before re-connecting
             try:
                 futopt_ws.connect()
             except Exception as exc:
-                # SDK raises if socket is already open/connecting — log and let
-                # _on_open handle the subscribe when connection settles.
-                logger.debug(f"connect() raised (may be transient): {exc}")
+                logger.warning(f"WebSocket 重連失敗：{exc}")
 
         _ws_connect()
 
@@ -343,7 +349,7 @@ class MTXAutoTrader:
             if not ws_connected[0] and (now - last_reconnect).seconds >= 10:
                 last_reconnect = now
                 logger.info("🔄 WebSocket 重連中...")
-                _ws_connect()
+                _ws_connect(reconnect=True)
 
             # Periodic bar refresh (every 5 min) to stay in sync with REST API
             if (now - last_seed).seconds >= 300:
