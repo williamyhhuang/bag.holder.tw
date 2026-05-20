@@ -949,6 +949,10 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.5 - 2026-05-20
+- 🐛 **修復 WebSocket 重連競爭條件（`socket is already opened`）**：SDK 自動重連後，我們的 10 秒重連計時器仍觸發第二次 `connect()`，拋出 `WebSocketException: socket is already opened`
+  - 更新 `src/application/services/mtx_auto_trader.py`：改以 `on("open")` 事件統一執行 `subscribe()`；`_ws_connect()` 僅呼叫 `connect()`，SDK 自動重連後觸發 open 事件即更新 `ws_connected` flag，10 秒計時器不再重複觸發
+
 ### v5.8.4 - 2026-05-20
 - 🐛 **修復 MTX WebSocket 斷線後不重連**：夜盤連線約 30 分鐘後 Fubon 伺服器送 `Connection reset by peer`，原本無重連邏輯，整個盤收不到 tick，導致 0 訊號
   - 更新 `src/application/services/mtx_auto_trader.py`：加入 `on_error` / `on_close` callback 設 `ws_connected=False`；main loop 每 10 秒偵測並自動重連（`_ws_connect()` 重新 `connect` + `subscribe`）
