@@ -279,7 +279,6 @@ class MTXAutoTrader:
         def _on_message(raw_msg) -> None:
             try:
                 data = json.loads(raw_msg) if isinstance(raw_msg, str) else raw_msg
-                logger.info(f"📨 WS raw: {data}")
                 loop.call_soon_threadsafe(message_queue.put_nowait, data)
             except Exception as exc:
                 logger.debug(f"WS message parse error: {exc}")
@@ -382,7 +381,7 @@ class MTXAutoTrader:
 
     async def _on_ws_data(self, msg: dict, is_night: bool) -> None:
         if msg.get("event") != "data":
-            logger.info(f"WS non-data event: {msg.get('event')} — {msg}")
+            logger.debug(f"WS non-data event: {msg.get('event')} — {msg}")
             return
 
         data = msg.get("data") or {}
@@ -395,7 +394,7 @@ class MTXAutoTrader:
         volume = int(data.get("lastSize") or 0)
         ts = datetime.now()
 
-        logger.info(f"📊 Tick  {price:.0f}  vol={volume}  {ts.strftime('%H:%M:%S')}")
+        logger.debug(f"Tick  {price:.0f}  vol={volume}  {ts.strftime('%H:%M:%S')}")
         self.signal_engine.add_tick(price, volume, ts)
 
         pos_dir = self.position.direction if self.position else None
