@@ -950,8 +950,10 @@ docker compose up -d
 ## 📝 更新日誌
 
 ### v5.8.5 - 2026-05-20
-- 🐛 **修復 WebSocket 重連競爭條件（`socket is already opened`）**：SDK 自動重連後，我們的 10 秒重連計時器仍觸發第二次 `connect()`，拋出 `WebSocketException: socket is already opened`
-  - 更新 `src/application/services/mtx_auto_trader.py`：改以 `on("open")` 事件統一執行 `subscribe()`；`_ws_connect()` 僅呼叫 `connect()`，SDK 自動重連後觸發 open 事件即更新 `ws_connected` flag，10 秒計時器不再重複觸發
+- 🐛 **修復 WebSocket 重連 — 正確事件名稱 + reconnect 先 disconnect**：三個根本問題同步修復
+  - `on("open")` 應為 `on("authenticated")`，`on("close")` 應為 `on("disconnect")`（fugle SDK 用 pyee，事件名稱為 `"connect"/"disconnect"/"authenticated"`）
+  - 因事件名稱錯誤，`ws_connected` 從未設為 `True`，導致每 10 秒持續觸發重連，引發 `WebSocketException: socket is already opened`
+  - 重連前先呼叫 `disconnect()` + `sleep(1)`，讓舊 `run_forever` 執行緒退出後再重建連線
 
 ### v5.8.4 - 2026-05-20
 - 🐛 **修復 MTX WebSocket 斷線後不重連**：夜盤連線約 30 分鐘後 Fubon 伺服器送 `Connection reset by peer`，原本無重連邏輯，整個盤收不到 tick，導致 0 訊號
