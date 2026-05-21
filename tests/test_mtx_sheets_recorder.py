@@ -222,7 +222,9 @@ class TestMTXAutoTraderToggle:
         async def _run():
             # Patch as async mock
             from unittest.mock import AsyncMock
-            trader.client.place_futures_order = AsyncMock(return_value={"order_no": "R001"})
+            trader.client.place_futures_order = AsyncMock(return_value={
+                "order_no": "R001", "filled_lot": 1, "filled_money": 20000.0,
+            })
             await trader._open_position("LONG", 20000.0, 1, "test", False)
             trader.client.place_futures_order.assert_called_once()
             kw = trader.client.place_futures_order.call_args.kwargs
@@ -239,7 +241,9 @@ class TestMTXAutoTraderToggle:
 
         async def _run():
             from unittest.mock import AsyncMock
-            trader.client.place_futures_order = AsyncMock(return_value={"order_no": "N001"})
+            trader.client.place_futures_order = AsyncMock(return_value={
+                "order_no": "N001", "filled_lot": 2, "filled_money": 40000.0,
+            })
             await trader._open_position("SHORT", 20000.0, 2, "test", True)  # is_night=True
             kw = trader.client.place_futures_order.call_args.kwargs
             assert kw["is_night_session"] is True
