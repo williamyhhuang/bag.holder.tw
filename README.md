@@ -957,6 +957,14 @@ docker compose up -d
   - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
+### v5.8.10 - 2026-05-22
+- 🐛 **修正 IOC 未成交時仍建立倉位的 bug**
+  - 原本 `_open_position` 在 `place_futures_order` 回傳後不檢查 `filled_lot`，即使 IOC 0口成交也會設定 `self.position`，導致後續平倉指令試圖平一個不存在的倉
+  - 修正：`filled_lot == 0` → 不設 position，發送 Telegram 警告
+  - 修正：`filled_lot < requested` → position 使用實際成交口數，而非請求口數
+  - 修正：進場價改用 `filled_money / filled_lot` 實際成交均價，`filled_money=0` 時才 fallback 至 signal 報價（修正夜盤滑價導致損益計算偏差）
+  - 新增 4 個單元測試：`TestIOCFillValidation`
+
 ### v5.8.9 - 2026-05-22
 - ⚡ **MTX 5m 信號記憶參數化** — 新增 `signal_5m_memory_bars` 參數，預設 0（嚴格模式）
   - 回測（TAIFEX 前 30 交易日 tick，60 sessions）比較 4 種策略，手續費 44元/次、1pt=10元：

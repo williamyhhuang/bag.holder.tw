@@ -513,6 +513,69 @@ class TestMTXAutoTraderDryRun:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# IOC fill validation
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestIOCFillValidation:
+    """_open_position must not set position when IOC order is unfilled or partial."""
+
+    def _make_trader(self, filled_lot, filled_money=0):
+        client = _mock_client()
+        client.place_futures_order = AsyncMock(return_value={
+            "order_no": "T001",
+            "status": "Filled" if filled_lot > 0 else "Cancelled",
+            "filled_lot": filled_lot,
+            "filled_money": filled_money,
+        })
+        return MTXAutoTrader(client, live_order=True)
+
+    def test_ioc_unfilled_no_position(self):
+        """filled_lot=0 → position stays None, Telegram notified."""
+        trader = self._make_trader(filled_lot=0)
+
+        async def _run():
+            await trader._open_position("LONG", 20000.0, 1, "test", False)
+
+        asyncio.run(_run())
+        assert trader.position is None
+
+    def test_ioc_full_fill_sets_position(self):
+        """filled_lot == requested → position created with actual fill price."""
+        trader = self._make_trader(filled_lot=1, filled_money=20010.0)
+
+        async def _run():
+            await trader._open_position("LONG", 20000.0, 1, "test", False)
+
+        asyncio.run(_run())
+        assert trader.position is not None
+        assert trader.position.lots == 1
+        assert trader.position.entry_price == pytest.approx(20010.0)
+
+    def test_ioc_partial_fill_uses_filled_lot_and_price(self):
+        """filled_lot < requested → position uses actual filled qty and price."""
+        trader = self._make_trader(filled_lot=1, filled_money=20005.0)
+
+        async def _run():
+            await trader._open_position("LONG", 20000.0, 2, "test", False)
+
+        asyncio.run(_run())
+        assert trader.position is not None
+        assert trader.position.lots == 1
+        assert trader.position.entry_price == pytest.approx(20005.0)
+
+    def test_ioc_no_filled_money_falls_back_to_signal_price(self):
+        """If broker returns filled_money=0, entry price falls back to signal price."""
+        trader = self._make_trader(filled_lot=1, filled_money=0)
+
+        async def _run():
+            await trader._open_position("LONG", 20000.0, 1, "test", False)
+
+        asyncio.run(_run())
+        assert trader.position is not None
+        assert trader.position.entry_price == pytest.approx(20000.0)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Bug regression: session end condition & WS reconnect
 # ──────────────────────────────────────────────────────────────────────────────
 

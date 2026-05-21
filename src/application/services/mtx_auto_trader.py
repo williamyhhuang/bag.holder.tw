@@ -531,15 +531,39 @@ class MTXAutoTrader:
                 order_type="New",
                 is_night_session=is_night,
             )
+
+            filled_lot = int(result.get("filled_lot") or 0)
+            filled_money = float(result.get("filled_money") or 0)
+
+            # IOC 完全未成交 → 不建立倉位
+            if filled_lot == 0:
+                logger.warning(f"Open position IOC unfilled (0/{lots}L) — no position set")
+                await self._notify(
+                    f"⚠️ 開倉未成交（IOC 0/{lots}口）\n"
+                    f"方向：{direction}　信號價：{price:.0f}\n"
+                    f"原因：{reason}"
+                )
+                return
+
+            # 用實際成交均價；若券商沒回 filled_money 則退用 signal 報價
+            actual_entry = filled_money / filled_lot if filled_money > 0 else price
+
+            if filled_lot < lots:
+                logger.warning(f"Open position partially filled: {filled_lot}/{lots}L @ {actual_entry:.0f}")
+                await self._notify(
+                    f"⚠️ 部分成交 {filled_lot}/{lots}口\n"
+                    f"實際進場：{actual_entry:.0f}　原因：{reason}"
+                )
+
             self.position = Position(
                 symbol=self.symbol, direction=direction,
-                entry_price=price, lots=lots,
+                entry_price=actual_entry, lots=filled_lot,
                 entry_time=datetime.now(),
                 order_no=result.get("order_no", ""),
             )
             await self._notify(
-                f"{'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口 進場\n"
-                f"進場：{price:.0f}　原因：{reason}\n"
+                f"{'🟢 做多' if direction == 'LONG' else '🔴 做空'} {filled_lot}口 進場\n"
+                f"進場：{actual_entry:.0f}　原因：{reason}\n"
                 f"目標：+{self.signal_engine.take_profit_pts:.0f}pt　"
                 f"停損：-{self.signal_engine.stop_loss_pts:.0f}pt"
             )
