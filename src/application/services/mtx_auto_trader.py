@@ -147,6 +147,10 @@ class MTXAutoTrader:
         self.running = False
         self._symbol: Optional[str] = None
 
+        # IOC unfilled cooldown: block re-entry until the current 1m bar closes
+        # Stores the floored 1-minute timestamp of the bar where IOC failed
+        self._ioc_failed_bar_ts: Optional[datetime] = None
+
         # Graceful shutdown on SIGTERM / SIGINT
         for sig in (_sys_signal.SIGTERM, _sys_signal.SIGINT):
             try:
@@ -429,6 +433,12 @@ class MTXAutoTrader:
             logger.debug(f"Late session guard: skip new entry {direction.value}")
             return
 
+        # ---- IOC cooldown: skip entry if last IOC failed in the current 1m bar ----
+        current_bar_ts = datetime.now().replace(second=0, microsecond=0)
+        if self._ioc_failed_bar_ts is not None and self._ioc_failed_bar_ts >= current_bar_ts:
+            logger.debug("IOC cooldown active — skip entry until next 1m bar")
+            return
+
         # ---- Entry signals ----
         if direction == SignalDirection.LONG:
             if self.position and self.position.direction == "SHORT":
@@ -535,13 +545,14 @@ class MTXAutoTrader:
             filled_lot = int(result.get("filled_lot") or 0)
             filled_money = float(result.get("filled_money") or 0)
 
-            # IOC 完全未成交 → 不建立倉位
+            # IOC 完全未成交 → 不建立倉位，鎖定本根 1m K 棒不再重試
             if filled_lot == 0:
-                logger.warning(f"Open position IOC unfilled (0/{lots}L) — no position set")
+                self._ioc_failed_bar_ts = datetime.now().replace(second=0, microsecond=0)
+                logger.warning(f"Open position IOC unfilled (0/{lots}L) — cooldown until next 1m bar")
                 await self._notify(
                     f"⚠️ 開倉未成交（IOC 0/{lots}口）\n"
                     f"方向：{direction}　信號價：{price:.0f}\n"
-                    f"原因：{reason}"
+                    f"原因：{reason}　本根K棒不再重試"
                 )
                 return
 

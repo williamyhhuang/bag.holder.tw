@@ -957,6 +957,13 @@ docker compose up -d
   - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
+### v5.8.11 - 2026-05-22
+- 🐛 **修正 IOC 未成交後同一根 1m K 棒內重複送單**
+  - IOC 未成交時，同一根 1m K 棒每個 tick 都會觸發進場條件（`golden_cross` 持續為 True），導致幾秒內重複送出數十張委託
+  - 修正：IOC 未成交時記錄當前 1m K 棒時間戳（`_ioc_failed_bar_ts`），下一根 K 棒前封鎖所有進場嘗試
+  - Telegram 通知新增「本根K棒不再重試」提示
+  - 新增 4 個單元測試：`TestIOCFillValidation.test_ioc_unfilled_sets_cooldown`、`test_ioc_cooldown_blocks_next_entry`、`test_ioc_cooldown_expires_next_bar`
+
 ### v5.8.10 - 2026-05-22
 - 🐛 **修正 IOC 未成交時仍建立倉位的 bug**
   - 原本 `_open_position` 在 `place_futures_order` 回傳後不檢查 `filled_lot`，即使 IOC 0口成交也會設定 `self.position`，導致後續平倉指令試圖平一個不存在的倉

@@ -11,7 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -573,6 +573,58 @@ class TestIOCFillValidation:
         asyncio.run(_run())
         assert trader.position is not None
         assert trader.position.entry_price == pytest.approx(20000.0)
+
+    def test_ioc_unfilled_sets_cooldown(self):
+        """After IOC unfilled, _ioc_failed_bar_ts is set to current 1m bar."""
+        trader = self._make_trader(filled_lot=0)
+
+        async def _run():
+            await trader._open_position("LONG", 20000.0, 1, "test", False)
+
+        asyncio.run(_run())
+        assert trader._ioc_failed_bar_ts is not None
+
+    def test_ioc_cooldown_blocks_next_entry(self):
+        """Entry is skipped when cooldown bar matches current 1m bar."""
+        client = _mock_client()
+        client.place_futures_order = AsyncMock(return_value={
+            "order_no": "T001", "status": "Cancelled",
+            "filled_lot": 0, "filled_money": 0,
+        })
+        trader = MTXAutoTrader(client, live_order=True)
+        # Simulate cooldown active for current bar
+        trader._ioc_failed_bar_ts = datetime.now().replace(second=0, microsecond=0)
+
+        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, datetime.now(), "test", 0.9)
+
+        async def _run():
+            await trader._handle_signal(long_sig, False)
+
+        asyncio.run(_run())
+        # Order must NOT have been placed
+        client.place_futures_order.assert_not_called()
+        assert trader.position is None
+
+    def test_ioc_cooldown_expires_next_bar(self):
+        """Cooldown from previous 1m bar does not block entry in the next bar."""
+        client = _mock_client()
+        client.place_futures_order = AsyncMock(return_value={
+            "order_no": "T001", "status": "Filled",
+            "filled_lot": 1, "filled_money": 20000.0,
+        })
+        trader = MTXAutoTrader(client, live_order=True, late_session_no_entry_minutes=0)
+        # Cooldown from a past bar (1 minute ago)
+        past_bar = (datetime.now() - timedelta(minutes=1)).replace(second=0, microsecond=0)
+        trader._ioc_failed_bar_ts = past_bar
+
+        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, datetime.now(), "test", 0.9)
+
+        async def _run():
+            await trader._handle_signal(long_sig, False)
+
+        asyncio.run(_run())
+        client.place_futures_order.assert_called_once()
+        assert trader.position is not None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
