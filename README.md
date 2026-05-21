@@ -957,6 +957,13 @@ docker compose up -d
   - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
+### v5.8.9 - 2026-05-22
+- ⚡ **MTX 5m 信號記憶（策略C）** — 5m KD 黃金/死亡交叉後保持訊號有效 N 根 5mK，解決夜盤交叉瞬間稀少、訊號幾乎不發生的問題
+  - 新增 `MTXSignalEngine` 參數 `signal_5m_memory_bars`（預設 3）：cross 發生後最多再保持 3 根 5mK 有效；設 0 可還原嚴格模式
+  - 依據 TAIFEX 前 30 個交易日 tick 回測（60 sessions）：策略C 勝率 60.2% vs 嚴格模式 60.8%，交易次數多 48%，總損益最高（+4,286 pts vs +3,376 pts）
+  - 新增 `scripts/backtest_mtx_strategies.py`：可從 TAIFEX tick zip 重建分鐘K，比較4種策略變體（A嚴格/B放寬5m/C信號記憶/D無5m）
+  - 新增 2 個單元測試：`test_5m_signal_memory_keeps_signal_active`、`test_5m_signal_memory_zero_is_strict_mode`
+
 ### v5.8.8 - 2026-05-21
 - 🐛 **修正 Cloud Run 盤中 download job 不更新今日資料**：兩個根本原因同步修復
   - **`closePrice = 0`（盤中）**：`FubonDownloadClient.download_snapshot()` 只讀 `closePrice`，但 Fubon API 在收盤前 `closePrice` 為 0；改用 `closePrice or lastPrice` 作為 close，並跳過兩者皆 0 的無效行

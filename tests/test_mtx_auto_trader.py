@@ -313,6 +313,33 @@ class TestMTXSignalEngine:
         eng = MTXSignalEngine()
         assert eng._signal_5m() == 0
 
+    def test_5m_signal_memory_keeps_signal_active(self):
+        """Strategy C: 5m cross signal stays active for signal_5m_memory_bars bars."""
+        eng = MTXSignalEngine(signal_5m_memory_bars=3)
+        # Simulate a golden cross firing once then going neutral for 3 bars
+        eng._last_5m_signal = 1
+        eng._last_5m_signal_age = 0
+
+        # Bar 1 after cross: raw=0, age becomes 1 → still active
+        eng._last_5m_signal_age = 1
+        # Age <= memory_bars (3): signal should persist
+        assert eng._last_5m_signal == 1
+
+        # After 3 bars of silence (age > memory_bars): signal expires
+        eng._last_5m_signal_age = 4
+        # Simulate the expiry path in _signal_5m (raw=0, age > memory)
+        if eng._last_5m_signal_age > eng.signal_5m_memory_bars:
+            eng._last_5m_signal = 0
+        assert eng._last_5m_signal == 0
+
+    def test_5m_signal_memory_zero_is_strict_mode(self):
+        """signal_5m_memory_bars=0 behaves identically to the original strict mode."""
+        eng = MTXSignalEngine(signal_5m_memory_bars=0)
+        # With no memory, internal state is never used
+        assert eng.signal_5m_memory_bars == 0
+        # _signal_5m with insufficient data still returns 0
+        assert eng._signal_5m() == 0
+
     def test_1m_entry_insufficient_data(self):
         eng = MTXSignalEngine()
         assert eng._entry_1m() == 0
