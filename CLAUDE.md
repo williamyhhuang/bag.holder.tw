@@ -8,3 +8,4 @@
 - 每次異動完都要執行單元測試，確保功能正常 
 - 每次異動完都要更新 README.md，並新增 change log
 - 若不是機敏資訊，每次若有新增參數應新增到settings.py而不是.env
+- 每次 git push後監控CI/CD，若有fail要自行修正，修正後再git push，直到CI/CD成功為止
