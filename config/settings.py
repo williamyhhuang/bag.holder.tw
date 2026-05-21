@@ -740,9 +740,9 @@ class MTXTraderSettings(BaseSettings):
         validation_alias=AliasChoices("MTX_SIM_WORKSHEET"),
         description="模擬交易記錄寫入的工作表名稱",
     )
-    # 停損點數（縮小至 15pt，讓 R:R 與 KD 出場收益對稱）
+    # 停損點數（回測驗證：30pt 勝率 60.8%、淨損益 +6788元；15pt 勝率 49.3%、淨損益 -846元）
     stop_loss_pts: float = Field(
-        default=15.0,
+        default=30.0,
         validation_alias=AliasChoices("MTX_STOP_LOSS_PTS"),
     )
     # 獲利目標點數

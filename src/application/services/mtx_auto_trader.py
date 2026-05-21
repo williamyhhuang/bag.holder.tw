@@ -110,7 +110,7 @@ class MTXAutoTrader:
         fubon_client: FubonClient,
         notifier: Optional[TelegramNotifier] = None,
         dry_run: bool = False,
-        stop_loss_pts: float = 15.0,
+        stop_loss_pts: float = 30.0,
         take_profit_pts: float = 50.0,
         max_lots: int = 3,
         live_order: Optional[bool] = None,

@@ -957,6 +957,11 @@ docker compose up -d
   - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
+### v5.8.12 - 2026-05-22
+- ⚡ **MTX 停損從 15pt 改回 30pt**（`MTX_STOP_LOSS_PTS`）
+  - 回測（TAIFEX 前 30 交易日）顯示 15pt 停損勝率 49.3%、淨損益 -846元；30pt 停損勝率 60.8%、淨損益 +6,788元
+  - 15pt 停損過緊導致被洗掉次數更多，手續費侵蝕後反而虧損
+
 ### v5.8.11 - 2026-05-22
 - 🐛 **修正 IOC 未成交後同一根 1m K 棒內重複送單**
   - IOC 未成交時，同一根 1m K 棒每個 tick 都會觸發進場條件（`golden_cross` 持續為 True），導致幾秒內重複送出數十張委託
