@@ -288,7 +288,7 @@ class MTXSignalEngine:
         stop_loss_pts: float = 30.0,
         take_profit_pts: float = 50.0,
         min_profit_before_kd_exit_pts: float = 8.0,
-        signal_5m_memory_bars: int = 3,
+        signal_5m_memory_bars: int = 0,
     ) -> None:
         self.stop_loss_pts = stop_loss_pts
         self.take_profit_pts = take_profit_pts

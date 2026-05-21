@@ -958,10 +958,13 @@ docker compose up -d
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
 ### v5.8.9 - 2026-05-22
-- ⚡ **MTX 5m 信號記憶（策略C）** — 5m KD 黃金/死亡交叉後保持訊號有效 N 根 5mK，解決夜盤交叉瞬間稀少、訊號幾乎不發生的問題
-  - 新增 `MTXSignalEngine` 參數 `signal_5m_memory_bars`（預設 3）：cross 發生後最多再保持 3 根 5mK 有效；設 0 可還原嚴格模式
-  - 依據 TAIFEX 前 30 個交易日 tick 回測（60 sessions）：策略C 勝率 60.2% vs 嚴格模式 60.8%，交易次數多 48%，總損益最高（+4,286 pts vs +3,376 pts）
-  - 新增 `scripts/backtest_mtx_strategies.py`：可從 TAIFEX tick zip 重建分鐘K，比較4種策略變體（A嚴格/B放寬5m/C信號記憶/D無5m）
+- ⚡ **MTX 5m 信號記憶參數化** — 新增 `signal_5m_memory_bars` 參數，預設 0（嚴格模式）
+  - 回測（TAIFEX 前 30 交易日 tick，60 sessions）比較 4 種策略，手續費 44元/次、1pt=10元：
+    - 策略A（嚴格，預設）：淨損益 **+6,788元**，勝率 60.8%，613 次
+    - 策略C（記憶3根）：淨損益 +2,996元，勝率 60.2%，906 次
+    - 結論：手續費考量下嚴格模式反而更賺，多進場次數被手續費侵蝕
+  - `signal_5m_memory_bars > 0` 可啟用記憶模式（若未來降低手續費可重新評估）
+  - 新增 `scripts/backtest_mtx_strategies.py`：可從 TAIFEX tick zip 重建分鐘K，比較4種策略變體
   - 新增 2 個單元測試：`test_5m_signal_memory_keeps_signal_active`、`test_5m_signal_memory_zero_is_strict_mode`
 
 ### v5.8.8 - 2026-05-21
