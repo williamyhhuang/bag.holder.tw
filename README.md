@@ -838,9 +838,11 @@ FUBON_IS_SIMULATION=False   # False = 實單；True = 測試環境
 # MTX Feature Toggle（非敏感，可直接設在 Cloud Run 環境變數）
 MTX_LIVE_ORDER=false         # false = 模擬（寫 Google Sheets）；true = 實際下單
 MTX_SIM_WORKSHEET=微台交易紀錄  # 模擬模式寫入的 Google Sheets 頁籤名稱
-MTX_STOP_LOSS_PTS=30         # 停損點數
+MTX_STOP_LOSS_PTS=15         # 停損點數（預設 15pt）
 MTX_TAKE_PROFIT_PTS=50       # 停利點數
 MTX_MAX_LOTS=3               # 最大持倉口數
+MTX_MIN_PROFIT_BEFORE_KD_EXIT=8  # KD 叉出場前需達到的最小獲利點數（0 = 停用門檻）
+MTX_LATE_SESSION_NO_ENTRY_MINUTES=30  # 距收盤 N 分鐘內禁止開新倉（0 = 停用）
 ```
 
 ### 策略邏輯（SKILL.md）
@@ -948,6 +950,14 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.8.7 - 2026-05-21
+- ⚡ **MTX 策略改進 — 修正 R:R 不對稱、尾盤過濾**
+  - **停損縮小 30pt → 15pt**（`MTX_STOP_LOSS_PTS`）：原本 KD 出場平均 +4pt 獲利卻承擔 30pt 停損，R:R 達 1:7.5；縮小停損使 R:R 更合理
+  - **KD 出場最小獲利門檻 8pt**（`MTX_MIN_PROFIT_BEFORE_KD_EXIT`）：1mKD 死叉/黃金叉出場前需 PnL ≥ 8pt，避免 +2pt 就出場但停損仍高達 15pt；不足時繼續持倉等停損或停利
+  - **尾盤禁開倉 30 分鐘**（`MTX_LATE_SESSION_NO_ENTRY_MINUTES`）：日盤 13:01 後、夜盤 04:31 後禁止開新倉（平倉不受影響），防止類似昨日 04:52 進場 8.5 分鐘後被停損 -30pt 的情況
+  - 三項參數均可透過 `.env` 覆蓋，詳見下方「MTX 進階設定」
+  - 新增 16 個單元測試：`TestMinProfitKDExitGuard` + `TestLateSessionFilter`
 
 ### v5.8.6 - 2026-05-20
 - 🐛 **修正微型臺指 symbol root `FIMTX` → `TMF`**：`FIMTX` 在 Fugle API 不存在，WebSocket 訂閱雖不報錯但永遠沒有 tick 資料；正確 product code 為 `TMF`（微型臺指期貨），近月合約 `TMFF6` 可正常訂閱並收到行情

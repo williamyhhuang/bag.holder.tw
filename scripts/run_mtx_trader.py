@@ -52,10 +52,16 @@ async def main(session_arg: str, dry_run: bool) -> None:
     notifier = TelegramNotifier()
 
     async with client:
+        mtx_cfg = settings.mtx_trader
         trader = MTXAutoTrader(
             fubon_client=client,
             notifier=notifier,
             dry_run=dry_run,
+            stop_loss_pts=mtx_cfg.stop_loss_pts,
+            take_profit_pts=mtx_cfg.take_profit_pts,
+            max_lots=mtx_cfg.max_lots,
+            min_profit_before_kd_exit_pts=mtx_cfg.min_profit_before_kd_exit_pts,
+            late_session_no_entry_minutes=mtx_cfg.late_session_no_entry_minutes,
         )
         await trader.initialize()
 

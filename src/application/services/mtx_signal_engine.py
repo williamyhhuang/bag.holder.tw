@@ -283,9 +283,11 @@ class MTXSignalEngine:
         self,
         stop_loss_pts: float = 30.0,
         take_profit_pts: float = 50.0,
+        min_profit_before_kd_exit_pts: float = 8.0,
     ) -> None:
         self.stop_loss_pts = stop_loss_pts
         self.take_profit_pts = take_profit_pts
+        self.min_profit_before_kd_exit_pts = min_profit_before_kd_exit_pts
 
         self.bar_1m = BarManager(1)
         self.bar_5m = BarManager(5)
@@ -402,16 +404,24 @@ class MTXSignalEngine:
                 f"獲利 {pnl:.0f}pts", 1.0,
             )
 
-        # 1-min KD reverse cross
+        # 1-min KD reverse cross — only exit if PnL exceeds minimum profit guard
         _, h, l, c, _ = self.bar_1m.get_arrays()
         if len(c) >= 15:
             k_arr, d_arr = compute_stoch(h, l, c)
-            if position == "LONG" and death_cross(k_arr, d_arr):
+            if (
+                position == "LONG"
+                and death_cross(k_arr, d_arr)
+                and pnl >= self.min_profit_before_kd_exit_pts
+            ):
                 return TradeSignal(
                     SignalDirection.CLOSE_LONG, current_price, now,
                     "1mK死叉出場", 0.8,
                 )
-            if position == "SHORT" and golden_cross(k_arr, d_arr):
+            if (
+                position == "SHORT"
+                and golden_cross(k_arr, d_arr)
+                and pnl >= self.min_profit_before_kd_exit_pts
+            ):
                 return TradeSignal(
                     SignalDirection.CLOSE_SHORT, current_price, now,
                     "1mK黃金交叉出場", 0.8,

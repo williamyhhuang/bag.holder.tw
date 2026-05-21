@@ -489,6 +489,156 @@ class TestMTXAutoTraderDryRun:
 # Bug regression: session end condition & WS reconnect
 # ──────────────────────────────────────────────────────────────────────────────
 
+class TestMinProfitKDExitGuard:
+    """KD exit only fires when PnL >= min_profit_before_kd_exit_pts."""
+
+    def _engine_with_history(self, min_profit=8.0):
+        eng = MTXSignalEngine(
+            stop_loss_pts=15, take_profit_pts=50,
+            min_profit_before_kd_exit_pts=min_profit,
+        )
+        eng.seed_1m(_make_bars(50))
+        eng.seed_5m(_make_bars(50))
+        eng.seed_daily(_make_bars(30))
+        return eng
+
+    def test_kd_exit_blocked_below_min_profit(self):
+        """When PnL is below threshold, KD cross should NOT trigger exit."""
+        eng = self._engine_with_history(min_profit=8.0)
+        # PnL = +3pts (below 8pt threshold) — KD exit should be skipped
+        eng.last_price = 20003.0
+        # Fake a death cross on 1m by patching
+        with patch("src.application.services.mtx_signal_engine.death_cross", return_value=True), \
+             patch("src.application.services.mtx_signal_engine.golden_cross", return_value=False):
+            sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        # Should HOLD — PnL too small for KD exit
+        assert sig.direction != SignalDirection.CLOSE_LONG or "停損" in sig.reason or "獲利" in sig.reason
+
+    def test_kd_exit_allowed_above_min_profit(self):
+        """When PnL >= threshold, KD death cross should trigger CLOSE_LONG."""
+        eng = self._engine_with_history(min_profit=8.0)
+        # PnL = +10pts (above 8pt threshold) — KD exit should fire
+        eng.last_price = 20010.0
+        with patch("src.application.services.mtx_signal_engine.death_cross", return_value=True), \
+             patch("src.application.services.mtx_signal_engine.golden_cross", return_value=False):
+            sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_LONG
+        assert "1mK死叉" in sig.reason
+
+    def test_kd_short_exit_blocked_below_min_profit(self):
+        """Golden cross blocked for short position below min profit."""
+        eng = self._engine_with_history(min_profit=8.0)
+        eng.last_price = 19997.0  # PnL = +3pts
+        with patch("src.application.services.mtx_signal_engine.golden_cross", return_value=True), \
+             patch("src.application.services.mtx_signal_engine.death_cross", return_value=False):
+            sig = eng.evaluate(current_position="SHORT", entry_price=20000.0)
+        assert sig.direction != SignalDirection.CLOSE_SHORT or "停損" in sig.reason
+
+    def test_kd_short_exit_allowed_above_min_profit(self):
+        """Golden cross fires for short position above min profit."""
+        eng = self._engine_with_history(min_profit=8.0)
+        eng.last_price = 19990.0  # PnL = +10pts
+        with patch("src.application.services.mtx_signal_engine.golden_cross", return_value=True), \
+             patch("src.application.services.mtx_signal_engine.death_cross", return_value=False):
+            sig = eng.evaluate(current_position="SHORT", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_SHORT
+        assert "1mK黃金交叉" in sig.reason
+
+    def test_zero_min_profit_always_allows_kd_exit(self):
+        """min_profit=0 disables guard — any KD cross triggers exit."""
+        eng = self._engine_with_history(min_profit=0.0)
+        eng.last_price = 20001.0  # PnL = +1pt
+        with patch("src.application.services.mtx_signal_engine.death_cross", return_value=True), \
+             patch("src.application.services.mtx_signal_engine.golden_cross", return_value=False):
+            sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_LONG
+
+
+class TestLateSessionFilter:
+    """_is_late_session() and entry blocking near session end."""
+
+    def _trader(self, late_min=30):
+        client = _mock_client()
+        return MTXAutoTrader(client, dry_run=True, late_session_no_entry_minutes=late_min)
+
+    def test_night_is_late_within_window(self):
+        trader = self._trader(30)
+        # 04:45 is within 30 min of 05:01
+        with patch("src.application.services.mtx_auto_trader.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 5, 20, 4, 45, 0)
+            assert trader._is_late_session(is_night=True)
+
+    def test_night_not_late_outside_window(self):
+        trader = self._trader(30)
+        # 03:00 is more than 30 min before 05:01
+        with patch("src.application.services.mtx_auto_trader.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 5, 20, 3, 0, 0)
+            assert not trader._is_late_session(is_night=True)
+
+    def test_day_is_late_within_window(self):
+        trader = self._trader(30)
+        # 13:10 is within 30 min of 13:31
+        with patch("src.application.services.mtx_auto_trader.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 5, 20, 13, 10, 0)
+            assert trader._is_late_session(is_night=False)
+
+    def test_day_not_late_outside_window(self):
+        trader = self._trader(30)
+        # 09:00 is more than 30 min before 13:31
+        with patch("src.application.services.mtx_auto_trader.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 5, 20, 9, 0, 0)
+            assert not trader._is_late_session(is_night=False)
+
+    def test_zero_late_minutes_never_late(self):
+        """late_session_no_entry_minutes=0 disables the filter entirely."""
+        trader = self._trader(late_min=0)
+        with patch("src.application.services.mtx_auto_trader.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 5, 20, 4, 55, 0)
+            assert not trader._is_late_session(is_night=True)
+
+    def test_late_session_blocks_long_entry(self):
+        """LONG signal during late session must NOT open position."""
+        trader = self._trader(30)
+        long_sig = TradeSignal(SignalDirection.LONG, 41000.0, datetime.now(), "test", 0.9)
+
+        async def _run():
+            with patch.object(trader, "_is_late_session", return_value=True):
+                await trader._handle_signal(long_sig, True)
+
+        asyncio.run(_run())
+        assert trader.position is None
+
+    def test_late_session_blocks_short_entry(self):
+        """SHORT signal during late session must NOT open position."""
+        trader = self._trader(30)
+        short_sig = TradeSignal(SignalDirection.SHORT, 41000.0, datetime.now(), "test", 0.9)
+
+        async def _run():
+            with patch.object(trader, "_is_late_session", return_value=True):
+                await trader._handle_signal(short_sig, True)
+
+        asyncio.run(_run())
+        assert trader.position is None
+
+    def test_late_session_still_allows_close(self):
+        """CLOSE_LONG during late session must still close the position."""
+        trader = self._trader(30)
+        trader.position = Position(
+            symbol="TMFF6", direction="LONG",
+            entry_price=41000.0, lots=1,
+            entry_time=datetime.now(),
+        )
+        close_sig = TradeSignal(SignalDirection.CLOSE_LONG, 41010.0, datetime.now(), "KD叉", 0.8)
+
+        async def _run():
+            with patch.object(trader, "_is_late_session", return_value=True):
+                await trader._handle_signal(close_sig, True)
+
+        asyncio.run(_run())
+        assert trader.position is None
+        assert len(trader.trades) == 1
+
+
 class TestSessionEndCondition:
     """_session_should_end boundary logic (replicated from _run_session closure)."""
 

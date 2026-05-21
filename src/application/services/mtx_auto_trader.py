@@ -110,16 +110,19 @@ class MTXAutoTrader:
         fubon_client: FubonClient,
         notifier: Optional[TelegramNotifier] = None,
         dry_run: bool = False,
-        stop_loss_pts: float = 30.0,
+        stop_loss_pts: float = 15.0,
         take_profit_pts: float = 50.0,
         max_lots: int = 3,
         live_order: Optional[bool] = None,
         sheets_recorder: Optional[MTXSheetsRecorder] = None,
+        min_profit_before_kd_exit_pts: float = 8.0,
+        late_session_no_entry_minutes: int = 30,
     ) -> None:
         self.client = fubon_client
         self.notifier = notifier
         self.dry_run = dry_run
         self.max_lots = max_lots
+        self.late_session_no_entry_minutes = late_session_no_entry_minutes
 
         # Feature toggle: live_order 明確傳入時使用傳入值，否則從 settings 讀取
         if live_order is not None:
@@ -137,6 +140,7 @@ class MTXAutoTrader:
         self.signal_engine = MTXSignalEngine(
             stop_loss_pts=stop_loss_pts,
             take_profit_pts=take_profit_pts,
+            min_profit_before_kd_exit_pts=min_profit_before_kd_exit_pts,
         )
         self.position: Optional[Position] = None
         self.trades: List[TradeRecord] = []
@@ -420,6 +424,11 @@ class MTXAutoTrader:
                 await self._close_position(signal.reason, price, is_night)
             return
 
+        # ---- Late session entry guard ----
+        if self._is_late_session(is_night):
+            logger.debug(f"Late session guard: skip new entry {direction.value}")
+            return
+
         # ---- Entry signals ----
         if direction == SignalDirection.LONG:
             if self.position and self.position.direction == "SHORT":
@@ -437,6 +446,27 @@ class MTXAutoTrader:
     def _open_slots(self) -> int:
         used = self.position.lots if self.position else 0
         return max(0, self.max_lots - used)
+
+    def _is_late_session(self, is_night: bool) -> bool:
+        """True if within late_session_no_entry_minutes of session end."""
+        if self.late_session_no_entry_minutes <= 0:
+            return False
+        from datetime import timedelta
+        now = datetime.now()
+        now_t = now.time()
+        if not is_night:
+            session_end = now.replace(hour=13, minute=31, second=0, microsecond=0)
+            if now_t >= time(13, 31):
+                return True
+            minutes_left = (session_end - now).total_seconds() / 60
+        else:
+            session_end = now.replace(hour=5, minute=1, second=0, microsecond=0)
+            if now_t >= time(5, 1):
+                return True
+            if now_t >= time(15, 0):
+                session_end += timedelta(days=1)
+            minutes_left = (session_end - now).total_seconds() / 60
+        return minutes_left < self.late_session_no_entry_minutes
 
     # ------------------------------------------------------------------
     # Order helpers

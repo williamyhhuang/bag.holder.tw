@@ -740,9 +740,9 @@ class MTXTraderSettings(BaseSettings):
         validation_alias=AliasChoices("MTX_SIM_WORKSHEET"),
         description="模擬交易記錄寫入的工作表名稱",
     )
-    # 停損點數
+    # 停損點數（縮小至 15pt，讓 R:R 與 KD 出場收益對稱）
     stop_loss_pts: float = Field(
-        default=30.0,
+        default=15.0,
         validation_alias=AliasChoices("MTX_STOP_LOSS_PTS"),
     )
     # 獲利目標點數
@@ -754,6 +754,19 @@ class MTXTraderSettings(BaseSettings):
     max_lots: int = Field(
         default=3,
         validation_alias=AliasChoices("MTX_MAX_LOTS"),
+    )
+    # KD 死叉/黃金叉出場前需達到的最小獲利點數
+    # 避免 KD 叉出場時 PnL 僅 +2pt，而停損高達 15pt
+    min_profit_before_kd_exit_pts: float = Field(
+        default=8.0,
+        validation_alias=AliasChoices("MTX_MIN_PROFIT_BEFORE_KD_EXIT"),
+        description="KD 叉出場最小獲利門檻（pts）；低於此值繼續持倉等待停損或停利",
+    )
+    # 尾盤禁止開新倉分鐘數（距收盤 N 分鐘內不開新倉）
+    late_session_no_entry_minutes: int = Field(
+        default=30,
+        validation_alias=AliasChoices("MTX_LATE_SESSION_NO_ENTRY_MINUTES"),
+        description="距離收盤 N 分鐘內禁止開新倉（0 = 停用）",
     )
 
     model_config = {
