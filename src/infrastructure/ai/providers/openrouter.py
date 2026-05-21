@@ -47,6 +47,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
         try:
             response = self._client.chat.completions.create(
                 model=self._model,
+                temperature=0,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": self._build_user_message(stocks)},
@@ -67,6 +68,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
         try:
             response = self._client.chat.completions.create(
                 model=self._model,
+                temperature=0,
                 messages=[
                     {"role": "system", "content": SELL_SYSTEM_PROMPT},
                     {"role": "user", "content": self._build_holdings_message(stocks)},

@@ -35,6 +35,7 @@ class ClaudeAnalyzer(BaseAIAnalyzer):
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=4096,
+                temperature=0,
                 system=SYSTEM_PROMPT,
                 tools=[_TOOL],
                 tool_choice={"type": "auto"},
@@ -54,6 +55,7 @@ class ClaudeAnalyzer(BaseAIAnalyzer):
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=4096,
+                temperature=0,
                 system=SELL_SYSTEM_PROMPT,
                 tools=[_SELL_TOOL],
                 tool_choice={"type": "auto"},

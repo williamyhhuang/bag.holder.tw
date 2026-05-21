@@ -66,6 +66,7 @@ class GeminiAnalyzer(BaseAIAnalyzer):
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     tools=[tool],
+                    temperature=0,
                     thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 ),
             )
@@ -122,6 +123,7 @@ class GeminiAnalyzer(BaseAIAnalyzer):
                 config=types.GenerateContentConfig(
                     system_instruction=SELL_SYSTEM_PROMPT,
                     tools=[tool],
+                    temperature=0,
                     thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 ),
             )

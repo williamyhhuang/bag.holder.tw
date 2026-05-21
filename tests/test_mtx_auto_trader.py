@@ -447,7 +447,7 @@ class TestMTXAutoTraderDryRun:
 
     def test_long_signal_reverses_short(self):
         client = _mock_client()
-        trader = MTXAutoTrader(client, dry_run=True)
+        trader = MTXAutoTrader(client, dry_run=True, late_session_no_entry_minutes=0)
         trader.signal_engine.last_price = 20000.0
         trader.position = Position(
             symbol="TMFE6", direction="SHORT",

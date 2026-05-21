@@ -951,6 +951,12 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.9 - 2026-05-21
+- 🐛 **修正盤中 /scan 結果不一致（有時 0 支、有時正常）**：兩個根本原因同步修復
+  - **`entrypoint-download.sh` 空目錄上傳 GCS**：若 `tar xzf` 解壓失敗（磁碟空間、corrupt archive），腳本因 `||` 繼續執行，最終把空的 `stocks/` 打包上傳至 GCS，覆蓋正常資料，導致下次 signals job 讀到 0 支股票；改為在上傳前檢查 CSV 檔案數量，低於 1000 支時跳過上傳保留既有 GCS 資料
+  - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
+  - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
+
 ### v5.8.8 - 2026-05-21
 - 🐛 **修正 Cloud Run 盤中 download job 不更新今日資料**：兩個根本原因同步修復
   - **`closePrice = 0`（盤中）**：`FubonDownloadClient.download_snapshot()` 只讀 `closePrice`，但 Fubon API 在收盤前 `closePrice` 為 0；改用 `closePrice or lastPrice` 作為 close，並跳過兩者皆 0 的無效行
