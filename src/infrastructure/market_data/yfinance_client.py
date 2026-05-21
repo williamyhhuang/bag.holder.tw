@@ -155,13 +155,16 @@ class YFinanceClient:
             self.logger.error(f"Error downloading data for {symbol}: {e}")
             return None
 
-    def save_stock_data(self, symbol: str, data: pd.DataFrame) -> bool:
+    def save_stock_data(self, symbol: str, data: pd.DataFrame, allow_today: bool = False) -> bool:
         """
         Save stock data to CSV file, appending to existing data without duplicates.
 
         Args:
             symbol: Stock symbol
             data: DataFrame with stock data
+            allow_today: When True, skip the before-close today-filter (use for
+                         Fubon intraday snapshot which has real prices, not yfinance
+                         forward-fill).
 
         Returns:
             True if saved successfully, False otherwise
@@ -191,7 +194,8 @@ class YFinanceClient:
                 # 過濾週末
                 df = df[df['date'].dt.weekday < 5]
                 # 盤前跳過今日（yfinance 可能回傳前填的今日資料）
-                if _before_close:
+                # allow_today=True 時跳過此過濾（Fubon snapshot 使用真實盤中價格）
+                if _before_close and not allow_today:
                     df = df[df['date'].dt.date < _today]
                 return df
 

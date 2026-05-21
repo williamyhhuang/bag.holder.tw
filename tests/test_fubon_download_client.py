@@ -347,7 +347,7 @@ class TestDownloadSnapshot:
         client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE[:1]}
 
         captured = {}
-        def fake_save(symbol, df):
+        def fake_save(symbol, df, allow_today=False):
             captured[symbol] = df
             return True
 
@@ -395,7 +395,7 @@ class TestDownloadSnapshot:
         client._reststock.snapshot.quotes.return_value = {"data": self.SNAPSHOT_TSE[:1]}
 
         captured = {}
-        def fake_save(symbol, df):
+        def fake_save(symbol, df, allow_today=False):
             captured[symbol] = df
             return True
 
@@ -454,6 +454,80 @@ class TestDownloadSnapshot:
         assert count == 0, "Weekend snapshot should return 0"
         mock_save.assert_not_called()
         client._reststock.snapshot.quotes.assert_not_called()
+
+
+class TestSnapshotIntradayFix:
+    """Tests for the intraday snapshot fix: lastPrice fallback + allow_today=True."""
+
+    INTRADAY_TSE = [
+        # closePrice=0 (盤中), lastPrice has the real price
+        {"type": "EQUITY", "symbol": "2330", "name": "台積電",
+         "openPrice": 900, "highPrice": 915, "lowPrice": 895,
+         "closePrice": 0, "lastPrice": 910, "tradeVolume": 25000},
+        # Both closePrice and lastPrice=0 → should be skipped
+        {"type": "EQUITY", "symbol": "2317", "name": "鴻海",
+         "openPrice": 0, "highPrice": 0, "lowPrice": 0,
+         "closePrice": 0, "lastPrice": 0, "tradeVolume": 0},
+        # closePrice is non-zero (EOD already closed) → use it directly
+        {"type": "EQUITY", "symbol": "2454", "name": "聯發科",
+         "openPrice": 1000, "highPrice": 1010, "lowPrice": 990,
+         "closePrice": 1005, "lastPrice": 1005, "tradeVolume": 5000},
+    ]
+
+    def test_lastprice_used_when_closeprice_zero(self, mock_weekday):
+        """When closePrice=0 (intraday), lastPrice should be used as close."""
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.INTRADAY_TSE[:1]}
+
+        captured = {}
+        def fake_save(symbol, df, allow_today=False):
+            captured[symbol] = df
+            return True
+
+        with patch.object(client, "save_stock_data", side_effect=fake_save):
+            client.download_snapshot(markets=["TSE"])
+
+        assert "2330.TW" in captured
+        assert float(captured["2330.TW"]["close"].iloc[0]) == 910.0
+
+    def test_zero_close_skipped_entirely(self, mock_weekday):
+        """Stocks with both closePrice=0 and lastPrice=0 must not be saved."""
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.INTRADAY_TSE[:2]}
+
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            client.download_snapshot(markets=["TSE"])
+
+        saved_symbols = [call.args[0] for call in mock_save.call_args_list]
+        assert "2317.TW" not in saved_symbols   # close=0 filtered out
+        assert "2330.TW" in saved_symbols       # lastPrice=910 saved
+
+    def test_allow_today_true_passed_to_save(self, mock_weekday):
+        """download_snapshot must pass allow_today=True to save_stock_data."""
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.INTRADAY_TSE[:1]}
+
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            client.download_snapshot(markets=["TSE"])
+
+        # Verify allow_today=True was passed
+        call_kwargs = mock_save.call_args_list[0]
+        assert call_kwargs.kwargs.get("allow_today") is True or call_kwargs.args[2] is True
+
+    def test_valid_closeprice_not_overridden(self, mock_weekday):
+        """When closePrice > 0 (EOD), it should be used as-is (not replaced by lastPrice)."""
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {"data": self.INTRADAY_TSE[2:3]}
+
+        captured = {}
+        def fake_save(symbol, df, allow_today=False):
+            captured[symbol] = df
+            return True
+
+        with patch.object(client, "save_stock_data", side_effect=fake_save):
+            client.download_snapshot(markets=["TSE"])
+
+        assert float(captured["2454.TW"]["close"].iloc[0]) == 1005.0
 
 
 class TestSlidingWindowRateLimiter:

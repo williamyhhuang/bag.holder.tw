@@ -267,9 +267,9 @@ class FubonDownloadClient:
     # Save (delegates to YFinanceClient so CSV format stays identical)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def save_stock_data(self, symbol: str, data: pd.DataFrame) -> bool:
+    def save_stock_data(self, symbol: str, data: pd.DataFrame, allow_today: bool = False) -> bool:
         from .yfinance_client import YFinanceClient
-        return YFinanceClient().save_stock_data(symbol, data)
+        return YFinanceClient().save_stock_data(symbol, data, allow_today=allow_today)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Bulk download  (same signature as YFinanceClient)
@@ -465,12 +465,14 @@ class FubonDownloadClient:
                 if not (sym_code.isdigit() and len(sym_code) == 4):
                     continue
                 yf_symbol = f"{sym_code}{suffix}"
+                # 盤中 closePrice = 0；用 lastPrice（最新成交價）作為 close fallback
+                close_val = float(d.get("closePrice") or d.get("lastPrice") or 0)
                 rows_by_symbol[yf_symbol] = {
                     "date": today_dt,
                     "open": float(d.get("openPrice", 0) or 0),
                     "high": float(d.get("highPrice", 0) or 0),
                     "low": float(d.get("lowPrice", 0) or 0),
-                    "close": float(d.get("closePrice", 0) or 0),
+                    "close": close_val,
                     "volume": int(d.get("tradeVolume", 0) or 0) * 1000,  # 張→股
                     "symbol": yf_symbol,
                 }
@@ -478,8 +480,12 @@ class FubonDownloadClient:
             logger.info(f"Snapshot {market}: {len(rows_by_symbol)} stocks fetched")
 
             for yf_symbol, row in rows_by_symbol.items():
+                # 跳過 close = 0 的無效資料（開盤前或無成交）
+                if row["close"] == 0:
+                    continue
                 df = pd.DataFrame([row])
-                if self.save_stock_data(yf_symbol, df):
+                # allow_today=True：跳過 save_stock_data 的盤前今日過濾，允許寫入盤中資料
+                if self.save_stock_data(yf_symbol, df, allow_today=True):
                     success += 1
 
         self.logout()

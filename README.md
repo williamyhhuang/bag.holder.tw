@@ -951,6 +951,13 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.8.8 - 2026-05-21
+- 🐛 **修正 Cloud Run 盤中 download job 不更新今日資料**：兩個根本原因同步修復
+  - **`closePrice = 0`（盤中）**：`FubonDownloadClient.download_snapshot()` 只讀 `closePrice`，但 Fubon API 在收盤前 `closePrice` 為 0；改用 `closePrice or lastPrice` 作為 close，並跳過兩者皆 0 的無效行
+  - **`save_stock_data()` 盤前濾鏡**：`yfinance_client.py` 有 `_before_close` 邏輯，14:00 前丟棄所有今日資料（原為防 yfinance 前填假資料），但也連 Fubon snapshot 的盤中資料一起丟掉；新增 `allow_today: bool = False` 參數，`download_snapshot()` 傳 `True` 繞過此濾鏡
+  - 更新 `FubonDownloadClient.save_stock_data()` 透傳 `allow_today` 至 `YFinanceClient.save_stock_data()`
+  - 新增 7 個單元測試：`TestSnapshotIntradayFix` + `TestSaveStockDataAllowToday`
+
 ### v5.8.7 - 2026-05-21
 - ⚡ **MTX 策略改進 — 修正 R:R 不對稱、尾盤過濾**
   - **停損縮小 30pt → 15pt**（`MTX_STOP_LOSS_PTS`）：原本 KD 出場平均 +4pt 獲利卻承擔 30pt 停損，R:R 達 1:7.5；縮小停損使 R:R 更合理

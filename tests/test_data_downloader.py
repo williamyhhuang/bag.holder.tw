@@ -179,6 +179,65 @@ class TestYFinanceClient:
                 dates = pd.to_datetime(saved['date']).tolist()
                 assert dates == sorted(dates), "Rows should be sorted ascending by date"
 
+class TestSaveStockDataAllowToday:
+    """Tests for save_stock_data allow_today parameter (intraday snapshot fix)."""
+
+    def setup_method(self):
+        self.client = YFinanceClient()
+
+    def test_allow_today_accepted_without_error(self):
+        """save_stock_data(allow_today=True) must not raise TypeError."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('src.infrastructure.market_data.yfinance_client.settings') as mock_settings:
+                mock_settings.data.stocks_path = temp_dir
+
+                row = pd.DataFrame({
+                    'date': ['2026-03-27'],  # past Friday
+                    'open': [100.0], 'high': [110.0], 'low': [95.0],
+                    'close': [105.0], 'volume': [1_000_000], 'symbol': ['TEST.TW'],
+                })
+                # Must not raise TypeError for unexpected keyword argument
+                result = self.client.save_stock_data('TEST.TW', row, allow_today=True)
+                assert isinstance(result, bool)
+
+    def test_allow_today_false_by_default(self):
+        """Default signature allows calling without allow_today."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('src.infrastructure.market_data.yfinance_client.settings') as mock_settings:
+                mock_settings.data.stocks_path = temp_dir
+
+                row = pd.DataFrame({
+                    'date': ['2026-03-27'],  # past Friday
+                    'open': [100.0], 'high': [110.0], 'low': [95.0],
+                    'close': [105.0], 'volume': [1_000_000], 'symbol': ['TEST.TW'],
+                })
+                # Calling without allow_today should work (default False)
+                result = self.client.save_stock_data('TEST.TW', row)
+                assert result is True
+
+    def test_allow_today_past_date_always_saved(self):
+        """Past-date rows must always be saved regardless of allow_today."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch('src.infrastructure.market_data.yfinance_client.settings') as mock_settings:
+                mock_settings.data.stocks_path = temp_dir
+
+                row = pd.DataFrame({
+                    'date': ['2026-03-27'],  # past Friday
+                    'open': [100.0], 'high': [110.0], 'low': [95.0],
+                    'close': [105.0], 'volume': [1_000_000], 'symbol': ['TEST.TW'],
+                })
+                result_false = self.client.save_stock_data('TEST.TW', row, allow_today=False)
+                result_true = self.client.save_stock_data('TEST.TW', row, allow_today=True)
+                assert result_false is True
+                assert result_true is True
+
+
 class TestBatchDownload:
     """Unit tests for _download_batch"""
 
