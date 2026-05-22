@@ -957,6 +957,13 @@ docker compose up -d
   - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
+### v5.8.13 - 2026-05-22
+- 🐛 **修正盤中排程（09:30~12:30）持續收到前一交易日訊號的問題**
+  - 根本原因：`signals_scanner._load_stock_data()` 在 14:00 前會過濾掉當日資料，但 Fubon 下載端已透過 `allow_today=True` 將當日盤中真實成交資料寫入 CSV；此重複過濾導致盤中訊號永遠顯示前一日
+  - 修正：移除 `signals_scanner` 的盤前今日過濾邏輯，改由下載端統一控制（yfinance 盤前前填過濾 + Fubon `allow_today=True` 寫入真實盤中資料）
+- 🔧 **修正 CI/CD TA-Lib 安裝失敗**
+  - `requirements.txt` 使用 TA-Lib==0.6.8，已內建 C 函式庫；移除 CI/CD 中手動從 sourceforge 安裝舊版 TA-Lib 0.4.0 C library 的步驟（版本不相容導致建置失敗）
+
 ### v5.8.12 - 2026-05-22
 - ⚡ **MTX 停損從 15pt 改回 30pt**（`MTX_STOP_LOSS_PTS`）
   - 回測（TAIFEX 前 30 交易日）顯示 15pt 停損勝率 49.3%、淨損益 -846元；30pt 停損勝率 60.8%、淨損益 +6,788元
