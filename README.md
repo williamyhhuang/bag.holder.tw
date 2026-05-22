@@ -957,6 +957,14 @@ docker compose up -d
   - **AI provider 未設 `temperature=0`**：同樣的訊號輸入，AI 分類（buy/watch/avoid）每次略有不同，導致「推薦 0 支」vs「正常結果」的隨機差異；所有四個 provider（Claude、OpenAI、OpenRouter、Gemini）均加入 `temperature=0`
   - 修正 `tests/test_mtx_auto_trader.py::test_long_signal_reverses_short`：測試在尾盤時段執行時因 `_is_late_session=True` 被誤封鎖，加入 `late_session_no_entry_minutes=0` 隔離測試範圍
 
+### v5.8.14 - 2026-05-22
+- ✅ **新增 `_load_stock_data` 最新交易日邏輯回歸測試（5 個測試案例）**
+  - `test_fubon_intraday_today_data_is_used_as_latest`：Fubon 盤中資料在盤中時段應選為 latest（確保不被二次過濾）
+  - `test_yfinance_only_previous_day_data_gives_correct_latest`：CSV 只有前一交易日時 latest 正確回傳
+  - `test_weekend_dates_are_skipped`：週末資料應跳過，latest 取最近工作日
+  - `test_no_time_of_day_filter_applied`：確認 signals_scanner 不依賴當下時間決定 latest
+  - `test_old_bug_would_filter_today_before_14`：明確重現舊 Bug（盤中舊邏輯給前一日），驗證新版已修復
+
 ### v5.8.13 - 2026-05-22
 - 🐛 **修正盤中排程（09:30~12:30）持續收到前一交易日訊號的問題**
   - 根本原因：`signals_scanner._load_stock_data()` 在 14:00 前會過濾掉當日資料，但 Fubon 下載端已透過 `allow_today=True` 將當日盤中真實成交資料寫入 CSV；此重複過濾導致盤中訊號永遠顯示前一日

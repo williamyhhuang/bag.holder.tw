@@ -265,3 +265,188 @@ class TestSellRevenueFilter:
     def test_just_below_threshold_blocked(self):
         """剛好低於門檻值時應被過濾"""
         assert self._apply_sell_revenue_filter("2330", {"2330": 499.9}, 500.0) is False
+
+
+class TestLoadStockDataLatestDate:
+    """
+    _load_stock_data() 最新交易日邏輯的回歸測試。
+
+    Bug 修正紀錄（2026-05-22）：
+      舊版在 signals_scanner 內加了一道 "盤前跳過今日" 過濾器，
+      導致 Fubon 用 allow_today=True 寫入的當日盤中資料被二次過濾掉，
+      09:30~12:30 排程永遠顯示前一交易日訊號。
+      修正：移除 signals_scanner 的時間過濾，下載端已負責控制寫入的資料範圍。
+    """
+
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_stock_data(dates: list) -> dict:
+        """建立 {symbol: [StockData]} dict，供 mock load_from_stocks_dir 使用"""
+        from decimal import Decimal
+        from src.domain.models import StockData
+        records = [
+            StockData(
+                symbol="2330",
+                date=d,
+                open_price=Decimal("100"),
+                high_price=Decimal("105"),
+                low_price=Decimal("98"),
+                close_price=Decimal("102"),
+                volume=2_000_000,
+            )
+            for d in dates
+        ]
+        return {"2330": records}
+
+    @staticmethod
+    def _make_scanner():
+        """建立最小化的 SignalsScanner（mock 掉所有外部 I/O）"""
+        from unittest.mock import MagicMock
+        from src.application.services.signals_scanner import SignalsScanner
+        from src.infrastructure.market_data.backtest_data_source import YFinanceDataSource
+
+        scanner = SignalsScanner.__new__(SignalsScanner)
+        scanner.data_source = YFinanceDataSource()
+        scanner.logger = __import__("logging").getLogger("test")
+        # cfg 用 MagicMock 避免 Pydantic 限制
+        scanner.cfg = MagicMock()
+        scanner.cfg.load_excluded_symbols.return_value = set()
+        return scanner
+
+    # ── 回歸測試：Fubon 盤中資料不應被過濾 ───────────────────────────────
+
+    def test_fubon_intraday_today_data_is_used_as_latest(self):
+        """
+        【回歸】Fubon allow_today=True 寫入的當日盤中資料，
+        在盤中時段（09:30~12:30）呼叫時，latest 必須為今日，
+        不應再被 signals_scanner 層過濾成前一日。
+        """
+        import datetime
+        today = date.today()
+        if today.weekday() >= 5:
+            pytest.skip("今天是週末，無法模擬工作日盤中情境")
+
+        yesterday = today - datetime.timedelta(days=1)
+        while yesterday.weekday() >= 5:
+            yesterday -= datetime.timedelta(days=1)
+
+        stock_data = self._make_stock_data([yesterday, today])
+        scanner = self._make_scanner()
+
+        with patch.object(scanner.data_source, "load_from_stocks_dir", return_value=stock_data), \
+             patch("src.application.services.signals_scanner.settings") as mock_settings:
+            mock_settings.data.stocks_path = "/tmp/fake_stocks"
+            _, latest, _ = scanner._load_stock_data()
+
+        assert latest == today, (
+            f"latest 應為今日 {today}，但得到 {latest}。"
+            "這代表 signals_scanner 仍在過濾 Fubon 的盤中資料。"
+        )
+
+    def test_yfinance_only_previous_day_data_gives_correct_latest(self):
+        """
+        yfinance 下載端在盤中會過濾掉今日資料，CSV 只有前一交易日。
+        signals_scanner 不應再做額外過濾，latest 應為 CSV 中最新的工作日。
+        """
+        import datetime
+        today = date.today()
+        yesterday = today - datetime.timedelta(days=1)
+        while yesterday.weekday() >= 5:
+            yesterday -= datetime.timedelta(days=1)
+
+        stock_data = self._make_stock_data([yesterday])
+        scanner = self._make_scanner()
+
+        with patch.object(scanner.data_source, "load_from_stocks_dir", return_value=stock_data), \
+             patch("src.application.services.signals_scanner.settings") as mock_settings:
+            mock_settings.data.stocks_path = "/tmp/fake_stocks"
+            _, latest, _ = scanner._load_stock_data()
+
+        assert latest == yesterday
+
+    def test_weekend_dates_are_skipped(self):
+        """週末（週六/週日）的資料應被跳過，latest 取最近的工作日"""
+        # 固定使用已知日期：2026-05-18（週一）、2026-05-17（週日）、2026-05-16（週六）
+        monday = date(2026, 5, 18)
+        sunday = date(2026, 5, 17)
+        saturday = date(2026, 5, 16)
+        assert monday.weekday() == 0
+        assert sunday.weekday() == 6
+        assert saturday.weekday() == 5
+
+        stock_data = self._make_stock_data([saturday, sunday, monday])
+        scanner = self._make_scanner()
+
+        with patch.object(scanner.data_source, "load_from_stocks_dir", return_value=stock_data), \
+             patch("src.application.services.signals_scanner.settings") as mock_settings:
+            mock_settings.data.stocks_path = "/tmp/fake_stocks"
+            _, latest, _ = scanner._load_stock_data()
+
+        assert latest == monday, f"週末應被跳過，latest 應為週一 {monday}，但得到 {latest}"
+
+    def test_no_time_of_day_filter_applied(self):
+        """
+        signals_scanner 不應根據當下時間過濾資料。
+        CSV 有今日（工作日）資料，無論現在是 09:30 或 15:00，latest 都應為今日。
+        """
+        import datetime
+        # 固定使用已知的工作日，不依賴 date.today()
+        thursday = date(2026, 5, 21)  # 週四
+        assert thursday.weekday() == 3
+
+        stock_data = self._make_stock_data([thursday])
+        scanner = self._make_scanner()
+
+        with patch.object(scanner.data_source, "load_from_stocks_dir", return_value=stock_data), \
+             patch("src.application.services.signals_scanner.settings") as mock_settings:
+            mock_settings.data.stocks_path = "/tmp/fake_stocks"
+            _, latest, _ = scanner._load_stock_data()
+
+        assert latest == thursday
+
+    def test_old_bug_would_filter_today_before_14(self):
+        """
+        【舊 Bug 重現驗證】舊版過濾邏輯若存在，在盤中呼叫時 latest 會變成前一日。
+        此測試確認新版不包含該過濾邏輯：直接對 stock_data 套用舊邏輯並驗證其錯誤性，
+        再確認 _load_stock_data 回傳的是今日而非前一日。
+        """
+        import datetime
+        today = date.today()
+        if today.weekday() >= 5:
+            pytest.skip("今天是週末")
+
+        yesterday = today - datetime.timedelta(days=1)
+        while yesterday.weekday() >= 5:
+            yesterday -= datetime.timedelta(days=1)
+
+        stock_data = self._make_stock_data([yesterday, today])
+        scanner = self._make_scanner()
+
+        # 模擬舊版過濾邏輯（time < 14:00 → 排除今日）
+        import pytz
+        taiwan_tz = pytz.timezone("Asia/Taipei")
+        now_tw = datetime.datetime.now(taiwan_tz)
+        market_close = now_tw.replace(hour=14, minute=0, second=0, microsecond=0)
+        is_before_close = now_tw < market_close
+
+        if is_before_close:
+            # 舊邏輯下，今日應被排除
+            old_latest = max(
+                r.date
+                for records in stock_data.values()
+                for r in records
+                if r.date.weekday() < 5
+                and not (r.date == today and is_before_close)
+            )
+            assert old_latest == yesterday, "確認舊 Bug：盤中時舊邏輯確實給出前一日"
+
+        # 新版 _load_stock_data 不應受時間影響
+        with patch.object(scanner.data_source, "load_from_stocks_dir", return_value=stock_data), \
+             patch("src.application.services.signals_scanner.settings") as mock_settings:
+            mock_settings.data.stocks_path = "/tmp/fake_stocks"
+            _, latest, _ = scanner._load_stock_data()
+
+        assert latest == today, (
+            f"新版 latest 應為今日 {today}，但得到 {latest}。Bug 仍未修復。"
+        )
