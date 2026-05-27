@@ -53,6 +53,8 @@ class Scenario:
     # Momentum whitelist
     momentum_top_n: int = 0
     momentum_lookback_days: int = 20
+    # Weekly trend confirmation
+    require_weekly_trend: bool = False
 
 
 SCENARIOS: List[Scenario] = [
@@ -139,6 +141,7 @@ SCENARIOS: List[Scenario] = [
         rsi_min_entry=50.0,
         momentum_top_n=30,
         momentum_lookback_days=20,
+        require_weekly_trend=True,    # P2: 周線 MA5 > MA20 確認中期趨勢
     ),
 ]
 
@@ -206,6 +209,7 @@ async def run_scenario(
         require_volume_confirmation=scenario.require_volume_confirmation,
         volume_confirmation_multiplier=scenario.volume_confirmation_multiplier,
         rsi_min_entry=scenario.rsi_min_entry,
+        require_weekly_trend=scenario.require_weekly_trend,
     )
 
     # 產生訊號

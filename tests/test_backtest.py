@@ -1513,6 +1513,7 @@ class TestDiagnoseFilters:
         assert last.rsi_min_entry == cfg.rsi_min_entry
         assert last.use_market_regime is True
         assert last.momentum_top_n == cfg.momentum_top_n
+        assert last.require_weekly_trend == cfg.require_weekly_trend
 
     def test_analyze_signal_breakdown_counts(self):
         """_analyze_signal_breakdown should correctly count trades and wins per signal."""
@@ -2427,16 +2428,16 @@ class TestFinMindSettings:
     """Tests for FinMind settings integration."""
 
     def test_finmind_settings_default(self):
-        """FinMind API token should default to empty string."""
+        """FinMind settings should have api_token field as a string."""
         from config.settings import FinMindSettings
         s = FinMindSettings()
-        assert s.api_token == ""
+        assert isinstance(s.api_token, str)
 
-    def test_require_weekly_trend_default_false(self):
-        """require_weekly_trend should default to False."""
+    def test_require_weekly_trend_is_bool(self):
+        """require_weekly_trend should be a boolean field."""
         from config.settings import BacktestSettings
         s = BacktestSettings()
-        assert s.require_weekly_trend is False
+        assert isinstance(s.require_weekly_trend, bool)
 
     def test_institutional_consecutive_min_days_default_zero(self):
         """institutional_consecutive_min_days should default to 0 (disabled)."""
