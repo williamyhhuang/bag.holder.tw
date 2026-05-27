@@ -585,7 +585,7 @@ class BacktestSettings(BaseSettings):
     # 要求周線 MA5 > MA20 才允許進場（確保中期趨勢向上，過濾周線空頭中的日線假突破）
     # 1 周 = 5 個交易日，MA5 = 5週均線 ≈ 1個月；MA20 = 20週均線 ≈ 5個月
     require_weekly_trend: bool = Field(
-        default=False,
+        default=True,
         env="BACKTEST_REQUIRE_WEEKLY_TREND",
         description="True = 要求周線 MA5 > MA20 才允許進場",
     )
