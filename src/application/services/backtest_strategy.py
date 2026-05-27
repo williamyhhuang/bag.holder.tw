@@ -13,6 +13,40 @@ from ...utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _build_weekly_closes(price_data: List[StockData]) -> List[Tuple[date, Decimal]]:
+    """
+    Aggregate daily OHLCV to weekly frequency (ISO week, last trading day = week end).
+    Returns list of (week_last_date, close_price) sorted chronologically.
+    """
+    weekly: Dict[Tuple[int, int], Tuple[date, Decimal]] = {}
+    for data in sorted(price_data, key=lambda x: x.date):
+        iso = data.date.isocalendar()
+        key = (iso[0], iso[1])
+        weekly[key] = (data.date, data.close_price)
+    return sorted(weekly.values(), key=lambda x: x[0])
+
+
+def _calculate_weekly_ma(weekly_closes: List[Tuple[date, Decimal]], period: int) -> Dict[Tuple[int, int], Decimal]:
+    """
+    Calculate simple MA for weekly closes.
+    Returns {(iso_year, iso_week): ma_value}.
+    """
+    result: Dict[Tuple[int, int], Decimal] = {}
+    if period <= 0 or len(weekly_closes) < period:
+        return result
+
+    closes = [c for _, c in weekly_closes]
+    dates = [d for d, _ in weekly_closes]
+
+    for i in range(period - 1, len(closes)):
+        window = closes[i - period + 1: i + 1]
+        avg = sum(window) / Decimal(period)
+        iso = dates[i].isocalendar()
+        result[(iso[0], iso[1])] = avg
+
+    return result
+
+
 class TechnicalStrategy:
     """Technical analysis strategy using existing indicator logic"""
 
@@ -46,6 +80,7 @@ class TechnicalStrategy:
         donchian_period: int = 20,
         min_volume_lots: int = 0,
         signal_cooldown_days: int = 0,
+        require_weekly_trend: bool = False,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -70,6 +105,8 @@ class TechnicalStrategy:
         self.min_volume_lots = min_volume_lots
         # Filter 7: cooldown — skip BUY if same symbol triggered BUY within N trading days; 0 = disabled
         self.signal_cooldown_days = signal_cooldown_days
+        # Filter 8: weekly trend confirmation — weekly MA5 > MA20 required for BUY
+        self.require_weekly_trend = require_weekly_trend
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -77,6 +114,8 @@ class TechnicalStrategy:
 
         # Strategy state
         self.indicators_cache: Dict[str, Dict[date, TechnicalIndicators]] = {}
+        # Weekly MA cache: symbol -> {(iso_year, iso_week): (ma5, ma20)}
+        self.weekly_ma_cache: Dict[str, Dict[Tuple[int, int], Tuple[Optional[Decimal], Optional[Decimal]]]] = {}
 
     def prepare_price_data(self, stock_data: List[StockData]) -> List:
         """Convert StockData to format compatible with IndicatorCalculator"""
@@ -224,6 +263,21 @@ class TechnicalStrategy:
             # Sort dates for chronological processing
             sorted_dates = sorted(indicators_data.keys())
 
+            # Filter 8: pre-compute weekly MA5/MA20 for this symbol
+            if self.require_weekly_trend:
+                if symbol not in self.weekly_ma_cache:
+                    weekly_closes = _build_weekly_closes(price_data)
+                    wma5 = _calculate_weekly_ma(weekly_closes, 5)
+                    wma20 = _calculate_weekly_ma(weekly_closes, 20)
+                    combined: Dict[Tuple[int, int], Tuple[Optional[Decimal], Optional[Decimal]]] = {}
+                    all_weeks = set(wma5.keys()) | set(wma20.keys())
+                    for wk in all_weeks:
+                        combined[wk] = (wma5.get(wk), wma20.get(wk))
+                    self.weekly_ma_cache[symbol] = combined
+                weekly_data = self.weekly_ma_cache[symbol]
+            else:
+                weekly_data = {}
+
             # Filter 7: cooldown tracking — last BUY signal date per symbol
             # Processed across full history so cooldown works even when start_date restricts output
             last_buy_date: Dict[str, date] = {}
@@ -297,11 +351,16 @@ class TechnicalStrategy:
 
                     # Apply filters only to BUY signals
                     if signal_type == SignalType.BUY:
+                        iso = current_date.isocalendar()
+                        wk_key = (iso[0], iso[1])
+                        w_ma5, w_ma20 = weekly_data.get(wk_key, (None, None))
                         signal_type = self._apply_buy_filters(
                             signal_name=signal_data['name'],
                             price=current_price_data.close_price,
                             volume=current_price_data.volume,
                             indicators=current_indicators,
+                            weekly_ma5=w_ma5,
+                            weekly_ma20=w_ma20,
                         )
 
                     # Filter 7: cooldown — downgrade BUY to WATCH if same symbol triggered
@@ -354,6 +413,8 @@ class TechnicalStrategy:
         price: Decimal,
         volume: int,
         indicators: TechnicalIndicators,
+        weekly_ma5: Optional[Decimal] = None,
+        weekly_ma20: Optional[Decimal] = None,
     ) -> SignalType:
         """Apply quality filters to a BUY signal.
 
@@ -369,6 +430,9 @@ class TechnicalStrategy:
         5. RSI momentum check     — RSI >= rsi_min_entry (avoid entering on false breakouts
                                     when momentum is weak; BB Squeeze Break had 44.8% win
                                     rate in Q4-2025 without this filter)
+        6. Minimum volume lots    — liquidity filter
+        7. Signal cooldown        — handled in generate_signals
+        8. Weekly trend           — weekly MA5 > MA20 (medium-term uptrend confirmation)
         """
         # Filter 1: disabled signals (poor historical win rate)
         if signal_name in self.disabled_signals:
@@ -435,6 +499,18 @@ class TechnicalStrategy:
                     f"min {min_shares} ({self.min_volume_lots} lots) → WATCH"
                 )
                 return SignalType.WATCH
+
+        # Filter 8: weekly trend confirmation — weekly MA5 > MA20 ensures the medium-term
+        # trend is upward (5-week avg > 20-week avg ≈ 1-month vs 5-month). Filters out
+        # individual-day false breakouts that occur during a broader weekly downtrend.
+        if self.require_weekly_trend:
+            if weekly_ma5 is not None and weekly_ma20 is not None:
+                if weekly_ma5 <= weekly_ma20:
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: weekly MA5 {weekly_ma5:.2f} "
+                        f"<= weekly MA20 {weekly_ma20:.2f} → WATCH"
+                    )
+                    return SignalType.WATCH
 
         return SignalType.BUY
 

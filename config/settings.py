@@ -539,6 +539,21 @@ class BacktestSettings(BaseSettings):
         description="是否同時過濾注意股（False = 只過濾處置股）",
     )
 
+    # ── 法人連續買超（FinMind 歷史資料）────────────────────────────────
+    # 要求外資連續買超 >= N 日，過濾掉單日偶發性買超
+    # 0 = 停用；建議值 2~3（連續 2 日以上視為趨勢性買超）
+    # 需要 FINMIND_API_TOKEN 且 enable_institutional_filter=True
+    institutional_consecutive_min_days: int = Field(
+        default=0,
+        env="BACKTEST_INSTITUTIONAL_CONSECUTIVE_MIN_DAYS",
+        description="外資連續買超最少天數（0=停用；需 FinMind API token）",
+    )
+    institutional_trust_consecutive_min_days: int = Field(
+        default=0,
+        env="BACKTEST_INSTITUTIONAL_TRUST_CONSECUTIVE_MIN_DAYS",
+        description="投信連續買超最少天數（0=停用；需 FinMind API token）",
+    )
+
     # ── 三大法人籌碼過濾 ─────────────────────────────────────────────
     # 只允許有法人買超的股票進入 buy list（三大法人是比散戶早的早期信號）
     # 資料來自 TWSE T86 API（僅涵蓋上市股票），上櫃股票不受限制
@@ -564,6 +579,15 @@ class BacktestSettings(BaseSettings):
         default=True,
         env="BACKTEST_INSTITUTIONAL_REQUIRE_ANY",
         description="True=外資或投信任一達標通過；False=兩者都需達標",
+    )
+
+    # ── 周線趨勢確認 ─────────────────────────────────────────────────
+    # 要求周線 MA5 > MA20 才允許進場（確保中期趨勢向上，過濾周線空頭中的日線假突破）
+    # 1 周 = 5 個交易日，MA5 = 5週均線 ≈ 1個月；MA20 = 20週均線 ≈ 5個月
+    require_weekly_trend: bool = Field(
+        default=False,
+        env="BACKTEST_REQUIRE_WEEKLY_TREND",
+        description="True = 要求周線 MA5 > MA20 才允許進場",
     )
 
     # ── 同股票買入冷卻期 ──────────────────────────────────────────────
@@ -673,6 +697,21 @@ class GoogleSheetsSettings(BaseSettings):
         "env_file": str(PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",
     }
+
+
+class FinMindSettings(BaseSettings):
+    """FinMind API 設定（歷史財務資料，供回測使用）"""
+    api_token: str = Field(
+        default="",
+        env="FINMIND_API_TOKEN",
+        description="FinMind API Token（至 finmindtrade.com 免費註冊取得，每小時 600 次請求）",
+    )
+
+    class Config:
+        extra = 'ignore'
+        env_prefix = "FINMIND_"
+        env_file = str(PROJECT_ROOT / ".env")
+        env_file_encoding = "utf-8"
 
 
 class AIAnalyzerSettings(BaseSettings):
@@ -800,6 +839,7 @@ class Settings(BaseSettings):
     ai_analyzer: AIAnalyzerSettings = AIAnalyzerSettings()
     google_sheets: GoogleSheetsSettings = GoogleSheetsSettings()
     mtx_trader: MTXTraderSettings = MTXTraderSettings()
+    finmind: FinMindSettings = FinMindSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

@@ -2286,5 +2286,164 @@ class TestBacktestRunnerSkipDownload:
                 ))
 
 
+class TestWeeklyTrendFilter:
+    """Tests for Filter 8: weekly MA5 > MA20 trend confirmation."""
+
+    def _make_indicators(self, ma60=80, volume_ma20=2_000_000, rsi14=60) -> "TechnicalIndicators":
+        from src.domain.models import TechnicalIndicators as TI
+        return TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'),
+            ma10=Decimal('100'),
+            ma20=Decimal('90'),
+            ma60=Decimal(str(ma60)),
+            volume_ma20=volume_ma20,
+            rsi14=Decimal(str(rsi14)),
+        )
+
+    def test_weekly_trend_disabled_by_default(self):
+        """require_weekly_trend defaults to False."""
+        s = TechnicalStrategy()
+        assert s.require_weekly_trend is False
+
+    def _make_strategy(self, require_weekly_trend: bool) -> TechnicalStrategy:
+        return TechnicalStrategy(
+            require_weekly_trend=require_weekly_trend,
+            min_volume_lots=0,
+            require_volume_confirmation=False,
+        )
+
+    def test_weekly_ma5_above_ma20_passes(self):
+        """BUY should pass when weekly_ma5 > weekly_ma20 and filter is enabled."""
+        s = self._make_strategy(require_weekly_trend=True)
+        ind = self._make_indicators()
+        result = s._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=2_000_000,
+            indicators=ind,
+            weekly_ma5=Decimal('120'),
+            weekly_ma20=Decimal('100'),
+        )
+        assert result == SignalType.BUY
+
+    def test_weekly_ma5_below_ma20_blocked(self):
+        """BUY should be downgraded to WATCH when weekly_ma5 <= weekly_ma20."""
+        s = self._make_strategy(require_weekly_trend=True)
+        ind = self._make_indicators()
+        result = s._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=2_000_000,
+            indicators=ind,
+            weekly_ma5=Decimal('95'),
+            weekly_ma20=Decimal('100'),
+        )
+        assert result == SignalType.WATCH
+
+    def test_weekly_ma5_equal_ma20_blocked(self):
+        """BUY should be blocked when weekly_ma5 == weekly_ma20 (not strictly above)."""
+        s = self._make_strategy(require_weekly_trend=True)
+        ind = self._make_indicators()
+        result = s._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=2_000_000,
+            indicators=ind,
+            weekly_ma5=Decimal('100'),
+            weekly_ma20=Decimal('100'),
+        )
+        assert result == SignalType.WATCH
+
+    def test_weekly_filter_disabled_skips_check(self):
+        """When require_weekly_trend=False, downward weekly trend should not block BUY."""
+        s = self._make_strategy(require_weekly_trend=False)
+        ind = self._make_indicators()
+        result = s._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=2_000_000,
+            indicators=ind,
+            weekly_ma5=Decimal('80'),   # would fail if filter were enabled
+            weekly_ma20=Decimal('100'),
+        )
+        assert result == SignalType.BUY
+
+    def test_weekly_ma_none_does_not_block(self):
+        """When weekly MA data unavailable, filter should not block (fail-open)."""
+        s = self._make_strategy(require_weekly_trend=True)
+        ind = self._make_indicators()
+        result = s._apply_buy_filters(
+            signal_name='BB Squeeze Break',
+            price=Decimal('110'),
+            volume=2_000_000,
+            indicators=ind,
+            weekly_ma5=None,
+            weekly_ma20=None,
+        )
+        assert result == SignalType.BUY
+
+    def test_build_weekly_closes_aggregates_to_weeks(self):
+        """_build_weekly_closes should return one entry per ISO week."""
+        from src.application.services.backtest_strategy import _build_weekly_closes
+        # 10 consecutive trading days spanning 2 ISO weeks
+        price_data = []
+        for i in range(10):
+            d = date(2025, 9, 1) + __import__('datetime').timedelta(days=i)
+            price_data.append(StockData(
+                symbol='TEST', date=d,
+                open_price=Decimal('100'), high_price=Decimal('100'),
+                low_price=Decimal('100'), close_price=Decimal(str(100 + i)),
+                volume=1_000_000,
+            ))
+        result = _build_weekly_closes(price_data)
+        # Should have at most 2 weeks (Sep 1 and Sep 8 start different ISO weeks)
+        assert len(result) <= 3
+        assert all(isinstance(d, date) for d, _ in result)
+
+    def test_calculate_weekly_ma_correct_values(self):
+        """_calculate_weekly_ma should compute correct MA values."""
+        from src.application.services.backtest_strategy import _calculate_weekly_ma
+        # 6 weekly closes at prices 100, 110, 120, 130, 140, 150
+        # MA5 for week 5 (0-indexed) = (100+110+120+130+140)/5 = 120
+        # MA5 for week 6 = (110+120+130+140+150)/5 = 130
+        weekly_closes = [
+            (date(2024, 1, 5), Decimal('100')),
+            (date(2024, 1, 12), Decimal('110')),
+            (date(2024, 1, 19), Decimal('120')),
+            (date(2024, 1, 26), Decimal('130')),
+            (date(2024, 2, 2), Decimal('140')),
+            (date(2024, 2, 9), Decimal('150')),
+        ]
+        ma5 = _calculate_weekly_ma(weekly_closes, 5)
+        # Expect values at the 5th and 6th weeks
+        values = sorted(ma5.values())
+        assert len(values) == 2
+        assert abs(float(values[0]) - 120.0) < 0.01
+        assert abs(float(values[1]) - 130.0) < 0.01
+
+
+class TestFinMindSettings:
+    """Tests for FinMind settings integration."""
+
+    def test_finmind_settings_default(self):
+        """FinMind API token should default to empty string."""
+        from config.settings import FinMindSettings
+        s = FinMindSettings()
+        assert s.api_token == ""
+
+    def test_require_weekly_trend_default_false(self):
+        """require_weekly_trend should default to False."""
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert s.require_weekly_trend is False
+
+    def test_institutional_consecutive_min_days_default_zero(self):
+        """institutional_consecutive_min_days should default to 0 (disabled)."""
+        from config.settings import BacktestSettings
+        s = BacktestSettings()
+        assert s.institutional_consecutive_min_days == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

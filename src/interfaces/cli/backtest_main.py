@@ -44,6 +44,7 @@ class BacktestRunner:
             donchian_period=cfg.donchian_period,
             min_volume_lots=cfg.min_volume_lots,
             signal_cooldown_days=cfg.signal_cooldown_days,
+            require_weekly_trend=cfg.require_weekly_trend,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

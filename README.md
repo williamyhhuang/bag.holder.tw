@@ -951,6 +951,27 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.9.0 - 2026-05-28
+- 🆕 **Option B：周線趨勢確認過濾（Filter 8）**
+  - `TechnicalStrategy` 新增 `require_weekly_trend` 參數（預設 `False`）
+  - 啟用後要求**周線 MA5 > MA20**才允許進場，過濾日線假突破（周線空頭中的個股）
+  - 周線定義：每個 ISO 週最後一個交易日的收盤價，MA5 = 5週均線（約1個月），MA20 = 20週均線（約5個月）
+  - 設定：`BACKTEST_REQUIRE_WEEKLY_TREND=true`（`.env`）或 `config/settings.py` 中 `require_weekly_trend`
+  - 新增 11 個單元測試（`TestWeeklyTrendFilter`、`TestFinMindSettings`）
+
+- 🆕 **Option A：FinMind 歷史財務資料客戶端**
+  - 新增 `src/infrastructure/market_data/finmind_client.py`
+    - `FinMindRevenueLoader`：取得歷史月營收（含 YoY 計算），供回測各日期精確查詢
+    - `FinMindInstitutionalLoader`：取得歷史三大法人資料，計算**外資/投信連續買超天數**
+  - 當日磁碟快取（`data/cache/finmind_*.json`），避免重複 API 呼叫
+  - 設定：`FINMIND_API_TOKEN`（免費帳號，finmindtrade.com 註冊，每小時 600 次請求）
+
+- 🆕 **法人連續買超設定**
+  - `BacktestSettings` 新增：
+    - `institutional_consecutive_min_days`（預設 0，停用）
+    - `institutional_trust_consecutive_min_days`（預設 0，停用）
+  - 搭配 `enable_institutional_filter=True` 與 FinMind token 使用
+
 ### v5.8.9 - 2026-05-21
 - 🐛 **修正盤中 /scan 結果不一致（有時 0 支、有時正常）**：兩個根本原因同步修復
   - **`entrypoint-download.sh` 空目錄上傳 GCS**：若 `tar xzf` 解壓失敗（磁碟空間、corrupt archive），腳本因 `||` 繼續執行，最終把空的 `stocks/` 打包上傳至 GCS，覆蓋正常資料，導致下次 signals job 讀到 0 支股票；改為在上傳前檢查 CSV 檔案數量，低於 1000 支時跳過上傳保留既有 GCS 資料
