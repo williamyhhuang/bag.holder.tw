@@ -96,6 +96,9 @@ def _watch_reason_with_price(
     if rsi is not None and strategy.rsi_min_entry > 0:
         if rsi < Decimal(str(strategy.rsi_min_entry)):
             return f"RSI {float(rsi):.1f} < {strategy.rsi_min_entry:.0f}"
+    # 若以上已知過濾條件均未命中，推測為周線趨勢過濾（Filter 8: 周線MA5≤MA20）
+    if strategy.require_weekly_trend:
+        return "周線趨勢偏弱（周MA5≤MA20）"
     return "未達進場條件"
 
 
