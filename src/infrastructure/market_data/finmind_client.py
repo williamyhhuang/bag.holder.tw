@@ -249,3 +249,179 @@ class FinMindInstitutionalLoader:
     ) -> Optional[dict]:
         """回傳 target_date 當日法人資料（精確日期匹配）。"""
         return history.get(target_date.isoformat())
+
+
+class FinMindEpsLoader:
+    """
+    從 FinMind 載入台股季度 EPS 歷史資料，計算季 EPS 年增率。
+
+    使用 FinMind TaiwanStockFinancialStatements dataset。
+    快取至 data/cache/finmind_eps_{stock_id}_{date}.json，當日有效。
+
+    回傳格式（eps_map）:
+        { stock_id: { date_str: {"eps": float, "yoy_pct": float} } }
+        其中 date_str 為財報公告日（YYYY-MM-DD）
+    """
+
+    def __init__(self, api_token: str = "", cache_dir: Path = _DEFAULT_CACHE_DIR):
+        self.api_token = api_token
+        self.cache_dir = cache_dir
+
+    def _cache_path(self, stock_id: str) -> Path:
+        return self.cache_dir / f"finmind_eps_{stock_id}_{date.today().isoformat()}.json"
+
+    def _load_cache(self, stock_id: str) -> Optional[Dict]:
+        p = self._cache_path(stock_id)
+        if not p.exists():
+            return None
+        try:
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def _save_cache(self, stock_id: str, data: Dict) -> None:
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        with open(self._cache_path(stock_id), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+
+    def load_stock_eps_history(
+        self,
+        stock_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> Dict[str, dict]:
+        """
+        取得 stock_id 的季 EPS 歷史，計算 YoY（同季比較）。
+
+        Args:
+            stock_id: 台股代碼（如 "2330"）
+            start_date: 起始日期 YYYY-MM-DD
+            end_date: 結束日期 YYYY-MM-DD
+
+        Returns:
+            Dict mapping date_str -> {"eps": float, "yoy_pct": float}
+            date_str 為財報公告日；yoy_pct 為同季 EPS 年增率（%）
+        """
+        cached = self._load_cache(stock_id)
+        if cached is not None:
+            return cached
+
+        try:
+            from FinMind.data import DataLoader
+            from datetime import datetime
+            dl = DataLoader()
+            if self.api_token:
+                dl.login_by_token(api_token=self.api_token)
+
+            # 需要比 start_date 早 15 個月才能計算同季 YoY
+            sd = datetime.strptime(start_date, "%Y-%m-%d")
+            fetch_start = (sd - timedelta(days=460)).strftime("%Y-%m-%d")
+
+            df = dl.taiwan_stock_financial_statement(
+                stock_id=stock_id,
+                start_date=fetch_start,
+                end_date=end_date,
+            )
+
+            if df is None or len(df) == 0:
+                return {}
+
+            # 篩選 EPS 欄位（FinMind 使用 "EPS" 作為 type）
+            eps_df = df[df["type"] == "EPS"][["date", "value"]].copy()
+            if eps_df.empty:
+                return {}
+
+            eps_df = eps_df.sort_values("date").reset_index(drop=True)
+
+            # 建立 (year, quarter) -> (date_str, eps) lookup
+            # FinMind 財務季報日期格式：YYYY-MM-DD（季末日）
+            from collections import defaultdict
+            quarterly: Dict[tuple, List] = defaultdict(list)
+            for _, row in eps_df.iterrows():
+                d = str(row["date"])[:10]
+                try:
+                    dt = date.fromisoformat(d)
+                except Exception:
+                    continue
+                q = (dt.month - 1) // 3 + 1  # 季度 1~4
+                quarterly[(dt.year, q)].append((d, float(row["value"])))
+
+            # 計算 YoY（與去年同季比較）
+            result: Dict[str, dict] = {}
+            for (yr, q), entries in quarterly.items():
+                for report_date, eps_val in entries:
+                    prev_entries = quarterly.get((yr - 1, q), [])
+                    if prev_entries:
+                        prev_eps = prev_entries[-1][1]
+                        if prev_eps != 0:
+                            yoy = ((eps_val / prev_eps) - 1.0) * 100.0
+                        else:
+                            yoy = 0.0
+                    else:
+                        yoy = 0.0
+                    result[report_date] = {
+                        "eps": round(eps_val, 4),
+                        "yoy_pct": round(yoy, 2),
+                    }
+
+            self._save_cache(stock_id, result)
+            return result
+
+        except Exception as exc:
+            logger.warning(f"[FinMind] EPS {stock_id} 取得失敗: {exc}")
+            return {}
+
+    def get_eps_on_date(
+        self,
+        stock_id: str,
+        target_date: date,
+        history: Dict[str, dict],
+    ) -> Optional[dict]:
+        """
+        回傳 target_date 當日可知的最新季 EPS（取 <= target_date 的最新報告）。
+
+        Args:
+            stock_id: 台股代碼（未使用，保留供未來擴充）
+            target_date: 查詢基準日
+            history: load_stock_eps_history() 的回傳值
+
+        Returns:
+            {"eps": float, "yoy_pct": float} 或 None（無資料）
+        """
+        valid = {d: v for d, v in history.items() if d <= target_date.isoformat()}
+        if not valid:
+            return None
+        return valid[max(valid)]
+
+
+def load_eps_snapshot(
+    api_token: str = "",
+    cache_dir: Path = _DEFAULT_CACHE_DIR,
+    stock_ids: Optional[List[str]] = None,
+    start_date: str = "2023-01-01",
+    end_date: Optional[str] = None,
+) -> Dict[str, Dict[str, dict]]:
+    """
+    批量載入所有股票的 EPS 歷史（供 signals_scanner 使用）。
+
+    回傳格式: { stock_id: { date_str: {"eps": float, "yoy_pct": float} } }
+
+    注意：FinMind 免費帳號每小時限制 600 次請求，
+    若 stock_ids 太多建議分批呼叫。
+    """
+    if end_date is None:
+        end_date = date.today().isoformat()
+
+    loader = FinMindEpsLoader(api_token=api_token, cache_dir=cache_dir)
+    result: Dict[str, Dict[str, dict]] = {}
+
+    if stock_ids is None:
+        return result
+
+    for sid in stock_ids:
+        history = loader.load_stock_eps_history(sid, start_date=start_date, end_date=end_date)
+        if history:
+            result[sid] = history
+
+    return result

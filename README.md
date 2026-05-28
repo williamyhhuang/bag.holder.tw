@@ -951,6 +951,28 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.10.0 - 2026-05-29
+- 🆕 **Minervini 52 週高低點過濾（Filter 9）**
+  - 新增 `require_52w_filter`（預設 `True`）：股價需在 52 週低點 30% 以上，且距 52 週高點不超過 35%
+  - 設定：`BACKTEST_REQUIRE_52W_FILTER`, `BACKTEST_ABOVE_52W_LOW_PCT`（預設 0.30），`BACKTEST_NEAR_52W_HIGH_PCT`（預設 0.35）
+  - 回測驗證：啟用後報酬由 49.14% → 51.87%，同時維持勝率與夏普比率
+
+- 🆕 **族群動能排名式過濾（可選）**
+  - `SectorTrendAnalyzer` 新增 `compute_sector_momentum()`：計算各族群近期平均漲幅
+  - `get_strong_sectors_by_momentum(top_pct=0.20)`：取前 N% 強勢族群（取代二元 MA20 門檻）
+  - 設定：`BACKTEST_SECTOR_USE_MOMENTUM`（預設 `False`），`BACKTEST_SECTOR_MOMENTUM_LOOKBACK_DAYS`（60），`BACKTEST_SECTOR_TOP_PCT`（0.20）
+
+- 🆕 **VCP 收縮形態偵測（可選）**
+  - `_detect_vcp()` 偵測 Volatility Contraction Pattern：波動率與成交量收縮，視為進場訊號
+  - 設定：`BACKTEST_ENABLE_VCP`（預設 `False`），`BACKTEST_VCP_LOOKBACK`（60）
+
+- 🆕 **CANSLIM EPS 過濾（signals_scanner 專用）**
+  - `FinMindEpsLoader`：透過 FinMind API 取得台股季 EPS 歷史，計算同季 YoY 成長率
+  - 設定：`BACKTEST_ENABLE_EPS_FILTER`（預設 `False`），`BACKTEST_MIN_EPS_YOY_PCT`（預設 25.0%）
+  - 注意：僅於即時訊號掃描（signals_scanner）使用，回測不支援
+
+- ✅ 單元測試：新增 26 個測試（`Test52WFilter`、`TestVCPDetection`、`TestSectorMomentumWhitelist`、`TestComputeSectorMomentum`、`TestGetStrongSectorsByMomentum`），共 715 個測試通過
+
 ### v5.9.0 - 2026-05-28
 - 🆕 **Option B：周線趨勢確認過濾（Filter 8）**
   - `TechnicalStrategy` 新增 `require_weekly_trend` 參數（預設 `False`）

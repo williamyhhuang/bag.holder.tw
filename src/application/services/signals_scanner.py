@@ -23,6 +23,7 @@ from ...domain.services.sector_trend_analyzer import SectorTrendAnalyzer
 from ...infrastructure.market_data.revenue_filter import MonthlyRevenueLoader, get_revenue_million, get_revenue_yoy
 from ...infrastructure.market_data.disposal_filter import DisposalStockFilter
 from ...infrastructure.market_data.institutional_filter import InstitutionalFlowLoader, InstitutionalFlow
+from ...infrastructure.market_data.finmind_client import FinMindEpsLoader
 from ...utils.logger import get_logger
 from ...utils.stock_name_mapper import get_stock_names
 from config.settings import settings
@@ -167,6 +168,11 @@ class SignalsScanner:
             donchian_period=cfg.donchian_period,
             signal_cooldown_days=cfg.signal_cooldown_days,
             require_weekly_trend=cfg.require_weekly_trend,
+            require_52w_filter=cfg.require_52w_filter,
+            above_52w_low_pct=cfg.above_52w_low_pct,
+            near_52w_high_pct=cfg.near_52w_high_pct,
+            enable_vcp=cfg.enable_vcp,
+            vcp_lookback=cfg.vcp_lookback,
         )
         self.cfg = cfg
 
@@ -287,6 +293,30 @@ class SignalsScanner:
                 f"投信門檻 {self.cfg.institutional_min_trust_net_shares//1000}張）"
             )
 
+        # CANSLIM EPS 年增率資料（若啟用）
+        eps_map: Dict[str, dict] = {}  # stock_id -> {date_str -> {"eps": float, "yoy_pct": float}}
+        eps_loader = FinMindEpsLoader(api_token=settings.finmind.api_token)
+        if self.cfg.enable_eps_filter and settings.finmind.api_token:
+            from datetime import datetime
+            eps_start = (target_date.replace(year=target_date.year - 2)).isoformat()
+            symbols_to_load = [
+                sym[:-1] if sym.endswith('O') else sym
+                for sym in stock_data
+            ]
+            self.logger.info(
+                f"CANSLIM EPS 過濾啟用（門檻 {self.cfg.min_eps_yoy_pct:.0f}%）"
+                f"，載入 {len(symbols_to_load)} 支..."
+            )
+            for sid in symbols_to_load:
+                history = eps_loader.load_stock_eps_history(
+                    sid, start_date=eps_start, end_date=target_date.isoformat()
+                )
+                if history:
+                    eps_map[sid] = history
+            self.logger.info(f"EPS 資料已載入 {len(eps_map)} 支")
+        elif self.cfg.enable_eps_filter:
+            self.logger.warning("CANSLIM EPS 過濾已啟用但缺少 FINMIND_API_TOKEN，跳過")
+
         # 建立動能前 30 名白名單
         top30 = self._build_momentum_top_n(stock_data, target_date)
         self.logger.info(f"動能前30名: {len(top30) if top30 else '停用'}")
@@ -295,22 +325,47 @@ class SignalsScanner:
         strong_sectors = None
         sector_summary = []
         if self.cfg.enable_sector_trend_filter:
-            self.logger.info("計算族群趨勢強度...")
-            sector_strength = self.sector_analyzer.compute_sector_strength(
-                stock_data, target_date
-            )
-            strong_sectors = self.sector_analyzer.get_strong_sectors(
-                sector_strength, threshold=self.cfg.sector_trend_threshold
-            )
-            sector_summary = self.sector_analyzer.build_sector_summary(
-                sector_strength, threshold=self.cfg.sector_trend_threshold
-            )
-            strong_count = sum(1 for r in sector_summary if r["is_strong"])
-            total_count = len(sector_summary)
-            self.logger.info(
-                f"族群分析完成：{strong_count}/{total_count} 個族群為強勢"
-                f"（門檻 {self.cfg.sector_trend_threshold:.0%}）"
-            )
+            if self.cfg.sector_use_momentum:
+                self.logger.info("計算族群動能排名（漲幅排名前 20%）...")
+                sector_momentum = self.sector_analyzer.compute_sector_momentum(
+                    stock_data, target_date,
+                    lookback_days=self.cfg.sector_momentum_lookback_days,
+                )
+                strong_sectors = self.sector_analyzer.get_strong_sectors_by_momentum(
+                    sector_momentum, top_pct=self.cfg.sector_top_pct
+                )
+                # Build summary using momentum scores
+                sector_summary = [
+                    {
+                        "sector": s,
+                        "strength_pct": round(v * 100, 1),
+                        "is_strong": s in strong_sectors,
+                    }
+                    for s, v in sorted(sector_momentum.items(), key=lambda x: -x[1])
+                ]
+                strong_count = sum(1 for r in sector_summary if r["is_strong"])
+                total_count = len(sector_summary)
+                self.logger.info(
+                    f"族群動能排名完成：前 {self.cfg.sector_top_pct:.0%} = "
+                    f"{strong_count}/{total_count} 個族群為強勢"
+                )
+            else:
+                self.logger.info("計算族群趨勢強度（MA20 門檻）...")
+                sector_strength = self.sector_analyzer.compute_sector_strength(
+                    stock_data, target_date
+                )
+                strong_sectors = self.sector_analyzer.get_strong_sectors(
+                    sector_strength, threshold=self.cfg.sector_trend_threshold
+                )
+                sector_summary = self.sector_analyzer.build_sector_summary(
+                    sector_strength, threshold=self.cfg.sector_trend_threshold
+                )
+                strong_count = sum(1 for r in sector_summary if r["is_strong"])
+                total_count = len(sector_summary)
+                self.logger.info(
+                    f"族群分析完成：{strong_count}/{total_count} 個族群為強勢"
+                    f"（門檻 {self.cfg.sector_trend_threshold:.0%}）"
+                )
 
         # 只針對最新交易日產生訊號（傳入全量歷史資料供指標計算，僅輸出 target_date 的訊號）
         self.logger.info("產生技術訊號...")
@@ -422,6 +477,19 @@ class SignalsScanner:
                         # 有啟用但無資料（如上櫃股票）→ 顯示法人數據欄位留空
                         entry["institutional"] = None
 
+                # CANSLIM EPS 年增率過濾
+                eps_ok = True
+                if self.cfg.enable_eps_filter and eps_map:
+                    stock_history = eps_map.get(revenue_key, {})
+                    latest_eps = eps_loader.get_eps_on_date(revenue_key, target_date, stock_history)
+                    if latest_eps is not None:
+                        eps_yoy = latest_eps["yoy_pct"]
+                        entry["eps_yoy_pct"] = round(eps_yoy, 1)
+                        if eps_yoy < self.cfg.min_eps_yoy_pct:
+                            eps_ok = False
+                            entry["reason"] = f"EPS YoY {eps_yoy:.1f}% < {self.cfg.min_eps_yoy_pct:.0f}%"
+                    # 無 EPS 資料時 fail-open（不過濾）
+
                 if not in_top30:
                     entry["reason"] = "動能排名不在前30"
                     watch_list.append(entry)
@@ -431,6 +499,8 @@ class SignalsScanner:
                 elif not revenue_ok:
                     watch_list.append(entry)
                 elif not inst_ok:
+                    watch_list.append(entry)
+                elif not eps_ok:
                     watch_list.append(entry)
                 else:
                     # 通過所有過濾：加入月營收 YoY 顯示（若有）

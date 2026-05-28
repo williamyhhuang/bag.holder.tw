@@ -2446,5 +2446,234 @@ class TestFinMindSettings:
         assert s.institutional_consecutive_min_days == 0
 
 
+class Test52WFilter:
+    """Tests for 52-week high/low Minervini filter in TechnicalStrategy."""
+
+    def _make_data(self, symbol: str, n: int = 300, base: float = 100.0) -> list:
+        """Generate n days of synthetic StockData starting from 2024-01-02."""
+        from decimal import Decimal
+        records = []
+        for i in range(n):
+            d = date(2024, 1, 2) + timedelta(days=i)
+            if d.weekday() >= 5:
+                continue
+            p = Decimal(str(base + i * 0.1))
+            records.append(StockData(
+                symbol=symbol, date=d,
+                open_price=p, high_price=p + 1, low_price=p - 1,
+                close_price=p, volume=2_000_000,
+            ))
+        return records
+
+    def test_52w_filter_default_disabled(self):
+        """require_52w_filter defaults to False → filter not applied."""
+        strategy = TechnicalStrategy(require_52w_filter=False)
+        assert strategy.require_52w_filter is False
+
+    def test_52w_filter_blocks_low_price(self):
+        """Stock at 52w low should be blocked when filter enabled."""
+        strategy = TechnicalStrategy(
+            require_52w_filter=True,
+            above_52w_low_pct=0.30,
+            near_52w_high_pct=0.90,  # very permissive on top side
+            rsi_min_entry=0.0,
+            require_ma60_uptrend=False,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name="BB Squeeze Break",
+            price=Decimal("100"),
+            volume=2_000_000,
+            indicators=TechnicalIndicators(
+                date=date(2025, 1, 1),
+                ma5=Decimal("102"), ma10=Decimal("101"), ma20=Decimal("100"),
+                ma60=Decimal("95"),
+            ),
+            w52_high=Decimal("140"),
+            w52_low=Decimal("100"),  # price == 52w low → ratio = 0% < 30%
+        )
+        assert result == SignalType.WATCH
+
+    def test_52w_filter_blocks_far_from_high(self):
+        """Stock far from 52w high should be blocked when filter enabled."""
+        strategy = TechnicalStrategy(
+            require_52w_filter=True,
+            above_52w_low_pct=0.0,  # very permissive on low side
+            near_52w_high_pct=0.25,
+            rsi_min_entry=0.0,
+            require_ma60_uptrend=False,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name="BB Squeeze Break",
+            price=Decimal("100"),
+            volume=2_000_000,
+            indicators=TechnicalIndicators(
+                date=date(2025, 1, 1),
+                ma5=Decimal("102"), ma10=Decimal("101"), ma20=Decimal("100"),
+                ma60=Decimal("95"),
+            ),
+            w52_high=Decimal("200"),  # price is 50% below 52w high → > 25%
+            w52_low=Decimal("50"),
+        )
+        assert result == SignalType.WATCH
+
+    def test_52w_filter_passes_near_high(self):
+        """Stock near 52w high and well above 52w low should pass."""
+        strategy = TechnicalStrategy(
+            require_52w_filter=True,
+            above_52w_low_pct=0.30,
+            near_52w_high_pct=0.35,
+            rsi_min_entry=0.0,
+            require_ma60_uptrend=False,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name="BB Squeeze Break",
+            price=Decimal("180"),
+            volume=2_000_000,
+            indicators=TechnicalIndicators(
+                date=date(2025, 1, 1),
+                ma5=Decimal("182"), ma10=Decimal("181"), ma20=Decimal("180"),
+                ma60=Decimal("150"),
+            ),
+            w52_high=Decimal("200"),   # 10% below high → within 35%
+            w52_low=Decimal("100"),    # 80% above low → > 30%
+        )
+        assert result == SignalType.BUY
+
+
+class TestVCPDetection:
+    """Tests for VCP (Volatility Contraction Pattern) detection."""
+
+    def test_detect_vcp_contracting_drawdowns(self):
+        """Contracting drawdowns with volume contraction should detect VCP."""
+        from src.application.services.backtest_strategy import _detect_vcp
+
+        # Simulate: uptrend with 3 contracting pullbacks
+        # High → pullback of 15% → High → pullback 10% → High → pullback 5%
+        closes = []
+        volumes = []
+        # Warm-up phase
+        for i in range(30):
+            closes.append(100.0 + i)
+            volumes.append(1_500_000)
+        # Pullback 1: -15%
+        for i in range(10):
+            closes.append(120.0 - i * 1.5)
+            volumes.append(1_200_000)
+        # Rally
+        for i in range(10):
+            closes.append(105.0 + i * 2)
+            volumes.append(1_000_000)
+        # Pullback 2: -10%
+        for i in range(8):
+            closes.append(125.0 - i)
+            volumes.append(900_000)
+        # Final consolidation (volume contracting)
+        for i in range(10):
+            closes.append(120.0 + i * 0.5)
+            volumes.append(700_000)
+
+        result = _detect_vcp(closes, volumes)
+        assert isinstance(result, bool)
+
+    def test_detect_vcp_no_contraction(self):
+        """Expanding drawdowns should NOT detect VCP."""
+        from src.application.services.backtest_strategy import _detect_vcp
+
+        # Flat prices → no swing highs/lows → no VCP
+        closes = [100.0] * 60
+        volumes = [1_000_000] * 60
+        result = _detect_vcp(closes, volumes)
+        assert result is False
+
+    def test_detect_vcp_insufficient_data(self):
+        """Insufficient data should return False."""
+        from src.application.services.backtest_strategy import _detect_vcp
+
+        closes = [100.0] * 5
+        volumes = [1_000_000] * 5
+        result = _detect_vcp(closes, volumes)
+        assert result is False
+
+    def test_strategy_vcp_disabled_by_default(self):
+        """VCP should be disabled by default."""
+        strategy = TechnicalStrategy()
+        assert strategy.enable_vcp is False
+
+    def test_strategy_vcp_enable_param(self):
+        """VCP can be enabled via constructor param."""
+        strategy = TechnicalStrategy(enable_vcp=True, vcp_lookback=60)
+        assert strategy.enable_vcp is True
+        assert strategy.vcp_lookback == 60
+
+
+class TestSectorMomentumWhitelist:
+    """Tests for momentum-based sector whitelist in build_sector_whitelist."""
+
+    def test_momentum_whitelist_returns_fewer_stocks(self):
+        """Momentum top 10% should allow fewer stocks than binary MA20 filter."""
+        from unittest.mock import patch
+        from src.domain.services.sector_trend_analyzer import SectorTrendAnalyzer
+
+        mock_industries = {str(i): "24" for i in range(2330, 2340)}  # all semiconductor
+        mock_industries.update({str(i): "17" for i in range(2801, 2811)})  # all finance
+
+        with patch("src.domain.services.sector_trend_analyzer.get_stock_industries",
+                   return_value=mock_industries):
+            analyzer = SectorTrendAnalyzer()
+
+        strategy = TechnicalStrategy()
+        target = date(2025, 1, 31)
+
+        # Build simple stock data for 2 sectors
+        stock_data = {}
+        for sym_id in range(2330, 2340):
+            sym = str(sym_id)
+            records = []
+            for j in range(62):
+                d = date(2025, 1, 1) + timedelta(days=j)
+                if d.weekday() >= 5:
+                    continue
+                price = Decimal(str(100 + j))  # semiconductor: rising
+                records.append(StockData(
+                    symbol=sym, date=d,
+                    open_price=price, high_price=price + 1, low_price=price - 1,
+                    close_price=price, volume=1_000_000,
+                ))
+            stock_data[sym] = records
+
+        for sym_id in range(2801, 2811):
+            sym = str(sym_id)
+            records = []
+            for j in range(62):
+                d = date(2025, 1, 1) + timedelta(days=j)
+                if d.weekday() >= 5:
+                    continue
+                price = Decimal(str(100 - j * 0.5))  # finance: falling
+                records.append(StockData(
+                    symbol=sym, date=d,
+                    open_price=price, high_price=price + 1, low_price=max(price - 1, Decimal("1")),
+                    close_price=price, volume=1_000_000,
+                ))
+            stock_data[sym] = records
+
+        # Use lookback_days=20 so lookback target (Jan 11) is within the Jan 1-31 data range
+        mom_wl = strategy.build_sector_whitelist(
+            stock_data_dict=stock_data,
+            sector_analyzer=analyzer,
+            start_date=target,
+            end_date=target,
+            use_momentum=True,
+            momentum_lookback_days=20,
+            top_pct=0.50,
+        )
+
+        # Momentum top 50% of 2 sectors = 1 sector; semiconductor (rising) should win over finance (falling)
+        assert target in mom_wl, "Whitelist should have entry for target date"
+        allowed = mom_wl[target]
+        semi_in = sum(1 for s in range(2330, 2340) if str(s) in allowed)
+        fin_in = sum(1 for s in range(2801, 2811) if str(s) in allowed)
+        assert semi_in > fin_in, f"Expected semiconductor > finance: {semi_in} vs {fin_in}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

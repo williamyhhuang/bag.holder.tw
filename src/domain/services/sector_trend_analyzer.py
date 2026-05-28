@@ -194,6 +194,85 @@ class SectorTrendAnalyzer:
                 strong.add(sector)
         return strong
 
+    def compute_sector_momentum(
+        self,
+        stock_data: Dict[str, List[StockData]],
+        target_date: date,
+        lookback_days: int = 60,
+    ) -> Dict[str, float]:
+        """計算各族群在 target_date 的近期平均漲幅（族群動能）。
+
+        動能 = 族群內所有股票的近 lookback_days 日漲幅的平均值。
+        用於取代 binary MA20 門檻，改為排名式過濾。
+
+        Args:
+            stock_data: 股票歷史資料字典 {symbol: [StockData, ...]}
+            target_date: 計算基準日（通常為最新交易日）
+            lookback_days: 回看天數（60 ≈ 3 個月）
+
+        Returns:
+            {族群名稱: 平均漲幅} — 只包含有資料的族群
+        """
+        from datetime import timedelta
+        lookback_target = target_date - timedelta(days=lookback_days)
+
+        # 族群 → 各股票漲幅清單
+        sector_returns: Dict[str, List[float]] = {}
+
+        for symbol, records in stock_data.items():
+            sector = self.get_stock_sector(symbol)
+            if sector in _EXEMPT_SECTORS:
+                continue
+
+            price_by_date = {r.date: r.close_price for r in records}
+            current = price_by_date.get(target_date)
+            if current is None:
+                continue
+
+            # 找回看期最接近的交易日
+            past_dates = [d for d in price_by_date if d <= lookback_target]
+            if not past_dates:
+                continue
+            past = price_by_date[max(past_dates)]
+            if past == 0:
+                continue
+
+            ret = float(current / past) - 1.0
+            if sector not in sector_returns:
+                sector_returns[sector] = []
+            sector_returns[sector].append(ret)
+
+        # 計算各族群平均漲幅（至少 MIN_SECTOR_STOCKS 支才計算）
+        momentum: Dict[str, float] = {}
+        for sector, returns in sector_returns.items():
+            if len(returns) >= MIN_SECTOR_STOCKS:
+                momentum[sector] = sum(returns) / len(returns)
+
+        return momentum
+
+    def get_strong_sectors_by_momentum(
+        self,
+        sector_momentum: Dict[str, float],
+        top_pct: float = 0.20,
+    ) -> "Set[str]":
+        """依族群漲幅排名，回傳前 top_pct 比例的強勢族群集合。
+
+        Args:
+            sector_momentum: compute_sector_momentum() 的回傳值
+            top_pct: 保留前 N 比例（0.20 = 前 20%）
+
+        Returns:
+            強勢族群名稱集合；同時含 _EXEMPT_SECTORS（免過濾族群）
+        """
+        strong = set(_EXEMPT_SECTORS)
+        if not sector_momentum:
+            return strong
+
+        sorted_sectors = sorted(sector_momentum, key=lambda s: sector_momentum[s], reverse=True)
+        top_k = max(1, int(len(sorted_sectors) * top_pct))
+        strong.update(sorted_sectors[:top_k])
+        return strong
+
     def build_sector_summary(
         self,
         sector_strength: Dict[str, float],

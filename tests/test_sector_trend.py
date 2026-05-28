@@ -3,7 +3,7 @@ Unit tests for src/scanner/sector_trend.py
 """
 import sys
 import os
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -310,6 +310,112 @@ class TestBuildSectorSummary:
         strength = {"電子工業": 0.666}
         summary = analyzer.build_sector_summary(strength, threshold=0.5)
         assert summary[0]["strength_pct"] == 66.6
+
+
+class TestComputeSectorMomentum:
+    """SectorTrendAnalyzer.compute_sector_momentum()"""
+
+    @staticmethod
+    def _dates_from(start: date, n: int):
+        """Generate n consecutive dates starting from start."""
+        return [start + timedelta(days=i) for i in range(n)]
+
+    def test_positive_return_sector(self, analyzer):
+        """所有股票近期上漲 → 動能為正"""
+        target = date(2025, 2, 28)
+        # lookback_days=30: lookback_target = 2025-01-29
+        # Need data before 2025-01-29 so past_dates is non-empty
+        start = date(2025, 1, 1)
+        stock_data = {}
+        for sym in ["2801", "2802", "2803", "2804"]:
+            dps = [(start + timedelta(days=i), 100) for i in range(58)]  # Jan-1 to Feb-27
+            dps.append((target, 150))  # 上漲 50%
+            stock_data[sym] = _make_stock_data(sym, dps)
+
+        momentum = analyzer.compute_sector_momentum(stock_data, target, lookback_days=30)
+        assert "金融保險" in momentum
+        assert momentum["金融保險"] > 0
+
+    def test_negative_return_sector(self, analyzer):
+        """股票近期下跌 → 動能為負"""
+        target = date(2025, 2, 28)
+        start = date(2025, 1, 1)
+        stock_data = {}
+        for sym in ["2801", "2802", "2803", "2804"]:
+            dps = [(start + timedelta(days=i), 100) for i in range(58)]
+            dps.append((target, 70))  # 下跌 30%
+            stock_data[sym] = _make_stock_data(sym, dps)
+
+        momentum = analyzer.compute_sector_momentum(stock_data, target, lookback_days=30)
+        assert "金融保險" in momentum
+        assert momentum["金融保險"] < 0
+
+    def test_insufficient_history_excluded(self, analyzer):
+        """歷史不足的股票不計入族群動能"""
+        target = date(2025, 2, 28)
+        stock_data = {}
+        for sym in ["2601", "2602", "2603", "2604"]:
+            # 只有 target_date 前 5 天，回看 30 天不夠（lookback_target 在資料範圍之外）
+            dps = [(date(2025, 2, 23) + timedelta(days=i), 100) for i in range(5)]
+            dps.append((target, 120))
+            stock_data[sym] = _make_stock_data(sym, dps)
+
+        momentum = analyzer.compute_sector_momentum(stock_data, target, lookback_days=30)
+        assert "航運業" not in momentum
+
+    def test_small_sector_excluded(self, analyzer):
+        """股票數 < MIN_SECTOR_STOCKS 的族群不列入動能排名"""
+        target = date(2025, 2, 28)
+        start = date(2025, 1, 1)
+        stock_data = {}
+        for sym in ["1801", "1802"]:  # 只有 2 支，< MIN_SECTOR_STOCKS=3
+            dps = [(start + timedelta(days=i), 100) for i in range(58)]
+            dps.append((target, 200))
+            stock_data[sym] = _make_stock_data(sym, dps)
+
+        momentum = analyzer.compute_sector_momentum(stock_data, target, lookback_days=30)
+        assert "玻璃陶瓷" not in momentum
+
+
+class TestGetStrongSectorsByMomentum:
+    """SectorTrendAnalyzer.get_strong_sectors_by_momentum()"""
+
+    def test_top_20_pct(self, analyzer):
+        """5 個族群，top_pct=0.2 → 取 1 個（最高動能）"""
+        momentum = {
+            "半導體業": 0.50,
+            "航運業": 0.30,
+            "金融保險": 0.10,
+            "食品工業": -0.05,
+            "電子工業": -0.10,
+        }
+        strong = analyzer.get_strong_sectors_by_momentum(momentum, top_pct=0.20)
+        assert "半導體業" in strong
+        assert "航運業" not in strong
+
+    def test_top_40_pct(self, analyzer):
+        """5 個族群，top_pct=0.4 → 取 2 個"""
+        momentum = {"A": 0.5, "B": 0.3, "C": 0.1, "D": -0.1, "E": -0.2}
+        strong = analyzer.get_strong_sectors_by_momentum(momentum, top_pct=0.40)
+        assert "A" in strong
+        assert "B" in strong
+        assert "C" not in strong
+
+    def test_exempt_sectors_always_included(self, analyzer):
+        """免過濾族群永遠視為強勢"""
+        strong = analyzer.get_strong_sectors_by_momentum({}, top_pct=0.20)
+        for exempt in _EXEMPT_SECTORS:
+            assert exempt in strong
+
+    def test_minimum_one_sector(self, analyzer):
+        """至少保留 1 個族群（避免全部過濾）"""
+        momentum = {"A": 0.1}
+        strong = analyzer.get_strong_sectors_by_momentum(momentum, top_pct=0.01)
+        assert "A" in strong  # top_k = max(1, 0) = 1
+
+    def test_empty_momentum_returns_only_exempt(self, analyzer):
+        strong = analyzer.get_strong_sectors_by_momentum({}, top_pct=0.20)
+        assert strong == _EXEMPT_SECTORS
 
 
 class TestIndustryCodeMapping:

@@ -13,6 +13,96 @@ from ...utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _find_swing_points(prices: List[float], kind: str = "high", half_window: int = 5) -> List[Tuple[int, float]]:
+    """Find swing highs or lows in a price series.
+
+    Args:
+        prices: Sequence of close (or high/low) prices.
+        kind: 'high' for swing highs, 'low' for swing lows.
+        half_window: Number of bars on each side to confirm a swing point.
+
+    Returns:
+        List of (index, price) tuples for confirmed swing points.
+    """
+    points: List[Tuple[int, float]] = []
+    n = len(prices)
+    for i in range(half_window, n - half_window):
+        window = prices[i - half_window: i + half_window + 1]
+        if kind == "high":
+            if prices[i] == max(window):
+                points.append((i, prices[i]))
+        else:
+            if prices[i] == min(window):
+                points.append((i, prices[i]))
+    return points
+
+
+def _detect_vcp(
+    closes: List[float],
+    volumes: List[int],
+    half_window: int = 5,
+    min_contractions: int = 2,
+    vol_short: int = 10,
+    vol_long: int = 30,
+) -> bool:
+    """Detect a Volatility Contraction Pattern (VCP).
+
+    Criteria:
+    1. At least min_contractions successive drawdowns, each smaller than the prior.
+    2. Volume contracting: recent vol_short-day average < vol_long-day average.
+
+    Args:
+        closes: Recent close prices (oldest first).
+        volumes: Corresponding volume data.
+        half_window: Side bars required to confirm swing highs/lows.
+        min_contractions: Minimum number of contracting drawdown cycles required.
+        vol_short: Short MA window for volume contraction check.
+        vol_long: Long MA window for volume contraction check.
+
+    Returns:
+        True if a VCP pattern is detected.
+    """
+    if len(closes) < vol_long + half_window * 2:
+        return False
+
+    # Find swing highs and lows
+    swing_highs = _find_swing_points(closes, kind="high", half_window=half_window)
+    swing_lows = _find_swing_points(closes, kind="low", half_window=half_window)
+
+    if len(swing_highs) < min_contractions or len(swing_lows) < min_contractions:
+        return False
+
+    # Calculate drawdowns: from each swing high to the next swing low
+    drawdowns: List[float] = []
+    for hi_idx, hi_val in swing_highs:
+        subsequent_lows = [(lo_idx, lo_val) for lo_idx, lo_val in swing_lows if lo_idx > hi_idx]
+        if not subsequent_lows:
+            continue
+        lo_idx, lo_val = subsequent_lows[0]
+        if hi_val <= 0:
+            continue
+        drawdown = (hi_val - lo_val) / hi_val
+        drawdowns.append(drawdown)
+
+    if len(drawdowns) < min_contractions:
+        return False
+
+    # Check that consecutive drawdowns are contracting
+    is_contracting = all(drawdowns[i] < drawdowns[i - 1] for i in range(1, len(drawdowns)))
+    if not is_contracting:
+        return False
+
+    # Volume contraction: short-term average below long-term average
+    if len(volumes) >= vol_long:
+        vol_ma_short = sum(volumes[-vol_short:]) / vol_short
+        vol_ma_long = sum(volumes[-vol_long:]) / vol_long
+        vol_contracting = vol_ma_short < vol_ma_long
+    else:
+        vol_contracting = True  # Not enough data, skip volume check
+
+    return vol_contracting
+
+
 def _build_weekly_closes(price_data: List[StockData]) -> List[Tuple[date, Decimal]]:
     """
     Aggregate daily OHLCV to weekly frequency (ISO week, last trading day = week end).
@@ -81,6 +171,11 @@ class TechnicalStrategy:
         min_volume_lots: int = 0,
         signal_cooldown_days: int = 0,
         require_weekly_trend: bool = False,
+        require_52w_filter: bool = False,
+        above_52w_low_pct: float = 0.30,
+        near_52w_high_pct: float = 0.25,
+        enable_vcp: bool = False,
+        vcp_lookback: int = 60,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -107,6 +202,13 @@ class TechnicalStrategy:
         self.signal_cooldown_days = signal_cooldown_days
         # Filter 8: weekly trend confirmation — weekly MA5 > MA20 required for BUY
         self.require_weekly_trend = require_weekly_trend
+        # Filter 9: 52-week high/low Minervini filter
+        self.require_52w_filter = require_52w_filter
+        self.above_52w_low_pct = Decimal(str(above_52w_low_pct))
+        self.near_52w_high_pct = Decimal(str(near_52w_high_pct))
+        # VCP signal
+        self.enable_vcp = enable_vcp
+        self.vcp_lookback = vcp_lookback
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -278,6 +380,20 @@ class TechnicalStrategy:
             else:
                 weekly_data = {}
 
+            # Filter 9: pre-compute rolling 252-day (52-week) high/low per date
+            # Uses high_price for 52w high and low_price for 52w low
+            w52_high_by_date: Dict[date, Optional[Decimal]] = {}
+            w52_low_by_date: Dict[date, Optional[Decimal]] = {}
+            if self.require_52w_filter:
+                _W52 = 252
+                for idx, d in enumerate(sorted_dates):
+                    start_idx = max(0, idx - _W52 + 1)
+                    window = sorted_dates[start_idx: idx + 1]
+                    highs = [price_lookup[wd].high_price for wd in window if wd in price_lookup]
+                    lows = [price_lookup[wd].low_price for wd in window if wd in price_lookup]
+                    w52_high_by_date[d] = max(highs) if highs else None
+                    w52_low_by_date[d] = min(lows) if lows else None
+
             # Filter 7: cooldown tracking — last BUY signal date per symbol
             # Processed across full history so cooldown works even when start_date restricts output
             last_buy_date: Dict[str, date] = {}
@@ -345,6 +461,27 @@ class TechnicalStrategy:
                             'price': current_price_data.close_price,
                         })
 
+                # VCP (Volatility Contraction Pattern) signal
+                # Requires a series of contracting pullbacks + volume contraction
+                if self.enable_vcp and i >= self.vcp_lookback:
+                    vcp_dates = sorted_dates[i - self.vcp_lookback: i + 1]
+                    vcp_closes = [
+                        float(price_lookup[d].close_price)
+                        for d in vcp_dates if d in price_lookup
+                    ]
+                    vcp_volumes = [
+                        price_lookup[d].volume
+                        for d in vcp_dates if d in price_lookup
+                    ]
+                    if _detect_vcp(vcp_closes, vcp_volumes):
+                        detected_signals.append({
+                            'type': 'BUY',
+                            'name': 'VCP',
+                            'description': f'波動收縮型態（{self.vcp_lookback} 日回調逐次縮小 + 量縮）',
+                            'strength': 'STRONG',
+                            'price': current_price_data.close_price,
+                        })
+
                 # Convert to TradingSignal objects, applying buy-quality filters
                 for signal_data in detected_signals:
                     signal_type = self.map_signal_type(signal_data['type'])
@@ -361,6 +498,8 @@ class TechnicalStrategy:
                             indicators=current_indicators,
                             weekly_ma5=w_ma5,
                             weekly_ma20=w_ma20,
+                            w52_high=w52_high_by_date.get(current_date) if self.require_52w_filter else None,
+                            w52_low=w52_low_by_date.get(current_date) if self.require_52w_filter else None,
                         )
 
                     # Filter 7: cooldown — downgrade BUY to WATCH if same symbol triggered
@@ -415,6 +554,8 @@ class TechnicalStrategy:
         indicators: TechnicalIndicators,
         weekly_ma5: Optional[Decimal] = None,
         weekly_ma20: Optional[Decimal] = None,
+        w52_high: Optional[Decimal] = None,
+        w52_low: Optional[Decimal] = None,
     ) -> SignalType:
         """Apply quality filters to a BUY signal.
 
@@ -509,6 +650,28 @@ class TechnicalStrategy:
                     self.logger.debug(
                         f"Signal '{signal_name}' blocked: weekly MA5 {weekly_ma5:.2f} "
                         f"<= weekly MA20 {weekly_ma20:.2f} → WATCH"
+                    )
+                    return SignalType.WATCH
+
+        # Filter 9: 52-week high/low Minervini SEPA filter
+        # - Price must be >= above_52w_low_pct above 52-week low (in an established uptrend)
+        # - Price must be <= near_52w_high_pct from 52-week high (showing continued strength)
+        if self.require_52w_filter:
+            if w52_high is not None and w52_low is not None and w52_high > 0 and w52_low > 0:
+                above_low_ratio = (price - w52_low) / w52_low
+                below_high_ratio = (w52_high - price) / w52_high
+                if above_low_ratio < self.above_52w_low_pct:
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: price {float(price):.1f} "
+                        f"only {float(above_low_ratio):.1%} above 52w low {float(w52_low):.1f} "
+                        f"(< {float(self.above_52w_low_pct):.0%}) → WATCH"
+                    )
+                    return SignalType.WATCH
+                if below_high_ratio > self.near_52w_high_pct:
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: price {float(price):.1f} "
+                        f"is {float(below_high_ratio):.1%} below 52w high {float(w52_high):.1f} "
+                        f"(> {float(self.near_52w_high_pct):.0%}) → WATCH"
                     )
                     return SignalType.WATCH
 
@@ -729,6 +892,9 @@ class TechnicalStrategy:
         ma_period: int = 20,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        use_momentum: bool = False,
+        momentum_lookback_days: int = 60,
+        top_pct: float = 0.20,
     ) -> Dict[date, Set[str]]:
         """Build a daily sector-trend whitelist from historical price data.
 
@@ -772,11 +938,20 @@ class TechnicalStrategy:
         whitelist: Dict[date, Set[str]] = {}
 
         for target_date in sorted(all_dates):
-            # Compute sector strength for this date
-            sector_strength = sector_analyzer.compute_sector_strength(
-                stock_data_dict, target_date, ma_period=ma_period
-            )
-            strong_sectors = sector_analyzer.get_strong_sectors(sector_strength, threshold)
+            if use_momentum:
+                # Momentum-based: rank sectors by average recent return, keep top pct
+                sector_momentum = sector_analyzer.compute_sector_momentum(
+                    stock_data_dict, target_date, lookback_days=momentum_lookback_days
+                )
+                strong_sectors = sector_analyzer.get_strong_sectors_by_momentum(
+                    sector_momentum, top_pct=top_pct
+                )
+            else:
+                # Binary MA20-based: fraction of stocks above MA20 >= threshold
+                sector_strength = sector_analyzer.compute_sector_strength(
+                    stock_data_dict, target_date, ma_period=ma_period
+                )
+                strong_sectors = sector_analyzer.get_strong_sectors(sector_strength, threshold)
 
             # Collect all symbols in strong sectors
             allowed: Set[str] = set()

@@ -45,6 +45,11 @@ class BacktestRunner:
             min_volume_lots=cfg.min_volume_lots,
             signal_cooldown_days=cfg.signal_cooldown_days,
             require_weekly_trend=cfg.require_weekly_trend,
+            require_52w_filter=cfg.require_52w_filter,
+            above_52w_low_pct=cfg.above_52w_low_pct,
+            near_52w_high_pct=cfg.near_52w_high_pct,
+            enable_vcp=cfg.enable_vcp,
+            vcp_lookback=cfg.vcp_lookback,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
@@ -276,10 +281,17 @@ class BacktestRunner:
 
             # Step 5c: Build sector-trend whitelist (族群強勢過濾)
             if cfg.enable_sector_trend_filter:
-                self.logger.info(
-                    f"Step 5c: Building sector-trend whitelist "
-                    f"(threshold={cfg.sector_trend_threshold:.0%})..."
-                )
+                if cfg.sector_use_momentum:
+                    self.logger.info(
+                        f"Step 5c: Building sector momentum whitelist "
+                        f"(top_pct={cfg.sector_top_pct:.0%}, "
+                        f"lookback={cfg.sector_momentum_lookback_days}d)..."
+                    )
+                else:
+                    self.logger.info(
+                        f"Step 5c: Building sector-trend whitelist "
+                        f"(threshold={cfg.sector_trend_threshold:.0%})..."
+                    )
                 sector_analyzer = SectorTrendAnalyzer()
                 sector_whitelist = self.strategy.build_sector_whitelist(
                     stock_data_dict=stock_data,
@@ -287,6 +299,9 @@ class BacktestRunner:
                     threshold=cfg.sector_trend_threshold,
                     start_date=start_date,
                     end_date=end_date,
+                    use_momentum=cfg.sector_use_momentum,
+                    momentum_lookback_days=cfg.sector_momentum_lookback_days,
+                    top_pct=cfg.sector_top_pct,
                 )
                 self.engine.set_sector_whitelist(sector_whitelist)
                 self.logger.info(

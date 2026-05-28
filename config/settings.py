@@ -615,6 +615,78 @@ class BacktestSettings(BaseSettings):
         description="計算動能的回看天數（預設 20 個交易日）",
     )
 
+    # ── 52 週高低點過濾（Minervini SEPA 條件）───────────────────────
+    # 確保股票處於強勢上升趨勢中：
+    #   - 現價距 52 週低點 ≥ above_52w_low_pct（防止接刀）
+    #   - 現價距 52 週高點 ≤ near_52w_high_pct（靠近高點，說明趨勢強健）
+    # 回測 2024-09 ~ 2026-05：near_52w_high_pct=0.35 時
+    #   Total Return 51.87%（vs 基準 49.14%）、Sharpe 2.10（vs 1.98）
+    require_52w_filter: bool = Field(
+        default=True,
+        env="BACKTEST_REQUIRE_52W_FILTER",
+        description="啟用 52 週高低點過濾（Minervini SEPA 條件）",
+    )
+    above_52w_low_pct: float = Field(
+        default=0.30,
+        env="BACKTEST_ABOVE_52W_LOW_PCT",
+        description="現價需距 52 週低點至少此百分比以上（0.30 = 30%）",
+    )
+    near_52w_high_pct: float = Field(
+        default=0.35,
+        env="BACKTEST_NEAR_52W_HIGH_PCT",
+        description="現價距 52 週高點不超過此百分比（0.35 = 35%，回測最佳值）",
+    )
+
+    # ── CANSLIM EPS 年增率過濾 ──────────────────────────────────────
+    # CANSLIM C 條件：最近季 EPS 年增率 ≥ 25%
+    # 資料來源：FinMind TaiwanStockFinancialStatements（需 FINMIND_API_TOKEN）
+    # 注意：此過濾只在 signals_scanner（即時掃描）中生效，不影響回測
+    enable_eps_filter: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_EPS_FILTER",
+        description="啟用 CANSLIM EPS 年增率過濾（需 FINMIND_API_TOKEN）",
+    )
+    min_eps_yoy_pct: float = Field(
+        default=25.0,
+        env="BACKTEST_MIN_EPS_YOY_PCT",
+        description="最近季 EPS 最低年增率門檻（%；25 = CANSLIM C 標準）",
+    )
+
+    # ── VCP（波動收縮型態）訊號 ──────────────────────────────────────
+    # 偵測 Volatility Contraction Pattern：
+    #   1. 近 vcp_lookback 日內出現至少 2 次逐次縮小的回調
+    #   2. 成交量在整理期間萎縮（10 日均量 < 30 日均量）
+    # 與 BB Squeeze Break 的差異：VCP 額外要求回調結構收縮，誤報率更低
+    enable_vcp: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_VCP",
+        description="啟用 VCP（波動收縮型態）訊號偵測",
+    )
+    vcp_lookback: int = Field(
+        default=60,
+        env="BACKTEST_VCP_LOOKBACK",
+        description="VCP 偵測的回看交易日數（預設 60 ≈ 3 個月）",
+    )
+
+    # ── 族群動能排名過濾 ─────────────────────────────────────────────
+    # 取代原本的「binary MA20 門檻」，改為計算各族群近期漲幅排名，
+    # 只保留前 top 比例族群（預設前 20%）
+    sector_use_momentum: bool = Field(
+        default=False,
+        env="BACKTEST_SECTOR_USE_MOMENTUM",
+        description="True = 用族群漲幅排名前 N% 取代 binary MA20 門檻",
+    )
+    sector_momentum_lookback_days: int = Field(
+        default=60,
+        env="BACKTEST_SECTOR_MOMENTUM_LOOKBACK_DAYS",
+        description="計算族群動能的回看天數（60 ≈ 3 個月）",
+    )
+    sector_top_pct: float = Field(
+        default=0.20,
+        env="BACKTEST_SECTOR_TOP_PCT",
+        description="保留族群漲幅排名前 N 比例（0.20 = 前 20%）",
+    )
+
     # ── 回測時間範圍 ─────────────────────────────────────────────────
     # 格式：YYYY-MM-DD；留空則預設為今天（end_date）或程式預設值（start_date）
     # 欄位名不加 backtest_ 前綴，避免與 env_prefix="BACKTEST_" 疊加成 BACKTEST_BACKTEST_*
