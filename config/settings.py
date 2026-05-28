@@ -331,12 +331,13 @@ class BacktestSettings(BaseSettings):
     )
 
     # ── 進場品質過濾 ────────────────────────────────────────────────
-    # RSI 最低進場門檻：確認股票具備上漲動能，避免 BB 假突破
-    # BB Squeeze Break 在 Q4 2025 勝率僅 44.8%，加入 RSI ≥ 50 過濾
+    # RSI 最低進場門檻：確認股票具備強勁上漲動能，避免 BB 假突破
+    # 回測（2024-09 ~ 2026-05）：RSI≥76 勝率 52.10%、報酬 49.14%、最大回撤 4.87%、Sharpe 1.98
+    # 優於 RSI≥50（勝率 51.89%、報酬 45.24%、最大回撤 8.17%、Sharpe 1.53）
     rsi_min_entry: float = Field(
-        default=50.0,
+        default=76.0,
         env="BACKTEST_RSI_MIN_ENTRY",
-        description="RSI 進場最低門檻（50 = 股票需具備上漲動能）",
+        description="RSI 進場最低門檻（76 = 股票需具備強勁上漲動能）",
     )
 
     # ── TechnicalStrategy 對應參數（與 strategy.py 一致）───────────

@@ -1370,6 +1370,17 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
 - 🗑️ **P1：移除 Volume Confirmation（F3）**：診斷顯示此 filter 讓報酬率 -4.55%，在趨勢市中篩出的高成交量突破反而容易追高後被追蹤停損打出
 - ✅ **更新單元測試**：修正因 P1 設定改變而失效的測試（3 個），新增 `test_macd_golden_cross_not_disabled_by_default`、`test_golden_cross_not_disabled_by_default`
 
+### v2.13.0 - 2026-05-29
+- 📈 **RSI 進場門檻從 50 提升至 76**：全期回測（2024-09 ~ 2026-05）顯示 RSI≥76 在各項指標均優於 RSI≥50
+  | 指標 | RSI≥50（舊） | RSI≥76（新） |
+  |------|------------|------------|
+  | 勝率 | 51.89% | **52.10% ↑** |
+  | 總報酬 | 45.24% | **49.14% ↑** |
+  | 最大回撤 | 8.17% | **4.87% ↓** |
+  | Sharpe | 1.53 | **1.98 ↑** |
+  | 交易筆數 | 1297 | 1094 |
+- 🐛 **修正 backtest_main.py 資料路徑 bug**：`../../data/stocks` → `../../../data/stocks`，修正本機執行 `--skip-download` 時找不到資料的問題
+
 ### v2.12.1 - 2026-05-11
 - 🛡️ **Fubon 資料源週末防護**：`download_snapshot()` 在週末（Saturday/Sunday）直接跳過，不呼叫 API，避免 Fubon 回傳非交易日前填資料
 - 🛡️ **Fubon `download_all_stocks()` / `download_recent_data()`**：週末時 `end_date` 自動對齊最後交易日，不傳入週末日期給 API

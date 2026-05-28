@@ -107,7 +107,7 @@ class BacktestRunner:
         try:
             # Step 1: Load historical data (prefer local files, fall back to yfinance)
             self.logger.info("Step 1: Loading historical data...")
-            stocks_dir = os.path.join(os.path.dirname(__file__), '../../data/stocks')
+            stocks_dir = os.path.join(os.path.dirname(__file__), '../../../data/stocks')
             stocks_dir = os.path.normpath(stocks_dir)
 
             if os.path.isdir(stocks_dir) and os.listdir(stocks_dir):
@@ -350,7 +350,7 @@ class BacktestRunner:
             end_date = date.today()
             start_date = end_date - timedelta(days=days)
 
-            stocks_dir = os.path.join(os.path.dirname(__file__), '../../data/stocks')
+            stocks_dir = os.path.join(os.path.dirname(__file__), '../../../data/stocks')
             stocks_dir = os.path.normpath(stocks_dir)
 
             if os.path.isdir(stocks_dir) and os.listdir(stocks_dir):
