@@ -1853,15 +1853,15 @@ class TestP6TrendFollowing:
         )
 
     def test_donchian_breakout_signal_generated(self):
-        """Donchian Breakout 訊號：收盤 > 過去 N 日最高應產生 BUY 訊號"""
+        """Donchian Breakout 訊號：收盤在過去 N 日最高的 97%~100% 區間應產生 BUY 訊號（前置佈局）"""
         strategy = TechnicalStrategy(donchian_period=5, require_ma60_uptrend=False,
                                      rsi_min_entry=0.0, require_volume_confirmation=False)
         base = date(2025, 1, 1)
-        # 前 5 日最高約 102，第 6 日收盤 110 > 102 → 應觸發
+        # 前 5 日最高 102，第 6 日收盤 101（在 97%~100% 區間：98.94~102）→ 應觸發前置訊號
         prices = [self._make_price("X", base + timedelta(days=i),
                                    close=100 + i * 0.2, high=102)
                   for i in range(5)]
-        prices.append(self._make_price("X", base + timedelta(days=5), close=110, high=111))
+        prices.append(self._make_price("X", base + timedelta(days=5), close=101, high=102))
 
         # 需要足夠 records 讓 indicator 計算不被 skip
         # strategy.calculate_indicators 需要 max(ma_periods + [rsi, macd_slow, bb]) records

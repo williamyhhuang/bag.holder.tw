@@ -68,6 +68,7 @@ class IndicatorCalculator:
             macd_data = self._calculate_macd(df, macd_fast, macd_slow, macd_signal)
             bb_data = self._calculate_bollinger_bands(df, bb_period, bb_std_dev)
             volume_ma = self._calculate_volume_ma(df, 20)
+            atr_data = self._calculate_atr(df, 14)
 
             # Combine all indicators by date
             for idx, (i, row) in enumerate(df.iterrows()):
@@ -85,7 +86,8 @@ class IndicatorCalculator:
                     'bb_upper': bb_data.get('upper', {}).get(idx),
                     'bb_middle': bb_data.get('middle', {}).get(idx),
                     'bb_lower': bb_data.get('lower', {}).get(idx),
-                    'volume_ma20': volume_ma.get(idx)
+                    'volume_ma20': volume_ma.get(idx),
+                    'atr14': atr_data.get(idx),
                 }
 
                 # Convert to Decimal and filter None values
@@ -181,4 +183,16 @@ class IndicatorCalculator:
         if len(df) >= period:
             volume_ma = talib.SMA(df['volume'].values.astype(float), timeperiod=period)
             return {i: val for i, val in enumerate(volume_ma) if not np.isnan(val)}
+        return {}
+
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> Dict[int, float]:
+        """Calculate Average True Range (ATR)"""
+        if len(df) >= period + 1:
+            atr_values = talib.ATR(
+                df['high'].values,
+                df['low'].values,
+                df['close'].values,
+                timeperiod=period,
+            )
+            return {i: val for i, val in enumerate(atr_values) if not np.isnan(val)}
         return {}

@@ -57,6 +57,7 @@ class BacktestRunner:
             trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
             max_holding_days=cfg.max_holding_days,
             position_sizing=Decimal(str(cfg.position_sizing)),
+            atr_stop_multiplier=cfg.atr_stop_multiplier,
         )
         self.analyzer = PerformanceAnalyzer()
         self.reporter = BacktestReporter()

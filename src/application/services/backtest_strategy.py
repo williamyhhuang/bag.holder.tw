@@ -290,7 +290,8 @@ class TechnicalStrategy:
                     bb_upper=indicators.get('bb_upper'),
                     bb_middle=indicators.get('bb_middle'),
                     bb_lower=indicators.get('bb_lower'),
-                    volume_ma20=indicators.get('volume_ma20')
+                    volume_ma20=indicators.get('volume_ma20'),
+                    atr14=indicators.get('atr14'),
                 )
 
             self.indicators_cache[symbol] = result
@@ -444,22 +445,26 @@ class TechnicalStrategy:
                         'price': current_price_data.close_price,
                     })
 
-                # P6: Donchian Channel Breakout (trend-following signal)
-                # Close > highest high of last donchian_period trading dates → upside breakout
+                # P6: Donchian Channel Pre-Breakout (trend-following signal)
+                # Close within 3% below the highest high of last donchian_period trading dates
+                # → pre-position before the actual breakout to avoid chasing T+1 gap-up opens
                 if self.donchian_period > 0 and i >= self.donchian_period:
                     lookback_dates = sorted_dates[i - self.donchian_period: i]
                     donchian_high = max(
                         (price_lookup[d].high_price for d in lookback_dates if d in price_lookup),
                         default=None,
                     )
-                    if donchian_high is not None and current_price_data.close_price > donchian_high:
-                        detected_signals.append({
-                            'type': 'BUY',
-                            'name': 'Donchian Breakout',
-                            'description': f'收盤突破近 {self.donchian_period} 日最高（{donchian_high}）',
-                            'strength': 'STRONG',
-                            'price': current_price_data.close_price,
-                        })
+                    if donchian_high is not None:
+                        close = current_price_data.close_price
+                        near_high = donchian_high * Decimal('0.97')
+                        if near_high < close <= donchian_high:
+                            detected_signals.append({
+                                'type': 'BUY',
+                                'name': 'Donchian Breakout',
+                                'description': f'接近近 {self.donchian_period} 日最高（{donchian_high}），前置佈局',
+                                'strength': 'STRONG',
+                                'price': close,
+                            })
 
                 # VCP (Volatility Contraction Pattern) signal
                 # Requires a series of contracting pullbacks + volume contraction

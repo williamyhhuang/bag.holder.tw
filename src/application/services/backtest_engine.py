@@ -35,6 +35,8 @@ class BacktestEngine:
         # P5: trend signal position multiplier in STRONG regime
         strong_trend_signals: Optional[List[str]] = None,
         strong_trend_multiplier: float = 1.0,
+        # ATR dynamic stop loss (0 = disabled, use fixed stop_loss_pct instead)
+        atr_stop_multiplier: float = 1.5,
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -44,6 +46,7 @@ class BacktestEngine:
         self.take_profit_pct = take_profit_pct
         self.max_holding_days = max_holding_days
         self.trailing_stop_pct = trailing_stop_pct
+        self.atr_stop_multiplier = atr_stop_multiplier
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
@@ -222,6 +225,19 @@ class BacktestEngine:
             eff_profit_threshold = exit_cfg.get("profit_threshold_pct", None)
             eff_profit_trailing = exit_cfg.get("profit_trailing_pct", None)
 
+            # Compute stop loss: ATR-based if enabled and ATR is available,
+            # otherwise fall back to fixed percentage.
+            atr = signal.indicators.atr14 if signal.indicators else None
+            if self.atr_stop_multiplier > 0 and atr is not None and atr > 0:
+                atr_stop_dist = atr * Decimal(str(self.atr_stop_multiplier))
+                computed_stop_loss = signal.price - atr_stop_dist
+                self.logger.debug(
+                    f"ATR stop for {signal.symbol}: price={signal.price} "
+                    f"ATR={atr:.2f} dist={atr_stop_dist:.2f} stop={computed_stop_loss:.2f}"
+                )
+            else:
+                computed_stop_loss = signal.price * (Decimal('1') - eff_stop_loss_pct)
+
             # Create position
             position = Position(
                 symbol=signal.symbol,
@@ -231,7 +247,7 @@ class BacktestEngine:
                 current_price=signal.price,
                 current_date=signal.date,
                 status=PositionStatus.OPEN,
-                stop_loss=signal.price * (Decimal('1') - eff_stop_loss_pct),
+                stop_loss=computed_stop_loss,
                 take_profit=signal.price * (Decimal('1') + eff_take_profit_pct),
                 entry_signal_name=signal.signal_name,
                 max_holding_days_override=eff_max_holding,

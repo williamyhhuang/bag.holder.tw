@@ -332,12 +332,19 @@ class BacktestSettings(BaseSettings):
 
     # ── 進場品質過濾 ────────────────────────────────────────────────
     # RSI 最低進場門檻：確認股票具備強勁上漲動能，避免 BB 假突破
-    # 回測（2024-09 ~ 2026-05）：RSI≥76 勝率 52.10%、報酬 49.14%、最大回撤 4.87%、Sharpe 1.98
-    # 優於 RSI≥50（勝率 51.89%、報酬 45.24%、最大回撤 8.17%、Sharpe 1.53）
+    # 回測（2024-09 ~ 2026-05）：RSI≥76 勝率 52.10%、報酬 49.14%（同日成交，有 look-ahead bias）
+    # 修正 look-ahead bias 後改用前置訊號（pre-breakout），RSI 門檻調降至 60
+    # 前置訊號在突破發生前進場，此時 RSI 通常在 60-70，76 門檻過濾過多有效訊號
     rsi_min_entry: float = Field(
-        default=76.0,
+        default=60.0,
         env="BACKTEST_RSI_MIN_ENTRY",
-        description="RSI 進場最低門檻（76 = 股票需具備強勁上漲動能）",
+        description="RSI 進場最低門檻（60 = 配合前置訊號邏輯，允許動能積累中的股票進場）",
+    )
+
+    atr_stop_multiplier: float = Field(
+        default=1.5,
+        env="BACKTEST_ATR_STOP_MULTIPLIER",
+        description="ATR 動態停損乘數（停損距離 = ATR × 此值），0 = 停用 ATR 停損，改用固定百分比",
     )
 
     # ── TechnicalStrategy 對應參數（與 strategy.py 一致）───────────

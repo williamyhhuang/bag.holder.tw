@@ -102,7 +102,7 @@ class SignalDetector:
                 signals.append({
                     'type': 'BUY',
                     'name': 'BB Squeeze Break',
-                    'description': '突破布林通道上軌',
+                    'description': '進入布林通道上軌附近（前置突破訊號）',
                     'strength': 'MEDIUM',
                     'price': current_price
                 })
@@ -196,9 +196,19 @@ class SignalDetector:
             return False
 
     def _check_bb_squeeze_break(self, current: Dict[str, Decimal], price: Decimal) -> bool:
-        """Check for Bollinger Bands squeeze breakout"""
+        """Check for Bollinger Bands pre-breakout setup.
+
+        Fires when price enters the top 30% of the BB band but has NOT yet closed
+        above the upper band.  This generates a signal one bar *before* the actual
+        breakout so that T+1 open execution still buys into the move rather than
+        chasing a confirmed breakout close.
+        """
         bb_upper = current.get('bb_upper')
-        return bb_upper is not None and price > bb_upper
+        bb_middle = current.get('bb_middle')
+        if bb_upper is None or bb_middle is None:
+            return False
+        threshold = bb_middle + Decimal('0.7') * (bb_upper - bb_middle)
+        return threshold < price < bb_upper
 
     def _check_volume_surge(self, current: Dict[str, Decimal], volume: int) -> bool:
         """Check for volume surge"""

@@ -36,3 +36,4 @@ class TechnicalIndicators:
     bb_middle: Optional[Decimal] = None
     bb_lower: Optional[Decimal] = None
     volume_ma20: Optional[int] = None
+    atr14: Optional[Decimal] = None
