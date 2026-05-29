@@ -1524,6 +1524,12 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.15.1 - 2026-05-30
+- 🐛 **修正週線收盤進場（`BACKTEST_WEEKLY_CLOSE_ONLY`）產生 0 筆交易的 Bug**：
+  - 根本原因：BUY 訊號在週五（週最後交易日）發出後，回測引擎將其排入「次日開盤執行」佇列；但次日（週六）無市場資料，舊邏輯直接丟棄訊號，導致所有交易均被捨棄
+  - 修復方式：`execute_pending_signals` 改為「攜帶前進」（carry-forward）—— 若當日無開盤價，訊號繼續保留至下一個交易日；超過 5 個日曆天（`MAX_CARRY_DAYS`）後才丟棄，避免過時訊號偏差
+  - 新增單元測試：`TestPendingSignalCarryForward`（2 個測試），驗證週末攜帶及過期丟棄行為
+
 ### v3.15.0 - 2026-05-30
 - 📅 **方向2：週線收盤進場（`BACKTEST_WEEKLY_CLOSE_ONLY`）**：只在每週最後交易日產生進場訊號，過濾日線雜訊，配合寬停損（15%）+ 長持倉（45天）讓趨勢有發展空間
   - 範例：`BACKTEST_WEEKLY_CLOSE_ONLY=true BACKTEST_STOP_LOSS_PCT=0.15 BACKTEST_MAX_HOLDING_DAYS=45`

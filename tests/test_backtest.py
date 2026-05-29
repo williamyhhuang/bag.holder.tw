@@ -3020,5 +3020,96 @@ class TestSectorMomentumWhitelist:
         assert semi_in > fin_in, f"Expected semiconductor > finance: {semi_in} vs {fin_in}"
 
 
+class TestPendingSignalCarryForward:
+    """Tests for pending signal carry-forward across non-trading days (weekends/holidays).
+
+    Regression tests for the bug where weekly_close_only=True produced 0 trades:
+    BUY signals fired on Friday but were discarded Saturday (no open price).
+    """
+
+    def _make_stock_data(self, symbol, dates_and_prices):
+        """Helper: list of StockData from (date, price) pairs."""
+        result = []
+        for d, p in dates_and_prices:
+            result.append(StockData(
+                symbol=symbol, date=d,
+                open_price=Decimal(str(p)), high_price=Decimal(str(p)),
+                low_price=Decimal(str(p)), close_price=Decimal(str(p)),
+                volume=2000000
+            ))
+        return result
+
+    def test_pending_signal_skips_weekend_and_executes_monday(self):
+        """BUY signal on Friday should carry over weekend and execute Monday open."""
+        from datetime import timedelta
+
+        # Friday 2026-01-02, Saturday 2026-01-03 (no data), Monday 2026-01-05
+        friday = date(2026, 1, 2)
+        monday = date(2026, 1, 5)
+
+        # Provide daily price data through the holding period so position can close
+        # (price = 10 so 1 lot = 1000 shares fits within 10% position sizing)
+        date_price_pairs = [(friday, 10), (monday, 10)]
+        for i in range(1, 15):
+            date_price_pairs.append((monday + timedelta(days=i), 10))
+        stock_data = self._make_stock_data("TEST", date_price_pairs)
+
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.20'),
+            max_holding_days=5,  # Position closes after 5 holding days
+        )
+        engine.add_price_data("TEST", stock_data)
+
+        # BUY signal on Friday
+        signal = TradingSignal(
+            symbol="TEST", date=friday,
+            signal_type=SignalType.BUY, signal_name="Test",
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=friday)
+        )
+
+        result = engine.run_backtest([signal], friday, monday + timedelta(days=14))
+        # Signal should have been carried forward and executed Monday
+        assert result.total_trades >= 1, (
+            "Expected at least 1 trade: Friday BUY carried over weekend and executed Monday"
+        )
+
+    def test_stale_pending_signal_is_discarded_after_max_carry_days(self):
+        """Pending signal older than MAX_CARRY_DAYS should be discarded."""
+        from datetime import timedelta
+
+        day0 = date(2026, 1, 2)  # Signal date
+        # Provide price data only after 10 calendar days (beyond MAX_CARRY_DAYS=5)
+        day10 = date(2026, 1, 12)
+
+        stock_data = self._make_stock_data("TEST", [
+            (day0, 100),
+            (day10, 110),
+        ])
+
+        engine = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.20'),
+            max_holding_days=20,
+        )
+        engine.add_price_data("TEST", stock_data)
+
+        signal = TradingSignal(
+            symbol="TEST", date=day0,
+            signal_type=SignalType.BUY, signal_name="Test",
+            price=Decimal('100'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=day0)
+        )
+
+        result = engine.run_backtest([signal], day0, day10 + timedelta(days=5))
+        # Signal should have been discarded (no execution day within 5 days)
+        assert result.total_trades == 0, (
+            "Expected 0 trades: stale pending signal should be discarded after MAX_CARRY_DAYS"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

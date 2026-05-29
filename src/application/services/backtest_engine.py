@@ -106,21 +106,32 @@ class BacktestEngine:
     def execute_pending_signals(self):
         """Execute BUY signals queued from the previous day at today's open price.
 
-        Signals without open price data on the execution day are discarded — we
-        do not carry them forward past one day to avoid stale-signal bias.
+        Signals without open price data on the execution day (e.g. weekends / holidays)
+        are carried forward to the next trading day — this allows weekly-close-only mode
+        (signals fire on Friday, executed Monday open) to work correctly.
+        Signals older than MAX_CARRY_DAYS are discarded to avoid stale-signal bias.
         """
         import copy
+        MAX_CARRY_DAYS = 5  # discard if not executed within 5 calendar days
+        still_pending: List[Tuple["TradingSignal", Optional[Decimal]]] = []
         for signal, sizing_override in self.pending_signals:
             open_price = self.get_open_price(signal.symbol, self.current_date)
             if open_price is None:
-                self.logger.debug(
-                    f"Pending BUY {signal.symbol}: no open price on {self.current_date}, discarded"
-                )
+                # No market data today (weekend / holiday) — check staleness
+                days_pending = (self.current_date - signal.date).days
+                if days_pending > MAX_CARRY_DAYS:
+                    self.logger.debug(
+                        f"Pending BUY {signal.symbol}: no open price on {self.current_date}, "
+                        f"stale after {days_pending}d, discarded"
+                    )
+                else:
+                    # Carry forward to next day
+                    still_pending.append((signal, sizing_override))
                 continue
             exec_signal = copy.copy(signal)
             exec_signal.price = open_price
             self.execute_buy_order(exec_signal, sizing_override=sizing_override)
-        self.pending_signals = []
+        self.pending_signals = still_pending
 
     def calculate_position_size(self, price: Decimal) -> int:
         """Calculate position size based on fixed % of initial capital (not current cash).
