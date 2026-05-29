@@ -59,6 +59,8 @@ class BacktestRunner:
             require_revenue_growth=cfg.require_revenue_growth,
             revenue_yoy_min_pct=cfg.revenue_yoy_min_pct,
             finmind_api_token=settings.finmind.api_token or "",
+            weekly_close_only=cfg.weekly_close_only,
+            require_minervini_trend=cfg.require_minervini_trend,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

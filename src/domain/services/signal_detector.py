@@ -20,7 +20,8 @@ class SignalDetector:
         current_indicators: Dict[str, Decimal],
         previous_indicators: Dict[str, Decimal],
         current_price: Decimal,
-        volume: int
+        volume: int,
+        pre_breakout_mode: bool = True,
     ) -> List[Dict[str, any]]:
         """
         Detect buy/sell signals based on technical indicators
@@ -98,11 +99,12 @@ class SignalDetector:
                 })
 
             # Bollinger Bands Squeeze Break
-            if self._check_bb_squeeze_break(current_indicators, current_price):
+            if self._check_bb_squeeze_break(current_indicators, current_price, pre_breakout_mode):
+                desc = '進入布林通道上軌附近（前置突破訊號）' if pre_breakout_mode else '收盤突破布林通道上軌'
                 signals.append({
                     'type': 'BUY',
                     'name': 'BB Squeeze Break',
-                    'description': '進入布林通道上軌附近（前置突破訊號）',
+                    'description': desc,
                     'strength': 'MEDIUM',
                     'price': current_price
                 })
@@ -195,20 +197,21 @@ class SignalDetector:
         except Exception:
             return False
 
-    def _check_bb_squeeze_break(self, current: Dict[str, Decimal], price: Decimal) -> bool:
-        """Check for Bollinger Bands pre-breakout setup.
+    def _check_bb_squeeze_break(self, current: Dict[str, Decimal], price: Decimal, pre_breakout_mode: bool = True) -> bool:
+        """Check for Bollinger Bands breakout signal.
 
-        Fires when price enters the top 30% of the BB band but has NOT yet closed
-        above the upper band.  This generates a signal one bar *before* the actual
-        breakout so that T+1 open execution still buys into the move rather than
-        chasing a confirmed breakout close.
+        pre_breakout_mode=True:  price in top 30% of band but NOT yet above upper
+        pre_breakout_mode=False: price already above upper band (confirmed breakout)
         """
         bb_upper = current.get('bb_upper')
         bb_middle = current.get('bb_middle')
         if bb_upper is None or bb_middle is None:
             return False
-        threshold = bb_middle + Decimal('0.7') * (bb_upper - bb_middle)
-        return threshold < price < bb_upper
+        if pre_breakout_mode:
+            threshold = bb_middle + Decimal('0.7') * (bb_upper - bb_middle)
+            return threshold < price < bb_upper
+        else:
+            return price > bb_upper
 
     def _check_volume_surge(self, current: Dict[str, Decimal], volume: int) -> bool:
         """Check for volume surge"""

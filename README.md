@@ -1524,6 +1524,13 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.15.0 - 2026-05-30
+- 📅 **方向2：週線收盤進場（`BACKTEST_WEEKLY_CLOSE_ONLY`）**：只在每週最後交易日產生進場訊號，過濾日線雜訊，配合寬停損（15%）+ 長持倉（45天）讓趨勢有發展空間
+  - 範例：`BACKTEST_WEEKLY_CLOSE_ONLY=true BACKTEST_STOP_LOSS_PCT=0.15 BACKTEST_MAX_HOLDING_DAYS=45`
+- 📊 **方向3：Minervini Stage 2 過濾（`BACKTEST_REQUIRE_MINERVINI_TREND`）**：要求 price > MA60 > MA120，確保股票處於長期上升趨勢（Stage 2），參考 Mark Minervini SEPA 方法
+  - 範例：`BACKTEST_REQUIRE_MINERVINI_TREND=true`
+- 🔢 **新增 MA120**：TechnicalIndicators 加入 120日均線，`ma_periods` 預設改為 `[5, 10, 20, 60, 120]`
+
 ### v3.14.0 - 2026-05-30
 - 📈 **週線 RSI 過濾（Filter 10）**：新增 `BACKTEST_REQUIRE_WEEKLY_RSI` / `BACKTEST_WEEKLY_RSI_MIN` 參數，要求週 RSI(14) ≥ 門檻（預設 50）才允許進場，使用 Wilder's smoothing 算法與 talib 一致
   - 範例：`BACKTEST_REQUIRE_WEEKLY_RSI=true BACKTEST_WEEKLY_RSI_MIN=50`

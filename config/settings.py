@@ -664,6 +664,24 @@ class BacktestSettings(BaseSettings):
         description="現價距 52 週高點不超過此百分比（0.35 = 35%，回測最佳值）",
     )
 
+    # ── 方向 2：週線收盤進場（只在每週最後交易日進場）────────────────
+    # 訊號必須在週線收盤（週五或每週最後交易日）才允許進場
+    # 用途：過濾日線雜訊，只順應週線方向操作
+    weekly_close_only: bool = Field(
+        default=False,
+        env="BACKTEST_WEEKLY_CLOSE_ONLY",
+        description="True = 只在每週最後交易日進場，過濾日線雜訊",
+    )
+
+    # ── 方向 3：Minervini Stage 2（技術面長期趨勢確認）────────────────
+    # 要求 price > MA60 > MA120，確保股票處於 Stage 2 長期上升趨勢
+    # 參考 Mark Minervini SEPA 方法（Stage 2 = 長期多頭排列）
+    require_minervini_trend: bool = Field(
+        default=False,
+        env="BACKTEST_REQUIRE_MINERVINI_TREND",
+        description="True = 要求 price > MA60 > MA120（Minervini Stage 2 長期上升趨勢）",
+    )
+
     # ── 週線 RSI 過濾 ──────────────────────────────────────────────
     # 要求週 RSI(14) >= weekly_rsi_min 才允許進場，過濾週線動能不足的假突破
     # 週線 RSI 使用 Wilder's smoothing，與 talib RSI 相同算法

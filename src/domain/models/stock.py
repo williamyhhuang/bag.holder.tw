@@ -28,6 +28,7 @@ class TechnicalIndicators:
     ma10: Optional[Decimal] = None
     ma20: Optional[Decimal] = None
     ma60: Optional[Decimal] = None
+    ma120: Optional[Decimal] = None
     rsi14: Optional[Decimal] = None
     macd: Optional[Decimal] = None
     macd_signal: Optional[Decimal] = None

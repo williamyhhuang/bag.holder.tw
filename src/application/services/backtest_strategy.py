@@ -194,7 +194,7 @@ class TechnicalStrategy:
 
     def __init__(
         self,
-        ma_periods: List[int] = [5, 10, 20, 60],
+        ma_periods: List[int] = [5, 10, 20, 60, 120],
         rsi_period: int = 14,
         macd_fast: int = 12,
         macd_slow: int = 26,
@@ -225,6 +225,8 @@ class TechnicalStrategy:
         require_revenue_growth: bool = False,
         revenue_yoy_min_pct: float = 0.0,
         finmind_api_token: str = "",
+        weekly_close_only: bool = False,
+        require_minervini_trend: bool = False,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -269,6 +271,8 @@ class TechnicalStrategy:
         self.require_revenue_growth = require_revenue_growth
         self.revenue_yoy_min_pct = revenue_yoy_min_pct
         self.finmind_api_token = finmind_api_token
+        self.weekly_close_only = weekly_close_only
+        self.require_minervini_trend = require_minervini_trend
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -347,6 +351,7 @@ class TechnicalStrategy:
                     ma10=indicators.get('ma10'),
                     ma20=indicators.get('ma20'),
                     ma60=indicators.get('ma60'),
+                    ma120=indicators.get('ma120'),
                     rsi14=indicators.get('rsi14'),
                     macd=indicators.get('macd'),
                     macd_signal=indicators.get('macd_signal'),
@@ -430,6 +435,16 @@ class TechnicalStrategy:
             # Sort dates for chronological processing
             sorted_dates = sorted(indicators_data.keys())
 
+            # Direction 2: pre-compute the last trading day of each ISO week
+            # so we only enter positions on weekly close (reduces noise from intra-week signals)
+            weekly_last_trading_days: Set[date] = set()
+            if self.weekly_close_only:
+                for j in range(len(sorted_dates) - 1):
+                    if sorted_dates[j].isocalendar()[1] != sorted_dates[j + 1].isocalendar()[1]:
+                        weekly_last_trading_days.add(sorted_dates[j])
+                if sorted_dates:
+                    weekly_last_trading_days.add(sorted_dates[-1])
+
             # Filter 8: pre-compute weekly MA5/MA20 for this symbol
             weekly_closes_built: Optional[List[Tuple[date, Decimal]]] = None
             if self.require_weekly_trend or self.require_weekly_rsi:
@@ -500,6 +515,10 @@ class TechnicalStrategy:
 
                 # Need at least one previous date for signal detection
                 if i == 0:
+                    continue
+
+                # Direction 2: only enter on the last trading day of each week
+                if self.weekly_close_only and current_date not in weekly_last_trading_days:
                     continue
 
                 # Skip if outside date range (still track cooldown state below)
@@ -821,7 +840,20 @@ class TechnicalStrategy:
                     )
                     return SignalType.WATCH
 
-        # Filter 10: weekly RSI bullish momentum
+        # Filter 12 (Direction 3): Minervini Stage 2 — price > MA60 > MA120, MA120 is valid
+        # Ensures stock is in a confirmed long-term uptrend before entry
+        if self.require_minervini_trend:
+            ma60 = indicators.ma60
+            ma120 = indicators.ma120
+            if ma60 is not None and ma120 is not None:
+                if not (price > ma60 > ma120):
+                    self.logger.debug(
+                        f"Signal '{signal_name}' blocked: Minervini Stage 2 failed "
+                        f"price={float(price):.1f} MA60={float(ma60):.1f} MA120={float(ma120):.1f} → WATCH"
+                    )
+                    return SignalType.WATCH
+
+        # Filter 13: weekly RSI bullish momentum
         if self.require_weekly_rsi and weekly_rsi is not None:
             if weekly_rsi < self.weekly_rsi_min:
                 self.logger.debug(
@@ -830,7 +862,7 @@ class TechnicalStrategy:
                 )
                 return SignalType.WATCH
 
-        # Filter 11: monthly revenue YoY growth (fundamental filter)
+        # Filter 14: monthly revenue YoY growth (fundamental filter)
         if self.require_revenue_growth and revenue_yoy is not None:
             if revenue_yoy < self.revenue_yoy_min_pct:
                 self.logger.debug(

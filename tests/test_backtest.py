@@ -271,7 +271,7 @@ class TestTechnicalStrategy:
         self.strategy = TechnicalStrategy()
 
     def test_initialization(self):
-        assert self.strategy.ma_periods == [5, 10, 20, 60]
+        assert self.strategy.ma_periods == [5, 10, 20, 60, 120]
         assert self.strategy.rsi_period == 14
 
     def test_prepare_price_data(self):
@@ -1866,8 +1866,8 @@ class TestP6TrendFollowing:
         # 需要足夠 records 讓 indicator 計算不被 skip
         # strategy.calculate_indicators 需要 max(ma_periods + [rsi, macd_slow, bb]) records
         # 用 60 筆長歷史
-        long_prices = [self._make_price("X", base - timedelta(days=100 - i),
-                                        close=80 + i * 0.1) for i in range(100)]
+        long_prices = [self._make_price("X", base - timedelta(days=130 - i),
+                                        close=80 + i * 0.1) for i in range(130)]
         long_prices += prices
 
         signals = strategy.generate_signals("X", long_prices,
@@ -2179,8 +2179,8 @@ class TestP3BSignalBasedExit:
                                      require_volume_confirmation=False)
         base = date(2025, 1, 1)
         # 需要足夠歷史讓 RSI 計算
-        long_prices = [self._make_price("X", base - timedelta(days=100 - i),
-                                        80 + i * 0.2) for i in range(100)]
+        long_prices = [self._make_price("X", base - timedelta(days=130 - i),
+                                        80 + i * 0.2) for i in range(130)]
         # RSI 會接近中性附近；加幾根下跌來強制 RSI 跌破 50
         long_prices += [self._make_price("X", base + timedelta(days=i), 100 - i * 3)
                         for i in range(10)]
@@ -2824,6 +2824,131 @@ class TestRevenueGrowthFilter:
             volume=1_000_000, indicators=self._make_indicators(), revenue_yoy=12.0,
         )
         assert result_high == SignalType.BUY
+
+
+class TestMinerviniTrendFilter:
+    """Tests for Minervini Stage 2 trend filter (Filter 12)."""
+
+    def _make_indicators(self, ma60, ma120, price=None):
+        p = Decimal(str(price or ma60 * 1.05))
+        return TechnicalIndicators(
+            date=date(2024, 6, 1),
+            ma5=p, ma10=p, ma20=p,
+            ma60=Decimal(str(ma60)),
+            ma120=Decimal(str(ma120)),
+            rsi14=Decimal('60'),
+            macd=Decimal('1'), macd_signal=Decimal('0.5'), macd_histogram=Decimal('0.5'),
+            bb_upper=p + 10, bb_middle=p, bb_lower=p - 10,
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+
+    def test_stage2_passes_when_price_above_ma60_above_ma120(self):
+        strategy = TechnicalStrategy(require_minervini_trend=True)
+        ind = self._make_indicators(ma60=100, ma120=90, price=110)
+        result = strategy._apply_buy_filters('Donchian Breakout', Decimal('110'), 1_000_000, ind)
+        assert result == SignalType.BUY
+
+    def test_stage2_blocks_when_ma60_below_ma120(self):
+        strategy = TechnicalStrategy(require_minervini_trend=True)
+        ind = self._make_indicators(ma60=85, ma120=90, price=88)
+        result = strategy._apply_buy_filters('Donchian Breakout', Decimal('88'), 1_000_000, ind)
+        assert result == SignalType.WATCH
+
+    def test_stage2_blocks_when_price_below_ma60(self):
+        strategy = TechnicalStrategy(require_minervini_trend=True)
+        ind = self._make_indicators(ma60=100, ma120=90, price=95)
+        result = strategy._apply_buy_filters('Donchian Breakout', Decimal('95'), 1_000_000, ind)
+        assert result == SignalType.WATCH
+
+    def test_stage2_disabled_ignores_ma120(self):
+        strategy = TechnicalStrategy(require_minervini_trend=False)
+        ind = self._make_indicators(ma60=85, ma120=90, price=88)  # would fail stage 2
+        result = strategy._apply_buy_filters('Donchian Breakout', Decimal('88'), 1_000_000, ind)
+        assert result == SignalType.BUY
+
+    def test_stage2_passes_when_ma120_missing(self):
+        """When MA120 data is unavailable, do not block."""
+        strategy = TechnicalStrategy(require_minervini_trend=True)
+        ind = TechnicalIndicators(
+            date=date(2024, 6, 1), ma5=Decimal('110'), ma10=Decimal('108'),
+            ma20=Decimal('105'), ma60=Decimal('100'), ma120=None,
+            rsi14=Decimal('60'), macd=Decimal('1'), macd_signal=Decimal('0.5'),
+            macd_histogram=Decimal('0.5'), bb_upper=Decimal('120'),
+            bb_middle=Decimal('110'), bb_lower=Decimal('100'),
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+        result = strategy._apply_buy_filters('Donchian Breakout', Decimal('110'), 1_000_000, ind)
+        assert result == SignalType.BUY
+
+
+class TestWeeklyCloseOnly:
+    """Tests for weekly close only filter (Direction 2)."""
+
+    def _make_price_data(self, dates_and_closes):
+        return [
+            StockData(
+                symbol='TEST', date=d,
+                open_price=c, high_price=c + 1, low_price=c - 1,
+                close_price=c, volume=1_000_000,
+            )
+            for d, c in dates_and_closes
+        ]
+
+    def test_weekly_close_only_reduces_signal_count(self):
+        """With weekly_close_only=True, signals should only appear on Fridays."""
+        strategy_daily = TechnicalStrategy(weekly_close_only=False)
+        strategy_weekly = TechnicalStrategy(weekly_close_only=True)
+
+        # 4 full weeks of data (Mon-Fri) = 20 trading days
+        from datetime import date as dt
+        base = dt(2024, 1, 2)  # Tuesday
+        dates = []
+        d = base
+        while len(dates) < 60:
+            if d.weekday() < 5:
+                dates.append(d)
+            d += timedelta(days=1)
+
+        closes = [Decimal(str(100 + i * 0.5)) for i in range(len(dates))]
+        price_data = self._make_price_data(list(zip(dates, closes)))
+
+        daily_signals = strategy_daily.generate_signals('TEST', price_data)
+        weekly_signals = strategy_weekly.generate_signals('TEST', price_data)
+
+        # Weekly should produce far fewer signals
+        daily_buy = [s for s in daily_signals if s.signal_type == SignalType.BUY]
+        weekly_buy = [s for s in weekly_signals if s.signal_type == SignalType.BUY]
+        assert len(weekly_buy) <= len(daily_buy), "Weekly-only should produce ≤ daily signals"
+
+    def test_weekly_close_only_signals_on_fridays_only(self):
+        """All BUY signals with weekly_close_only=True should be on the last day of their week."""
+        strategy = TechnicalStrategy(weekly_close_only=True)
+
+        base = date(2024, 1, 2)
+        dates = []
+        d = base
+        while len(dates) < 80:
+            if d.weekday() < 5:
+                dates.append(d)
+            d += timedelta(days=1)
+
+        # Build weekly last-day set for validation
+        weekly_last = set()
+        for j in range(len(dates) - 1):
+            if dates[j].isocalendar()[1] != dates[j + 1].isocalendar()[1]:
+                weekly_last.add(dates[j])
+        weekly_last.add(dates[-1])
+
+        closes = [Decimal(str(100 + i)) for i in range(len(dates))]
+        price_data = self._make_price_data(list(zip(dates, closes)))
+
+        signals = strategy.generate_signals('TEST', price_data)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+
+        for sig in buy_signals:
+            assert sig.date in weekly_last, (
+                f"Signal on {sig.date} (weekday={sig.date.weekday()}) is not a weekly close"
+            )
 
 
 class TestSectorMomentumWhitelist:
