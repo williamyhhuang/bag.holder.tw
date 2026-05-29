@@ -1109,6 +1109,9 @@ class TestMarketRegime:
 
         # BB Squeeze Break should execute; Golden Cross should be blocked
         engine.process_signals([bb_signal, gc_signal], market_bullish=True)
+        # Signals are queued; execute them at next day's open
+        engine.current_date = trade_date + timedelta(days=1)
+        engine.execute_pending_signals()
         assert len(engine.positions) == 1
         assert "TEST" in engine.positions
 
@@ -1157,6 +1160,9 @@ class TestMarketRegime:
             indicators=TechnicalIndicators(date=trade_date),
         )
         engine.process_signals([bb_sig, gc_sig], market_bullish=True)
+        # Signals are queued; execute them at next day's open
+        engine.current_date = trade_date + timedelta(days=1)
+        engine.execute_pending_signals()
         # Both should execute in STRONG regime with strong_regime_signals=None
         assert len(engine.positions) == 2
 
@@ -1707,6 +1713,7 @@ class TestP5TrendSignalMultiplier:
         """STRONG 市場下 Golden Cross 應使用 2× 倉位（10% 而非 5%）"""
         capital = Decimal('1000000')
         price = Decimal('50')  # target: 50k (5%) or 100k (10%)
+        next_day = date(2025, 9, 2)
 
         engine = BacktestEngine(
             initial_capital=capital,
@@ -1714,7 +1721,11 @@ class TestP5TrendSignalMultiplier:
             strong_trend_signals=["Golden Cross"],
             strong_trend_multiplier=2.0,
         )
-        engine.add_price_data("GC", [self._make_price("GC", price)])
+        engine.add_price_data("GC", [
+            self._make_price("GC", price),
+            StockData(symbol="GC", date=next_day, open_price=price,
+                      high_price=price, low_price=price, close_price=price, volume=1000000),
+        ])
         engine.current_date = date(2025, 9, 1)
 
         # Make market STRONG: ensure benchmark_rsi >= 60
@@ -1723,6 +1734,9 @@ class TestP5TrendSignalMultiplier:
 
         signal = self._make_signal("GC", "Golden Cross", price)
         engine.process_signals([signal], market_bullish=True)
+        # Signals are queued; execute them at next day's open
+        engine.current_date = next_day
+        engine.execute_pending_signals()
 
         assert "GC" in engine.positions
         # 2× sizing = 10% of 1M = 100k / 50 = 2000 shares
@@ -1732,6 +1746,7 @@ class TestP5TrendSignalMultiplier:
         """STRONG 市場下 BB Squeeze Break 應使用正常 5% 倉位"""
         capital = Decimal('1000000')
         price = Decimal('50')
+        next_day = date(2025, 9, 2)
 
         engine = BacktestEngine(
             initial_capital=capital,
@@ -1739,7 +1754,11 @@ class TestP5TrendSignalMultiplier:
             strong_trend_signals=["Golden Cross", "MACD Golden Cross"],
             strong_trend_multiplier=2.0,
         )
-        engine.add_price_data("BB", [self._make_price("BB", price)])
+        engine.add_price_data("BB", [
+            self._make_price("BB", price),
+            StockData(symbol="BB", date=next_day, open_price=price,
+                      high_price=price, low_price=price, close_price=price, volume=1000000),
+        ])
         engine.current_date = date(2025, 9, 1)
 
         engine.benchmark_bullish[date(2025, 9, 1)] = True
@@ -1747,6 +1766,9 @@ class TestP5TrendSignalMultiplier:
 
         signal = self._make_signal("BB", "BB Squeeze Break", price)
         engine.process_signals([signal], market_bullish=True)
+        # Signals are queued; execute them at next day's open
+        engine.current_date = next_day
+        engine.execute_pending_signals()
 
         assert "BB" in engine.positions
         # Normal sizing = 5% of 1M = 50k / 50 = 1000 shares
@@ -1756,6 +1778,7 @@ class TestP5TrendSignalMultiplier:
         """NEUTRAL 市場下 Golden Cross 不應套用乘數"""
         capital = Decimal('1000000')
         price = Decimal('50')
+        next_day = date(2025, 9, 2)
 
         engine = BacktestEngine(
             initial_capital=capital,
@@ -1764,7 +1787,11 @@ class TestP5TrendSignalMultiplier:
             strong_trend_signals=["Golden Cross"],
             strong_trend_multiplier=2.0,
         )
-        engine.add_price_data("GC2", [self._make_price("GC2", price)])
+        engine.add_price_data("GC2", [
+            self._make_price("GC2", price),
+            StockData(symbol="GC2", date=next_day, open_price=price,
+                      high_price=price, low_price=price, close_price=price, volume=1000000),
+        ])
         engine.current_date = date(2025, 9, 1)
 
         # NEUTRAL: bullish but RSI < 60
@@ -1773,6 +1800,9 @@ class TestP5TrendSignalMultiplier:
 
         signal = self._make_signal("GC2", "Golden Cross", price)
         engine.process_signals([signal], market_bullish=True)
+        # Signals are queued; execute them at next day's open
+        engine.current_date = next_day
+        engine.execute_pending_signals()
 
         assert "GC2" in engine.positions
         # Normal sizing = 5% → 1000 shares

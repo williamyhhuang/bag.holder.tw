@@ -70,6 +70,10 @@ class BacktestEngine:
         self.orders: List[Order] = []
         self.portfolio_history: List[Portfolio] = []
 
+        # Pending BUY signals: queued on day T, executed on day T+1 open price
+        # Each entry is (signal, sizing_override)
+        self.pending_signals: List[Tuple[TradingSignal, Optional[Decimal]]] = []
+
         # Tracking
         self.current_date: Optional[date] = None
         self.price_data: Dict[str, Dict[date, StockData]] = {}
@@ -89,6 +93,31 @@ class BacktestEngine:
         if symbol in self.price_data and target_date in self.price_data[symbol]:
             return self.price_data[symbol][target_date].close_price
         return None
+
+    def get_open_price(self, symbol: str, target_date: date) -> Optional[Decimal]:
+        """Get open price for a symbol on a specific date"""
+        if symbol in self.price_data and target_date in self.price_data[symbol]:
+            return self.price_data[symbol][target_date].open_price
+        return None
+
+    def execute_pending_signals(self):
+        """Execute BUY signals queued from the previous day at today's open price.
+
+        Signals without open price data on the execution day are discarded — we
+        do not carry them forward past one day to avoid stale-signal bias.
+        """
+        import copy
+        for signal, sizing_override in self.pending_signals:
+            open_price = self.get_open_price(signal.symbol, self.current_date)
+            if open_price is None:
+                self.logger.debug(
+                    f"Pending BUY {signal.symbol}: no open price on {self.current_date}, discarded"
+                )
+                continue
+            exec_signal = copy.copy(signal)
+            exec_signal.price = open_price
+            self.execute_buy_order(exec_signal, sizing_override=sizing_override)
+        self.pending_signals = []
 
     def calculate_position_size(self, price: Decimal) -> int:
         """Calculate position size based on fixed % of initial capital (not current cash).
@@ -600,7 +629,8 @@ class BacktestEngine:
                     and self.strong_trend_multiplier != 1.0
                 ):
                     sizing_override = self.position_sizing * Decimal(str(self.strong_trend_multiplier))
-                self.execute_buy_order(signal, sizing_override=sizing_override)
+                # Queue for next-day open execution (avoid same-bar look-ahead bias)
+                self.pending_signals.append((signal, sizing_override))
             elif signal.signal_type == SignalType.SELL and signal.symbol in self.positions:
                 position = self.positions[signal.symbol]
                 # P3-B: signal-based exit for trend positions
@@ -667,10 +697,15 @@ class BacktestEngine:
         while current <= end_date:
             self.current_date = current
 
-            # Check position exits first
+            # Execute BUY signals queued from previous day at today's open price
+            # This avoids same-bar look-ahead bias (signal detected at T close,
+            # executed at T+1 open — the earliest realistic fill time)
+            self.execute_pending_signals()
+
+            # Check position exits (stop loss / take profit / max holding)
             self.check_position_exits()
 
-            # Process new signals (suppress BUY when TAIEX below MA20)
+            # Detect new signals from today's close; BUYs are queued for tomorrow
             if current in signals_by_date:
                 market_bullish = self.is_market_bullish(current)
                 self.process_signals(signals_by_date[current], market_bullish)
