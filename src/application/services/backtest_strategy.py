@@ -116,6 +116,46 @@ def _build_weekly_closes(price_data: List[StockData]) -> List[Tuple[date, Decima
     return sorted(weekly.values(), key=lambda x: x[0])
 
 
+def _calculate_weekly_rsi(weekly_closes: List[Tuple[date, Decimal]], period: int = 14) -> Dict[Tuple[int, int], Decimal]:
+    """Calculate RSI for weekly closes using Wilder's smoothing (same as talib).
+
+    Returns:
+        {(iso_year, iso_week): rsi_value}
+    """
+    result: Dict[Tuple[int, int], Decimal] = {}
+    if len(weekly_closes) < period + 1:
+        return result
+
+    closes = [float(c) for _, c in weekly_closes]
+    dates = [d for d, _ in weekly_closes]
+
+    # Price changes (deltas[i] = closes[i+1] - closes[i])
+    deltas = [closes[i + 1] - closes[i] for i in range(len(closes) - 1)]
+
+    # Seed: simple average of first `period` deltas
+    avg_gain = sum(max(d, 0.0) for d in deltas[:period]) / period
+    avg_loss = sum(abs(min(d, 0.0)) for d in deltas[:period]) / period
+
+    def _rsi(ag: float, al: float) -> float:
+        if al == 0.0:
+            return 100.0
+        return 100.0 - 100.0 / (1.0 + ag / al)
+
+    # First RSI corresponds to closes[period] → dates[period]
+    iso = dates[period].isocalendar()
+    result[(iso[0], iso[1])] = Decimal(str(round(_rsi(avg_gain, avg_loss), 2)))
+
+    # Wilder's smoothing for subsequent weeks
+    for i in range(period, len(deltas)):
+        delta = deltas[i]
+        avg_gain = (avg_gain * (period - 1) + max(delta, 0.0)) / period
+        avg_loss = (avg_loss * (period - 1) + abs(min(delta, 0.0))) / period
+        iso = dates[i + 1].isocalendar()
+        result[(iso[0], iso[1])] = Decimal(str(round(_rsi(avg_gain, avg_loss), 2)))
+
+    return result
+
+
 def _calculate_weekly_ma(weekly_closes: List[Tuple[date, Decimal]], period: int) -> Dict[Tuple[int, int], Decimal]:
     """
     Calculate simple MA for weekly closes.
@@ -176,6 +216,15 @@ class TechnicalStrategy:
         near_52w_high_pct: float = 0.25,
         enable_vcp: bool = False,
         vcp_lookback: int = 60,
+        pre_breakout_mode: bool = True,
+        enable_momentum_signal: bool = False,
+        momentum_signal_days: int = 5,
+        momentum_signal_min_return: float = 0.03,
+        require_weekly_rsi: bool = False,
+        weekly_rsi_min: float = 50.0,
+        require_revenue_growth: bool = False,
+        revenue_yoy_min_pct: float = 0.0,
+        finmind_api_token: str = "",
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -209,6 +258,17 @@ class TechnicalStrategy:
         # VCP signal
         self.enable_vcp = enable_vcp
         self.vcp_lookback = vcp_lookback
+        # Breakout mode
+        self.pre_breakout_mode = pre_breakout_mode
+        # Multi-day momentum signal
+        self.enable_momentum_signal = enable_momentum_signal
+        self.momentum_signal_days = momentum_signal_days
+        self.momentum_signal_min_return = Decimal(str(momentum_signal_min_return))
+        self.require_weekly_rsi = require_weekly_rsi
+        self.weekly_rsi_min = Decimal(str(weekly_rsi_min))
+        self.require_revenue_growth = require_revenue_growth
+        self.revenue_yoy_min_pct = revenue_yoy_min_pct
+        self.finmind_api_token = finmind_api_token
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -218,6 +278,10 @@ class TechnicalStrategy:
         self.indicators_cache: Dict[str, Dict[date, TechnicalIndicators]] = {}
         # Weekly MA cache: symbol -> {(iso_year, iso_week): (ma5, ma20)}
         self.weekly_ma_cache: Dict[str, Dict[Tuple[int, int], Tuple[Optional[Decimal], Optional[Decimal]]]] = {}
+        # Weekly RSI cache: symbol -> {(iso_year, iso_week): rsi}
+        self.weekly_rsi_cache: Dict[str, Dict[Tuple[int, int], Decimal]] = {}
+        # Revenue cache: symbol -> {date_str -> {revenue, yoy_pct}}
+        self.revenue_cache: Dict[str, Dict[str, dict]] = {}
 
     def prepare_price_data(self, stock_data: List[StockData]) -> List:
         """Convert StockData to format compatible with IndicatorCalculator"""
@@ -367,11 +431,14 @@ class TechnicalStrategy:
             sorted_dates = sorted(indicators_data.keys())
 
             # Filter 8: pre-compute weekly MA5/MA20 for this symbol
+            weekly_closes_built: Optional[List[Tuple[date, Decimal]]] = None
+            if self.require_weekly_trend or self.require_weekly_rsi:
+                weekly_closes_built = _build_weekly_closes(price_data)
+
             if self.require_weekly_trend:
                 if symbol not in self.weekly_ma_cache:
-                    weekly_closes = _build_weekly_closes(price_data)
-                    wma5 = _calculate_weekly_ma(weekly_closes, 5)
-                    wma20 = _calculate_weekly_ma(weekly_closes, 20)
+                    wma5 = _calculate_weekly_ma(weekly_closes_built, 5)
+                    wma20 = _calculate_weekly_ma(weekly_closes_built, 20)
                     combined: Dict[Tuple[int, int], Tuple[Optional[Decimal], Optional[Decimal]]] = {}
                     all_weeks = set(wma5.keys()) | set(wma20.keys())
                     for wk in all_weeks:
@@ -380,6 +447,34 @@ class TechnicalStrategy:
                 weekly_data = self.weekly_ma_cache[symbol]
             else:
                 weekly_data = {}
+
+            # Filter 10: pre-compute weekly RSI(14)
+            if self.require_weekly_rsi:
+                if symbol not in self.weekly_rsi_cache:
+                    if weekly_closes_built is None:
+                        weekly_closes_built = _build_weekly_closes(price_data)
+                    self.weekly_rsi_cache[symbol] = _calculate_weekly_rsi(weekly_closes_built, 14)
+                weekly_rsi_data = self.weekly_rsi_cache[symbol]
+            else:
+                weekly_rsi_data = {}
+
+            # Filter 11: pre-load monthly revenue history from FinMind
+            if self.require_revenue_growth and self.finmind_api_token:
+                if symbol not in self.revenue_cache:
+                    try:
+                        from ...infrastructure.market_data.finmind_client import FinMindRevenueLoader
+                        loader = FinMindRevenueLoader(api_token=self.finmind_api_token)
+                        start_str = sorted_dates[0].isoformat() if sorted_dates else "2020-01-01"
+                        end_str = sorted_dates[-1].isoformat() if sorted_dates else "2026-12-31"
+                        self.revenue_cache[symbol] = loader.load_stock_revenue_history(
+                            symbol, start_date=start_str, end_date=end_str
+                        )
+                    except Exception as exc:
+                        self.logger.warning(f"[Revenue] 無法載入 {symbol} 月營收: {exc}")
+                        self.revenue_cache[symbol] = {}
+                revenue_history = self.revenue_cache[symbol]
+            else:
+                revenue_history = {}
 
             # Filter 9: pre-compute rolling 252-day (52-week) high/low per date
             # Uses high_price for 52w high and low_price for 52w low
@@ -428,7 +523,8 @@ class TechnicalStrategy:
                     current_indicators=current_dict,
                     previous_indicators=previous_dict,
                     current_price=current_price_data.close_price,
-                    volume=current_price_data.volume
+                    volume=current_price_data.volume,
+                    pre_breakout_mode=self.pre_breakout_mode,
                 )
 
                 # P3-B/A: RSI Momentum Loss — RSI crosses below 50 (trend losing momentum)
@@ -445,9 +541,7 @@ class TechnicalStrategy:
                         'price': current_price_data.close_price,
                     })
 
-                # P6: Donchian Channel Pre-Breakout (trend-following signal)
-                # Close within 3% below the highest high of last donchian_period trading dates
-                # → pre-position before the actual breakout to avoid chasing T+1 gap-up opens
+                # P6: Donchian Channel signal (pre-breakout or confirmed breakout)
                 if self.donchian_period > 0 and i >= self.donchian_period:
                     lookback_dates = sorted_dates[i - self.donchian_period: i]
                     donchian_high = max(
@@ -456,15 +550,46 @@ class TechnicalStrategy:
                     )
                     if donchian_high is not None:
                         close = current_price_data.close_price
-                        near_high = donchian_high * Decimal('0.97')
-                        if near_high < close <= donchian_high:
-                            detected_signals.append({
-                                'type': 'BUY',
-                                'name': 'Donchian Breakout',
-                                'description': f'接近近 {self.donchian_period} 日最高（{donchian_high}），前置佈局',
-                                'strength': 'STRONG',
-                                'price': close,
-                            })
+                        if self.pre_breakout_mode:
+                            # Pre-breakout: within 3% below the channel high
+                            if donchian_high * Decimal('0.97') < close <= donchian_high:
+                                detected_signals.append({
+                                    'type': 'BUY',
+                                    'name': 'Donchian Breakout',
+                                    'description': f'接近近 {self.donchian_period} 日最高（{donchian_high}），前置佈局',
+                                    'strength': 'STRONG',
+                                    'price': close,
+                                })
+                        else:
+                            # Confirmed breakout: close above channel high
+                            if close > donchian_high:
+                                detected_signals.append({
+                                    'type': 'BUY',
+                                    'name': 'Donchian Breakout',
+                                    'description': f'收盤突破近 {self.donchian_period} 日最高（{donchian_high}）',
+                                    'strength': 'STRONG',
+                                    'price': close,
+                                })
+
+                # Multi-day momentum signal: N-day sustained price rise
+                if self.enable_momentum_signal and i >= self.momentum_signal_days:
+                    lookback = sorted_dates[i - self.momentum_signal_days: i]
+                    past_date = lookback[0]
+                    if past_date in price_lookup:
+                        past_close = price_lookup[past_date].close_price
+                        if past_close > 0:
+                            n_day_return = (current_price_data.close_price - past_close) / past_close
+                            if n_day_return >= self.momentum_signal_min_return:
+                                detected_signals.append({
+                                    'type': 'BUY',
+                                    'name': 'Momentum Surge',
+                                    'description': (
+                                        f'{self.momentum_signal_days} 日累積漲幅 '
+                                        f'{float(n_day_return):.1%}，持續動能'
+                                    ),
+                                    'strength': 'STRONG',
+                                    'price': current_price_data.close_price,
+                                })
 
                 # VCP (Volatility Contraction Pattern) signal
                 # Requires a series of contracting pullbacks + volume contraction
@@ -496,6 +621,18 @@ class TechnicalStrategy:
                         iso = current_date.isocalendar()
                         wk_key = (iso[0], iso[1])
                         w_ma5, w_ma20 = weekly_data.get(wk_key, (None, None))
+                        w_rsi = weekly_rsi_data.get(wk_key)
+                        # Look up most recent revenue on or before current_date
+                        rev_yoy: Optional[float] = None
+                        if revenue_history:
+                            try:
+                                from ...infrastructure.market_data.finmind_client import FinMindRevenueLoader
+                                _loader = FinMindRevenueLoader(api_token=self.finmind_api_token)
+                                rev_data = _loader.get_revenue_on_date(symbol, current_date, revenue_history)
+                                if rev_data:
+                                    rev_yoy = rev_data.get("yoy_pct")
+                            except Exception:
+                                pass
                         signal_type = self._apply_buy_filters(
                             signal_name=signal_data['name'],
                             price=current_price_data.close_price,
@@ -505,6 +642,8 @@ class TechnicalStrategy:
                             weekly_ma20=w_ma20,
                             w52_high=w52_high_by_date.get(current_date) if self.require_52w_filter else None,
                             w52_low=w52_low_by_date.get(current_date) if self.require_52w_filter else None,
+                            weekly_rsi=w_rsi,
+                            revenue_yoy=rev_yoy,
                         )
 
                     # Filter 7: cooldown — downgrade BUY to WATCH if same symbol triggered
@@ -561,6 +700,8 @@ class TechnicalStrategy:
         weekly_ma20: Optional[Decimal] = None,
         w52_high: Optional[Decimal] = None,
         w52_low: Optional[Decimal] = None,
+        weekly_rsi: Optional[Decimal] = None,
+        revenue_yoy: Optional[float] = None,
     ) -> SignalType:
         """Apply quality filters to a BUY signal.
 
@@ -679,6 +820,24 @@ class TechnicalStrategy:
                         f"(> {float(self.near_52w_high_pct):.0%}) → WATCH"
                     )
                     return SignalType.WATCH
+
+        # Filter 10: weekly RSI bullish momentum
+        if self.require_weekly_rsi and weekly_rsi is not None:
+            if weekly_rsi < self.weekly_rsi_min:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: weekly RSI {float(weekly_rsi):.1f} "
+                    f"< {float(self.weekly_rsi_min):.1f} → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 11: monthly revenue YoY growth (fundamental filter)
+        if self.require_revenue_growth and revenue_yoy is not None:
+            if revenue_yoy < self.revenue_yoy_min_pct:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: revenue YoY {revenue_yoy:.1f}% "
+                    f"< {self.revenue_yoy_min_pct:.1f}% → WATCH"
+                )
+                return SignalType.WATCH
 
         return SignalType.BUY
 

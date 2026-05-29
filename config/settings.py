@@ -346,6 +346,26 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_ATR_STOP_MULTIPLIER",
         description="ATR 動態停損乘數（停損距離 = ATR × 此值），0 = 停用 ATR 停損，改用固定百分比",
     )
+    pre_breakout_mode: bool = Field(
+        default=True,
+        env="BACKTEST_PRE_BREAKOUT_MODE",
+        description="True = 前置突破訊號（接近但未突破）；False = 確認突破訊號（收盤已突破）",
+    )
+    enable_momentum_signal: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_MOMENTUM_SIGNAL",
+        description="啟用多日動能訊號（過去 N 天持續上漲）",
+    )
+    momentum_signal_days: int = Field(
+        default=5,
+        env="BACKTEST_MOMENTUM_SIGNAL_DAYS",
+        description="多日動能訊號的觀察天數（default 5）",
+    )
+    momentum_signal_min_return: float = Field(
+        default=0.03,
+        env="BACKTEST_MOMENTUM_SIGNAL_MIN_RETURN",
+        description="多日動能訊號的最低累積漲幅（default 3%）",
+    )
 
     # ── TechnicalStrategy 對應參數（與 strategy.py 一致）───────────
     # Filter 1: 停用的訊號名稱（逗號分隔）
@@ -642,6 +662,34 @@ class BacktestSettings(BaseSettings):
         default=0.35,
         env="BACKTEST_NEAR_52W_HIGH_PCT",
         description="現價距 52 週高點不超過此百分比（0.35 = 35%，回測最佳值）",
+    )
+
+    # ── 週線 RSI 過濾 ──────────────────────────────────────────────
+    # 要求週 RSI(14) >= weekly_rsi_min 才允許進場，過濾週線動能不足的假突破
+    # 週線 RSI 使用 Wilder's smoothing，與 talib RSI 相同算法
+    require_weekly_rsi: bool = Field(
+        default=False,
+        env="BACKTEST_REQUIRE_WEEKLY_RSI",
+        description="True = 要求週線 RSI(14) >= weekly_rsi_min 才允許進場",
+    )
+    weekly_rsi_min: float = Field(
+        default=50.0,
+        env="BACKTEST_WEEKLY_RSI_MIN",
+        description="週線 RSI 最低門檻（50 = 多空分界，動能向上才進場）",
+    )
+
+    # ── 月營收 YoY 過濾（基本面）──────────────────────────────────
+    # 進場前確認最近月營收年增率 >= revenue_yoy_min_pct，過濾業績衰退股
+    # 資料來源：FinMind TaiwanStockMonthRevenue（需 FINMIND_API_TOKEN）
+    require_revenue_growth: bool = Field(
+        default=False,
+        env="BACKTEST_REQUIRE_REVENUE_GROWTH",
+        description="True = 要求最近月營收 YoY >= revenue_yoy_min_pct 才允許進場",
+    )
+    revenue_yoy_min_pct: float = Field(
+        default=0.0,
+        env="BACKTEST_REVENUE_YOY_MIN_PCT",
+        description="月營收年增率最低門檻（%；0 = 只要不衰退，正成長即可）",
     )
 
     # ── CANSLIM EPS 年增率過濾 ──────────────────────────────────────

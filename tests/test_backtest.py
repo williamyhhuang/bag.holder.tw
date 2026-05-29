@@ -539,7 +539,7 @@ class TestTechnicalStrategy:
         # Inject two BUY signals 3 trading days apart via mock SignalDetector
         call_count = [0]
 
-        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+        def fake_detect(current_indicators, previous_indicators, current_price, volume, **kwargs):
             call_count[0] += 1
             # Emit a BUY on calls 50 and 53 (3 days apart, within cooldown=5)
             if call_count[0] in (50, 53):
@@ -573,7 +573,7 @@ class TestTechnicalStrategy:
         price_data = self._make_price_series("TEST", n=120)
         call_count = [0]
 
-        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+        def fake_detect(current_indicators, previous_indicators, current_price, volume, **kwargs):
             call_count[0] += 1
             # Emit BUY on call 40 and call 50 (10 days apart, beyond cooldown=3)
             if call_count[0] in (40, 50):
@@ -604,7 +604,7 @@ class TestTechnicalStrategy:
         price_data = self._make_price_series("TEST", n=120)
         call_count = [0]
 
-        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+        def fake_detect(current_indicators, previous_indicators, current_price, volume, **kwargs):
             call_count[0] += 1
             if call_count[0] in (40, 41, 42):
                 return [{'type': 'BUY', 'name': 'Golden Cross',
@@ -643,7 +643,7 @@ class TestTechnicalStrategy:
         price_data = self._make_price_series("TEST", n=120)
         call_count = [0]
 
-        def fake_detect(current_indicators, previous_indicators, current_price, volume):
+        def fake_detect(current_indicators, previous_indicators, current_price, volume, **kwargs):
             call_count[0] += 1
             # call 50 lands before start_date; call 58 is ~8 trading days later (within cooldown=10)
             if call_count[0] in (50, 58):
@@ -2634,6 +2634,196 @@ class TestVCPDetection:
         strategy = TechnicalStrategy(enable_vcp=True, vcp_lookback=60)
         assert strategy.enable_vcp is True
         assert strategy.vcp_lookback == 60
+
+
+class TestWeeklyRsiFilter:
+    """Tests for weekly RSI filter (Filter 10)."""
+
+    def _make_strategy(self, require_weekly_rsi=True, weekly_rsi_min=50.0):
+        return TechnicalStrategy(require_weekly_rsi=require_weekly_rsi, weekly_rsi_min=weekly_rsi_min)
+
+    def test_weekly_rsi_blocks_when_below_min(self):
+        """Signal should be blocked when weekly RSI < min threshold."""
+        strategy = self._make_strategy(require_weekly_rsi=True, weekly_rsi_min=50.0)
+        indicators = TechnicalIndicators(
+            date=date(2024, 1, 5), ma5=Decimal('105'), ma20=Decimal('100'),
+            ma10=None, ma60=Decimal('90'), rsi14=Decimal('55'),
+            macd=Decimal('1'), macd_signal=Decimal('0.5'), macd_histogram=Decimal('0.5'),
+            bb_upper=Decimal('115'), bb_middle=Decimal('100'), bb_lower=Decimal('85'),
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=indicators,
+            weekly_rsi=Decimal('45.0'),  # below 50 → should block
+        )
+        assert result == SignalType.WATCH
+
+    def test_weekly_rsi_passes_when_above_min(self):
+        """Signal should pass when weekly RSI >= min threshold."""
+        strategy = self._make_strategy(require_weekly_rsi=True, weekly_rsi_min=50.0)
+        indicators = TechnicalIndicators(
+            date=date(2024, 1, 5), ma5=Decimal('105'), ma20=Decimal('100'),
+            ma10=None, ma60=Decimal('90'), rsi14=Decimal('55'),
+            macd=Decimal('1'), macd_signal=Decimal('0.5'), macd_histogram=Decimal('0.5'),
+            bb_upper=Decimal('115'), bb_middle=Decimal('100'), bb_lower=Decimal('85'),
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=indicators,
+            weekly_rsi=Decimal('55.0'),  # above 50 → should pass
+        )
+        assert result == SignalType.BUY
+
+    def test_weekly_rsi_disabled_ignores_rsi(self):
+        """When require_weekly_rsi=False, weekly RSI value should be ignored."""
+        strategy = self._make_strategy(require_weekly_rsi=False)
+        indicators = TechnicalIndicators(
+            date=date(2024, 1, 5), ma5=Decimal('105'), ma20=Decimal('100'),
+            ma10=None, ma60=Decimal('90'), rsi14=Decimal('55'),
+            macd=Decimal('1'), macd_signal=Decimal('0.5'), macd_histogram=Decimal('0.5'),
+            bb_upper=Decimal('115'), bb_middle=Decimal('100'), bb_lower=Decimal('85'),
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=indicators,
+            weekly_rsi=Decimal('10.0'),  # very low, but filter disabled → should pass
+        )
+        assert result == SignalType.BUY
+
+    def test_weekly_rsi_none_does_not_block(self):
+        """When weekly RSI data is unavailable (None), should not block."""
+        strategy = self._make_strategy(require_weekly_rsi=True, weekly_rsi_min=50.0)
+        indicators = TechnicalIndicators(
+            date=date(2024, 1, 5), ma5=Decimal('105'), ma20=Decimal('100'),
+            ma10=None, ma60=Decimal('90'), rsi14=Decimal('55'),
+            macd=Decimal('1'), macd_signal=Decimal('0.5'), macd_histogram=Decimal('0.5'),
+            bb_upper=Decimal('115'), bb_middle=Decimal('100'), bb_lower=Decimal('85'),
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=indicators,
+            weekly_rsi=None,  # no data → should not block
+        )
+        assert result == SignalType.BUY
+
+    def test_calculate_weekly_rsi_values(self):
+        """_calculate_weekly_rsi should produce RSI values in [0, 100]."""
+        from src.application.services.backtest_strategy import _calculate_weekly_rsi
+        # 20 weeks of rising prices
+        weekly_closes = [
+            (date(2024, 1, 5) + timedelta(weeks=i), Decimal(str(100 + i * 2)))
+            for i in range(20)
+        ]
+        rsi_map = _calculate_weekly_rsi(weekly_closes, period=14)
+        assert len(rsi_map) > 0
+        for v in rsi_map.values():
+            assert Decimal('0') <= v <= Decimal('100'), f"RSI {v} out of range"
+
+    def test_calculate_weekly_rsi_rising_above_50(self):
+        """Consistently rising prices should produce weekly RSI > 50."""
+        from src.application.services.backtest_strategy import _calculate_weekly_rsi
+        weekly_closes = [
+            (date(2024, 1, 5) + timedelta(weeks=i), Decimal(str(100 + i * 3)))
+            for i in range(25)
+        ]
+        rsi_map = _calculate_weekly_rsi(weekly_closes, period=14)
+        latest_rsi = sorted(rsi_map.items())[-1][1]
+        assert latest_rsi > Decimal('50'), f"Rising prices should have RSI > 50, got {latest_rsi}"
+
+
+class TestRevenueGrowthFilter:
+    """Tests for monthly revenue YoY growth filter (Filter 11)."""
+
+    def _make_strategy(self, require_revenue_growth=True, revenue_yoy_min_pct=0.0):
+        return TechnicalStrategy(
+            require_revenue_growth=require_revenue_growth,
+            revenue_yoy_min_pct=revenue_yoy_min_pct,
+        )
+
+    def _make_indicators(self):
+        return TechnicalIndicators(
+            date=date(2024, 1, 5), ma5=Decimal('105'), ma20=Decimal('100'),
+            ma10=None, ma60=Decimal('90'), rsi14=Decimal('55'),
+            macd=Decimal('1'), macd_signal=Decimal('0.5'), macd_histogram=Decimal('0.5'),
+            bb_upper=Decimal('115'), bb_middle=Decimal('100'), bb_lower=Decimal('85'),
+            volume_ma20=Decimal('500000'), atr14=None,
+        )
+
+    def test_revenue_growth_blocks_negative_yoy(self):
+        """Signal blocked when revenue YoY < threshold (default 0 = positive growth required)."""
+        strategy = self._make_strategy(require_revenue_growth=True, revenue_yoy_min_pct=0.0)
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=self._make_indicators(),
+            revenue_yoy=-5.0,  # negative YoY → block
+        )
+        assert result == SignalType.WATCH
+
+    def test_revenue_growth_passes_positive_yoy(self):
+        """Signal passes when revenue YoY >= threshold."""
+        strategy = self._make_strategy(require_revenue_growth=True, revenue_yoy_min_pct=0.0)
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=self._make_indicators(),
+            revenue_yoy=10.0,  # positive YoY → pass
+        )
+        assert result == SignalType.BUY
+
+    def test_revenue_growth_disabled_ignores_yoy(self):
+        """When require_revenue_growth=False, revenue_yoy is ignored."""
+        strategy = self._make_strategy(require_revenue_growth=False)
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=self._make_indicators(),
+            revenue_yoy=-50.0,  # very bad, but filter disabled → pass
+        )
+        assert result == SignalType.BUY
+
+    def test_revenue_growth_none_does_not_block(self):
+        """When revenue data unavailable (None), should not block."""
+        strategy = self._make_strategy(require_revenue_growth=True, revenue_yoy_min_pct=5.0)
+        result = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout',
+            price=Decimal('104'),
+            volume=1_000_000,
+            indicators=self._make_indicators(),
+            revenue_yoy=None,  # no data → should not block
+        )
+        assert result == SignalType.BUY
+
+    def test_revenue_growth_custom_threshold(self):
+        """Revenue YoY must exceed custom threshold (e.g. 10%)."""
+        strategy = self._make_strategy(require_revenue_growth=True, revenue_yoy_min_pct=10.0)
+        # 8% < 10% → block
+        result_low = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout', price=Decimal('104'),
+            volume=1_000_000, indicators=self._make_indicators(), revenue_yoy=8.0,
+        )
+        assert result_low == SignalType.WATCH
+        # 12% >= 10% → pass
+        result_high = strategy._apply_buy_filters(
+            signal_name='Donchian Breakout', price=Decimal('104'),
+            volume=1_000_000, indicators=self._make_indicators(), revenue_yoy=12.0,
+        )
+        assert result_high == SignalType.BUY
 
 
 class TestSectorMomentumWhitelist:

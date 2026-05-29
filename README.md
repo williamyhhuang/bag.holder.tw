@@ -1524,6 +1524,14 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.14.0 - 2026-05-30
+- 📈 **週線 RSI 過濾（Filter 10）**：新增 `BACKTEST_REQUIRE_WEEKLY_RSI` / `BACKTEST_WEEKLY_RSI_MIN` 參數，要求週 RSI(14) ≥ 門檻（預設 50）才允許進場，使用 Wilder's smoothing 算法與 talib 一致
+  - 範例：`BACKTEST_REQUIRE_WEEKLY_RSI=true BACKTEST_WEEKLY_RSI_MIN=50`
+- 💰 **月營收 YoY 過濾（Filter 11）**：新增 `BACKTEST_REQUIRE_REVENUE_GROWTH` / `BACKTEST_REVENUE_YOY_MIN_PCT` 參數，進場前確認最近月營收年增率 ≥ 門檻
+  - 資料來源：FinMind TaiwanStockMonthRevenue（需 `FINMIND_API_TOKEN`，免費帳號每小時 600 次）
+  - 範例：`BACKTEST_REQUIRE_REVENUE_GROWTH=true BACKTEST_REVENUE_YOY_MIN_PCT=0` （正成長即可）
+  - 範例：`BACKTEST_REQUIRE_REVENUE_GROWTH=true BACKTEST_REVENUE_YOY_MIN_PCT=10` （年增率 ≥ 10%）
+
 ### v3.13.0 - 2026-05-13
 - 🔒 **VPC + 固定 IP (Static NAT)**：所有 Cloud Run Jobs/Service 改走 Direct VPC Egress，透過 Cloud NAT 以固定靜態 IP 對外連線，可設定為 Fubon API Key 的 IP 白名單，防止 API Key 外流被濫用下單
   - 新增 `google_compute_address.nat_ip`（靜態外部 IP）、VPC Network/Subnetwork、Cloud Router、Cloud NAT
