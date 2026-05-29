@@ -50,7 +50,7 @@ def _mock_client():
 
 def _mock_recorder(should_fail: bool = False):
     """Return an MTXSheetsRecorder whose worksheet is mocked."""
-    recorder = MTXSheetsRecorder(worksheet_name="微台交易紀錄")
+    recorder = MTXSheetsRecorder(worksheet_name="單元測試")
     recorder._worksheet = _mock_worksheet()
     if should_fail:
         recorder._worksheet.append_row.side_effect = Exception("Network error")
@@ -369,5 +369,5 @@ class TestMTXAutoTraderToggle:
 
     def test_sim_worksheet_name_used(self):
         """MTXSheetsRecorder should use the configured worksheet name."""
-        recorder = MTXSheetsRecorder(worksheet_name="微台交易紀錄")
-        assert recorder._ws_name == "微台交易紀錄"
+        recorder = MTXSheetsRecorder(worksheet_name="單元測試")
+        assert recorder._ws_name == "單元測試"
