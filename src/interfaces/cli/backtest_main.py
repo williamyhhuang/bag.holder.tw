@@ -62,6 +62,9 @@ class BacktestRunner:
             weekly_close_only=cfg.weekly_close_only,
             require_minervini_trend=cfg.require_minervini_trend,
             min_confirming_signals=cfg.min_confirming_signals,
+            enable_weekly_signals=cfg.enable_weekly_signals,
+            weekly_bb_period=cfg.weekly_bb_period,
+            weekly_donchian_period=cfg.weekly_donchian_period,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

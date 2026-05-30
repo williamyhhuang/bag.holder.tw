@@ -116,6 +116,78 @@ def _build_weekly_closes(price_data: List[StockData]) -> List[Tuple[date, Decima
     return sorted(weekly.values(), key=lambda x: x[0])
 
 
+def _build_weekly_ohlcv(
+    price_data: List[StockData],
+) -> List[Tuple[date, Decimal, Decimal, Decimal, Decimal]]:
+    """
+    Aggregate daily OHLCV to weekly (ISO week).
+    Returns list of (week_last_date, open, high, low, close) sorted chronologically.
+    Open = first day's open, High = week high, Low = week low, Close = last day's close.
+    """
+    weekly: Dict[Tuple[int, int], list] = {}
+    for data in sorted(price_data, key=lambda x: x.date):
+        iso = data.date.isocalendar()
+        key = (iso[0], iso[1])
+        if key not in weekly:
+            weekly[key] = [data.date, data.open_price, data.high_price, data.low_price, data.close_price]
+        else:
+            # update: last date, expand high/low, update close
+            weekly[key][0] = data.date
+            if data.high_price > weekly[key][2]:
+                weekly[key][2] = data.high_price
+            if data.low_price < weekly[key][3]:
+                weekly[key][3] = data.low_price
+            weekly[key][4] = data.close_price
+    return sorted(
+        [(row[0], row[1], row[2], row[3], row[4]) for row in weekly.values()],
+        key=lambda x: x[0],
+    )
+
+
+def _compute_weekly_bollinger(
+    weekly_ohlcv: List[Tuple[date, Decimal, Decimal, Decimal, Decimal]],
+    period: int = 20,
+    std_dev: float = 2.0,
+) -> Dict[date, Tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]]:
+    """
+    Compute Bollinger Bands on weekly closes.
+    Returns {week_last_date: (bb_upper, bb_middle, bb_lower)}.
+    """
+    result: Dict[date, Tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]] = {}
+    closes = [row[4] for row in weekly_ohlcv]
+    dates = [row[0] for row in weekly_ohlcv]
+    for i in range(period - 1, len(closes)):
+        window = [float(c) for c in closes[i - period + 1: i + 1]]
+        mean = sum(window) / period
+        variance = sum((x - mean) ** 2 for x in window) / period
+        std = variance ** 0.5
+        mult = std_dev * std
+        result[dates[i]] = (
+            Decimal(str(round(mean + mult, 4))),
+            Decimal(str(round(mean, 4))),
+            Decimal(str(round(mean - mult, 4))),
+        )
+    return result
+
+
+def _compute_weekly_donchian_high(
+    weekly_ohlcv: List[Tuple[date, Decimal, Decimal, Decimal, Decimal]],
+    period: int = 10,
+) -> Dict[date, Optional[Decimal]]:
+    """
+    Compute rolling N-week high (using weekly high) for Donchian channel.
+    Returns {week_last_date: N-week high of prior N weeks (excludes current week)}.
+    """
+    result: Dict[date, Optional[Decimal]] = {}
+    highs = [row[2] for row in weekly_ohlcv]
+    dates = [row[0] for row in weekly_ohlcv]
+    for i in range(period, len(highs)):
+        # Use prior `period` weeks (not including current) to avoid look-ahead
+        prior_highs = highs[i - period: i]
+        result[dates[i]] = max(prior_highs)
+    return result
+
+
 def _calculate_weekly_rsi(weekly_closes: List[Tuple[date, Decimal]], period: int = 14) -> Dict[Tuple[int, int], Decimal]:
     """Calculate RSI for weekly closes using Wilder's smoothing (same as talib).
 
@@ -192,6 +264,8 @@ class TechnicalStrategy:
         "MACD Golden Cross",
         "Volume Surge",
         "BB Squeeze Break",
+        "Weekly BB Squeeze Break",
+        "Weekly Donchian Breakout",
     ]
 
     # Mean-reversion signals that should skip the RSI min entry filter
@@ -236,6 +310,9 @@ class TechnicalStrategy:
         weekly_close_only: bool = False,
         require_minervini_trend: bool = False,
         min_confirming_signals: int = 1,
+        enable_weekly_signals: bool = False,
+        weekly_bb_period: int = 20,
+        weekly_donchian_period: int = 10,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -284,6 +361,10 @@ class TechnicalStrategy:
         self.require_minervini_trend = require_minervini_trend
         # Filter 15: multi-signal confirmation — BUY only when >= N signals agree on the same day
         self.min_confirming_signals = min_confirming_signals
+        # Weekly signals: BB Squeeze Break and Donchian on weekly timeframe
+        self.enable_weekly_signals = enable_weekly_signals
+        self.weekly_bb_period = weekly_bb_period
+        self.weekly_donchian_period = weekly_donchian_period
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -295,6 +376,9 @@ class TechnicalStrategy:
         self.weekly_ma_cache: Dict[str, Dict[Tuple[int, int], Tuple[Optional[Decimal], Optional[Decimal]]]] = {}
         # Weekly RSI cache: symbol -> {(iso_year, iso_week): rsi}
         self.weekly_rsi_cache: Dict[str, Dict[Tuple[int, int], Decimal]] = {}
+        # Weekly signal caches: symbol -> {date: ...}
+        self.weekly_bb_cache: Dict[str, Dict[date, Tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]]] = {}
+        self.weekly_donchian_cache: Dict[str, Dict[date, Optional[Decimal]]] = {}
         # Revenue cache: symbol -> {date_str -> {revenue, yoy_pct}}
         self.revenue_cache: Dict[str, Dict[str, dict]] = {}
 
@@ -448,8 +532,10 @@ class TechnicalStrategy:
 
             # Direction 2: pre-compute the last trading day of each ISO week
             # so we only enter positions on weekly close (reduces noise from intra-week signals)
+            # Pre-compute last trading day of each ISO week (used by weekly_close_only
+            # and by enable_weekly_signals — weekly signals only fire on week end)
             weekly_last_trading_days: Set[date] = set()
-            if self.weekly_close_only:
+            if self.weekly_close_only or self.enable_weekly_signals:
                 for j in range(len(sorted_dates) - 1):
                     if sorted_dates[j].isocalendar()[1] != sorted_dates[j + 1].isocalendar()[1]:
                         weekly_last_trading_days.add(sorted_dates[j])
@@ -483,6 +569,17 @@ class TechnicalStrategy:
                 weekly_rsi_data = self.weekly_rsi_cache[symbol]
             else:
                 weekly_rsi_data = {}
+
+            # Weekly signal indicators: BB and Donchian on weekly OHLCV
+            weekly_bb_data: Dict[date, Tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]] = {}
+            weekly_donchian_data: Dict[date, Optional[Decimal]] = {}
+            if self.enable_weekly_signals:
+                if symbol not in self.weekly_bb_cache:
+                    wohlcv = _build_weekly_ohlcv(price_data)
+                    self.weekly_bb_cache[symbol] = _compute_weekly_bollinger(wohlcv, self.weekly_bb_period)
+                    self.weekly_donchian_cache[symbol] = _compute_weekly_donchian_high(wohlcv, self.weekly_donchian_period)
+                weekly_bb_data = self.weekly_bb_cache[symbol]
+                weekly_donchian_data = self.weekly_donchian_cache[symbol]
 
             # Filter 11: pre-load monthly revenue history from FinMind
             if self.require_revenue_growth and self.finmind_api_token:
@@ -620,6 +717,42 @@ class TechnicalStrategy:
                                     'strength': 'STRONG',
                                     'price': current_price_data.close_price,
                                 })
+
+                # Weekly signals — only fire on the last trading day of each ISO week
+                if self.enable_weekly_signals and current_date in weekly_last_trading_days:
+                    close = current_price_data.close_price
+
+                    # Weekly BB Squeeze Break: price in top 30% of weekly BB (pre-breakout)
+                    bb_tuple = weekly_bb_data.get(current_date)
+                    if bb_tuple is not None:
+                        w_upper, w_middle, _ = bb_tuple
+                        if w_upper is not None and w_middle is not None and w_upper > w_middle:
+                            threshold = w_middle + Decimal('0.7') * (w_upper - w_middle)
+                            if threshold < close < w_upper:
+                                detected_signals.append({
+                                    'type': 'BUY',
+                                    'name': 'Weekly BB Squeeze Break',
+                                    'description': (
+                                        f'週線 BB 擠壓突破前置：價格位於週 BB 上軌 70% 位置以上'
+                                        f'（收盤 {float(close):.2f}，週 BB 中軌 {float(w_middle):.2f}，上軌 {float(w_upper):.2f}）'
+                                    ),
+                                    'strength': 'STRONG',
+                                    'price': close,
+                                })
+
+                    # Weekly Donchian Breakout: close above prior N-week high
+                    w_donchian_high = weekly_donchian_data.get(current_date)
+                    if w_donchian_high is not None and close > w_donchian_high:
+                        detected_signals.append({
+                            'type': 'BUY',
+                            'name': 'Weekly Donchian Breakout',
+                            'description': (
+                                f'週線突破近 {self.weekly_donchian_period} 週最高'
+                                f'（收盤 {float(close):.2f} > {self.weekly_donchian_period} 週高 {float(w_donchian_high):.2f}）'
+                            ),
+                            'strength': 'STRONG',
+                            'price': close,
+                        })
 
                 # VCP (Volatility Contraction Pattern) signal
                 # Requires a series of contracting pullbacks + volume contraction

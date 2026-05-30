@@ -951,6 +951,46 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.16.0 - 2026-05-31
+
+**週線訊號擴充（方向 A：擴大信號來源）**
+
+新增 `Weekly BB Squeeze Break` 與 `Weekly Donchian Breakout` 兩種週線訊號，
+只在每週最後一個交易日觸發，捕捉較高時間框架的突破，擴大可進場信號來源。
+
+**回測結果對比（2022-01-01 ~ 2026-05-31）：**
+
+| 指標 | Baseline | factor ranking top_n=15 | 週線信號 only |
+|---|---|---|---|
+| 總報酬率 | 38.16% | 20.78% | **70.16%** |
+| 夏普比率 | 0.64 | **1.00** | 0.83 |
+| 最大回撤 | 10.68% | **4.06%** | 12.18% |
+| 勝率 | 53.08% | **59.04%** | 52.70% |
+| 交易次數 | 422 | 83 | 611 |
+
+週線信號的選擇策略：
+- **最高 Sharpe（風險調整後最佳）**：factor ranking top_n=15（1.00）
+- **最高絕對報酬**：週線信號 only（70.16%）
+- 兩者無法同時啟用（factor ranking 的嚴格過濾會清空週線信號）
+
+**新增設定：**
+```env
+BACKTEST_ENABLE_WEEKLY_SIGNALS=false   # 啟用週線訊號（預設關閉）
+BACKTEST_WEEKLY_BB_PERIOD=20           # 週線 BB 計算週期（週數）
+BACKTEST_WEEKLY_DONCHIAN_PERIOD=10     # 週線 Donchian 計算週期（週數，10週≈50日）
+```
+
+**使用範例：**
+```bash
+# 週線信號回測
+BACKTEST_ENABLE_WEEKLY_SIGNALS=true python -m src.interfaces.cli.backtest_main
+
+# 即時掃描也自動啟用週線信號（同一設定）
+python main.py scan
+```
+
+---
+
 ### v5.15.0 - 2026-05-30
 
 **Phase 1 回測整合：因子排名接入回測引擎**

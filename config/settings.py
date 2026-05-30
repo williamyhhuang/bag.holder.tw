@@ -677,6 +677,25 @@ class BacktestSettings(BaseSettings):
         description="計算法人連續買超所需的歷史天數（自然日；預設 30）",
     )
 
+    # ── 週線訊號（方向 A：擴大信號來源）─────────────────────────────
+    # 對週線 OHLCV 計算 BB Squeeze Break 與 Donchian Breakout，
+    # 只在每週最後一個交易日觸發，捕捉較高時間框架的突破。
+    enable_weekly_signals: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_WEEKLY_SIGNALS",
+        description="啟用週線訊號（Weekly BB Squeeze Break、Weekly Donchian Breakout）",
+    )
+    weekly_bb_period: int = Field(
+        default=20,
+        env="BACKTEST_WEEKLY_BB_PERIOD",
+        description="週線 Bollinger Bands 計算週期（週數，預設 20）",
+    )
+    weekly_donchian_period: int = Field(
+        default=10,
+        env="BACKTEST_WEEKLY_DONCHIAN_PERIOD",
+        description="週線 Donchian 突破計算週期（週數，預設 10 = 約 50 個交易日）",
+    )
+
     # ── 52 週高低點過濾（Minervini SEPA 條件）───────────────────────
     # 確保股票處於強勢上升趨勢中：
     #   - 現價距 52 週低點 ≥ above_52w_low_pct（防止接刀）
