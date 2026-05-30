@@ -1271,6 +1271,7 @@ class TechnicalStrategy:
                 r3 = rps_3m_pct.get(sym, 0.5)
                 r6 = rps_6m_pct.get(sym, 0.5)
                 v = vol_ratio_pct.get(sym, 0.5)
+                # 權重與 FactorEngine 一致（見 factor_engine.py 說明）
                 composite[sym] = r3 * 0.25 + r6 * 0.25 + v * 0.20 + 0.5 * 0.30
 
             # Top-N
