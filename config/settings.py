@@ -350,9 +350,9 @@ class BacktestSettings(BaseSettings):
     # 進場後前 N 天不啟動 trailing stop ratcheting，避免跳空上漲後當天回落立即出場
     # 固定停損（stop_loss_pct）仍然全程有效（保護大跌）
     min_holding_days: int = Field(
-        default=5,
+        default=21,
         env="BACKTEST_MIN_HOLDING_DAYS",
-        description="最小持倉天數：進場後前 N 個日曆天不啟動 trailing stop ratchet（固定停損仍有效）",
+        description="最小持倉天數：進場後前 N 個日曆天封鎖所有停損出場（含固定停損、trailing stop、SELL訊號），僅允許停利",
     )
     pre_breakout_mode: bool = Field(
         default=True,
