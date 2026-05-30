@@ -116,74 +116,6 @@ def run_check_holdings(args):
         logger.error(f"Check-holdings command failed: {e}")
         return False
 
-def run_ic_report(args):
-    """Run IC validation report command"""
-    import sys
-    sys.path.insert(0, str(project_root))
-
-    from src.infrastructure.market_data.backtest_data_source import YFinanceDataSource
-    from src.application.services.ic_validator import ICValidator
-    from config.settings import settings
-    from pathlib import Path
-    from datetime import date
-
-    forward_days = getattr(args, 'forward_days', [5, 10, 20])
-    factors = getattr(args, 'factors', None)
-    sampling_freq = getattr(args, 'sampling_freq', 5)
-
-    print("載入股票資料...")
-    data_source = YFinanceDataSource()
-    cfg = settings.backtest
-    start_date = cfg.start_date
-    end_date = date.today()
-
-    stock_data = data_source.load_from_stocks_dir(
-        stocks_dir=str(project_root / "data" / "stocks"),
-        start_date=start_date - __import__('datetime').timedelta(days=200),
-        end_date=end_date,
-    )
-    print(f"載入完成：{len(stock_data)} 支股票")
-
-    print(f"開始 IC 驗證（取樣頻率：每 {sampling_freq} 個交易日）...")
-    validator = ICValidator()
-    report = validator.run(
-        stock_data_dict=stock_data,
-        factors=factors,
-        forward_days=forward_days,
-        start_date=start_date,
-        end_date=end_date,
-        sampling_freq=sampling_freq,
-    )
-
-    # 輸出到終端
-    print("\n" + "=" * 70)
-    print("IC 驗證報告")
-    print("=" * 70)
-    print(report.summary_table())
-    print("=" * 70)
-
-    passed = [r for r in report.results if r.is_significant and r.has_predictive_power]
-    failed = [r for r in report.results if not (r.is_significant and r.has_predictive_power)]
-    print(f"\n通過驗證：{len(passed)} 個因子/期間組合")
-    print(f"未通過  ：{len(failed)} 個因子/期間組合")
-
-    # 輸出到 reports/ic_report.md
-    reports_dir = project_root / "reports"
-    reports_dir.mkdir(exist_ok=True)
-    report_path = reports_dir / "ic_report.md"
-
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write("# IC 驗證報告（Phase 2）\n\n")
-        f.write(report.summary_table())
-        f.write("\n\n## 驗收標準\n")
-        f.write("- IC 均值 > 0.02 → 有預測力\n")
-        f.write("- IC t-stat > 2.0 → 統計顯著\n")
-        f.write("- IC > 0 勝率 > 55% → 方向穩定\n")
-
-    print(f"\n報告已輸出至：{report_path}")
-    return True
-
-
 def run_sync_trades(args):
     """Run sync-trades command"""
     cmd = ['python', '-m', 'src.interfaces.cli.sync_trades_main', 'sync-trades']
@@ -329,27 +261,6 @@ def create_parser():
         help='同步 Fubon 今日成交記錄至 Google Sheets 交易記錄頁籤'
     )
 
-    # IC-report command
-    ic_parser = subparsers.add_parser(
-        'ic-report',
-        help='Phase 2：驗證選股因子的 IC（資訊係數）預測力'
-    )
-    ic_parser.add_argument(
-        '--forward-days', nargs='+', type=int, default=[5, 10, 20],
-        metavar='N',
-        help='預測期間（交易日數），可指定多個，預設 5 10 20'
-    )
-    ic_parser.add_argument(
-        '--factors', nargs='+', default=None,
-        metavar='FACTOR',
-        help='要驗證的因子名稱（預設全部）：rps_3m rps_6m momentum_20d vol_ratio'
-    )
-    ic_parser.add_argument(
-        '--sampling-freq', type=int, default=5,
-        metavar='N',
-        help='每隔幾個交易日取樣一次（預設 5，加速計算；1=每天）'
-    )
-
     return parser
 
 def main():
@@ -380,8 +291,6 @@ def main():
             success = run_check_holdings(args)
         elif args.command == 'sync-trades':
             success = run_sync_trades(args)
-        elif args.command == 'ic-report':
-            success = run_ic_report(args)
         else:
             parser.print_help()
             sys.exit(1)

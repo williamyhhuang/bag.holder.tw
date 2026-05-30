@@ -56,8 +56,6 @@ class BacktestEngine:
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
         self.sector_whitelist: Dict[date, Set[str]] = {}    # date -> set of symbols in strong sectors
-        self.factor_whitelist: Dict[date, Set[str]] = {}    # date -> top-N factor-ranked symbols
-        self.vol_ratio_whitelist: Dict[date, Set[str]] = {}  # date -> stocks above vol_ratio percentile
         # P3-C: regime-based signal routing
         # None = no restriction (all signals allowed in that regime)
         self.market_regime_strong_rsi = market_regime_strong_rsi
@@ -595,24 +593,6 @@ class BacktestEngine:
         """
         self.sector_whitelist = whitelist
 
-    def set_factor_whitelist(self, whitelist: Dict[date, Set[str]]):
-        """Set the daily factor-ranking whitelist for BUY signal filtering (Phase 1).
-
-        Only symbols in the top-N factor score on a given date will be allowed
-        to generate BUY orders.  Pass an empty dict to disable.
-        """
-        self.factor_whitelist = whitelist
-
-    def set_vol_ratio_whitelist(self, whitelist: Dict[date, Set[str]]):
-        """Set the daily vol_ratio pre-filter whitelist (Phase 2 IC finding).
-
-        Only symbols whose vol_ratio is above the market percentile threshold on a
-        given date are allowed to generate BUY orders. Applied before signal
-        generation conceptually — filters the candidate universe.
-        Pass an empty dict to disable.
-        """
-        self.vol_ratio_whitelist = whitelist
-
     def _get_momentum_allowed(self, target_date: date) -> Optional[Set[str]]:
         """Return the allowed symbol set for the most recent whitelist date."""
         if not self.momentum_whitelist:
@@ -631,24 +611,6 @@ class BacktestEngine:
             return None
         return self.sector_whitelist[max(available)]
 
-    def _get_factor_allowed(self, target_date: date) -> Optional[Set[str]]:
-        """Return the factor-ranking allowed symbol set for the given date."""
-        if not self.factor_whitelist:
-            return None
-        available = [d for d in self.factor_whitelist if d <= target_date]
-        if not available:
-            return None
-        return self.factor_whitelist[max(available)]
-
-    def _get_vol_ratio_allowed(self, target_date: date) -> Optional[Set[str]]:
-        """Return the vol_ratio pre-filter allowed symbol set for the given date."""
-        if not self.vol_ratio_whitelist:
-            return None
-        available = [d for d in self.vol_ratio_whitelist if d <= target_date]
-        if not available:
-            return None
-        return self.vol_ratio_whitelist[max(available)]
-
     def process_signals(self, signals: List[TradingSignal], market_bullish: bool = True):
         """Process a list of trading signals for the current date.
 
@@ -664,8 +626,6 @@ class BacktestEngine:
         """
         momentum_allowed = self._get_momentum_allowed(self.current_date)
         sector_allowed = self._get_sector_allowed(self.current_date)
-        factor_allowed = self._get_factor_allowed(self.current_date)
-        vol_ratio_allowed = self._get_vol_ratio_allowed(self.current_date)
         regime = self.get_market_regime(self.current_date) if market_bullish else "WEAK"
 
         for signal in signals:
@@ -701,16 +661,6 @@ class BacktestEngine:
                 if sector_allowed is not None and signal.symbol not in sector_allowed:
                     self.logger.debug(
                         f"Skipping BUY {signal.symbol}: sector not strong enough"
-                    )
-                    continue
-                if factor_allowed is not None and signal.symbol not in factor_allowed:
-                    self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: not in top-N factor ranking"
-                    )
-                    continue
-                if vol_ratio_allowed is not None and signal.symbol not in vol_ratio_allowed:
-                    self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: vol_ratio below market percentile"
                     )
                     continue
                 # P5: apply trend signal multiplier in STRONG regime

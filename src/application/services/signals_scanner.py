@@ -23,9 +23,7 @@ from ...domain.services.sector_trend_analyzer import SectorTrendAnalyzer
 from ...infrastructure.market_data.revenue_filter import MonthlyRevenueLoader, get_revenue_million, get_revenue_yoy
 from ...infrastructure.market_data.disposal_filter import DisposalStockFilter
 from ...infrastructure.market_data.institutional_filter import InstitutionalFlowLoader, InstitutionalFlow
-from ...infrastructure.market_data.institutional_history import InstitutionalHistoryLoader
 from ...infrastructure.market_data.finmind_client import FinMindEpsLoader
-from .factor_engine import FactorEngine
 from ...utils.logger import get_logger
 from ...utils.stock_name_mapper import get_stock_names
 from config.settings import settings
@@ -337,31 +335,6 @@ class SignalsScanner:
         top30 = self._build_momentum_top_n(stock_data, target_date)
         self.logger.info(f"動能前30名: {len(top30) if top30 else '停用'}")
 
-        # 量能比率初篩白名單（Phase 2 IC：vol_ratio 在全市場截面有效）
-        vol_ratio_allowed: Optional[Set[str]] = None
-        if self.cfg.enable_vol_ratio_filter:
-            from .factor_engine import _percentile_rank
-            vol_ratios: Dict[str, float] = {}
-            for sym, data in stock_data.items():
-                valid = [d for d in data if d.date <= target_date]
-                valid.sort(key=lambda d: d.date)
-                if len(valid) < 21:
-                    continue
-                today_vol = float(valid[-1].volume)
-                ma20_vol = sum(float(d.volume) for d in valid[-21:-1]) / 20
-                if ma20_vol > 0:
-                    vol_ratios[sym] = today_vol / ma20_vol
-            if vol_ratios:
-                pct_ranks = _percentile_rank(vol_ratios)
-                vol_ratio_allowed = {
-                    sym for sym, pct in pct_ranks.items()
-                    if pct >= self.cfg.vol_ratio_min_percentile
-                }
-                self.logger.info(
-                    f"量能比率初篩：{len(vol_ratio_allowed)} 支通過"
-                    f"（門檻 {self.cfg.vol_ratio_min_percentile:.0%}）"
-                )
-
         # 計算族群趨勢（若啟用）
         strong_sectors = None
         sector_summary = []
@@ -455,8 +428,6 @@ class SignalsScanner:
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
 
-                in_vol_ratio = vol_ratio_allowed is None or sig.symbol in vol_ratio_allowed
-
                 # 計算建議進場區間與停損
                 price_range = _calculate_price_range(sig.signal_name, sig.price, sig.indicators)
                 if price_range:
@@ -533,10 +504,7 @@ class SignalsScanner:
                             entry["reason"] = f"EPS YoY {eps_yoy:.1f}% < {self.cfg.min_eps_yoy_pct:.0f}%"
                     # 無 EPS 資料時 fail-open（不過濾）
 
-                if not in_vol_ratio:
-                    entry["reason"] = f"量能比率低於市場 {self.cfg.vol_ratio_min_percentile:.0%}"
-                    watch_list.append(entry)
-                elif not in_top30:
+                if not in_top30:
                     entry["reason"] = "動能排名不在前30"
                     watch_list.append(entry)
                 elif not in_strong_sector:
@@ -592,72 +560,6 @@ class SignalsScanner:
             entry["signal"] = " + ".join(sorted(set(entry["signals"])))
             del entry["signals"]
         buy_list = list(buy_by_symbol.values())
-
-        # ── Phase 1 截面因子排名 ──────────────────────────────────────
-        if self.cfg.enable_factor_ranking and buy_list:
-            self.logger.info(
-                f"[Factor] 啟用截面因子排名，候選 {len(buy_list)} 支..."
-            )
-            try:
-                # 載入法人歷史資料（計算連續買超天數）
-                inst_loader = InstitutionalHistoryLoader()
-                inst_consecutive = inst_loader.build_consecutive_days(
-                    end_date=target_date,
-                    n_days=self.cfg.factor_inst_history_days,
-                )
-
-                # 將 display symbol 轉回內部 symbol 以查詢 stock_data
-                display_to_internal: Dict[str, str] = {}
-                for entry in buy_list:
-                    disp = entry["symbol"]
-                    # 反向查找：找出對應內部 symbol
-                    internal = disp + ".TW" if not disp.endswith(".TW") and not disp.endswith("O") else disp
-                    # 使用 stock_data 中的實際 key
-                    for sym in stock_data:
-                        if _display_symbol(sym) == disp:
-                            internal = sym
-                            break
-                    display_to_internal[disp] = internal
-
-                candidate_symbols = list(display_to_internal.values())
-
-                engine = FactorEngine()
-                factor_scores = engine.compute_factor_scores(
-                    stock_data_dict=stock_data,
-                    candidate_symbols=candidate_symbols,
-                    target_date=target_date,
-                    inst_consecutive=inst_consecutive,
-                )
-
-                # 附加因子分數到每筆 entry
-                for entry in buy_list:
-                    internal_sym = display_to_internal.get(entry["symbol"], "")
-                    scores = factor_scores.get(internal_sym)
-                    if scores:
-                        entry["factor_score"] = scores.composite
-                        entry["factor_detail"] = {
-                            "rps_3m": scores.rps_3m,
-                            "rps_6m": scores.rps_6m,
-                            "vol_ratio_rank": scores.vol_ratio_rank,
-                            "inst_score": scores.inst_score,
-                        }
-                    else:
-                        entry["factor_score"] = 0.5  # 無資料時給中位數
-
-                # 依因子分數降序排序
-                buy_list.sort(key=lambda x: x.get("factor_score", 0), reverse=True)
-
-                # 截取前 N 名（0 = 不限制）
-                top_n = self.cfg.factor_ranking_top_n
-                if top_n > 0 and len(buy_list) > top_n:
-                    dropped = len(buy_list) - top_n
-                    self.logger.info(
-                        f"[Factor] 因子排名後保留前 {top_n} 名，移除 {dropped} 支"
-                    )
-                    buy_list = buy_list[:top_n]
-
-            except Exception as exc:
-                self.logger.warning(f"[Factor] 因子排名失敗，使用原始排序: {exc}")
 
         # 賣出：每支股票只保留最嚴重的訊號（MACD Death Cross > Death Cross > RSI Momentum Loss）
         SELL_PRIORITY = {"MACD Death Cross": 0, "Death Cross": 1, "RSI Momentum Loss": 2}
