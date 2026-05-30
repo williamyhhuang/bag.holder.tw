@@ -951,6 +951,46 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.11.0 - 2026-05-30
+
+**訊號系統全面翻新 + 多訊號確認進場**
+
+- 🐛 **修正 RSI Oversold 悖論（Filter 5 平均回歸豁免）**
+  - `RSI Oversold` 訊號在定義上於 RSI < 30 時觸發，但 Filter 5 要求 RSI ≥ 60 進場
+  - 修正：新增 `MEAN_REVERSION_SIGNALS` 類別變數，平均回歸訊號豁免 RSI min entry 門檻
+  - 設定：可擴充（目前包含 `RSI Oversold`）
+
+- 🐛 **修正 BB Squeeze Break / Volume Surge 被 MA 對齊過濾器封鎖**
+  - `BB Squeeze Break` 與 `Volume Surge` 均為突破型訊號，不應受 MA5 > MA10 > MA20 限制
+  - 修正：將兩者加入 `TREND_SIGNAL_NAMES`，與 Donchian Breakout 同等待遇（跳過 Filter 4）
+  - 效果：`BB Squeeze Break` 從 0 交易 → **431 筆交易（勝率 42.9%）**
+
+- 🆕 **多訊號確認進場（Filter 15）**
+  - 要求同一天同一股票有 **≥ N 個獨立 BUY 訊號**才進場，大幅降低假突破率
+  - 預設 `BACKTEST_MIN_CONFIRMING_SIGNALS=2`（2 個訊號確認）
+  - 設定：`BACKTEST_MIN_CONFIRMING_SIGNALS`（1 = 停用，2 = 雙訊號確認）
+
+- 🔧 **延長持倉周期**
+  - `max_holding_days` 從 15 天 → **30 天**（讓趨勢有更多發展空間）
+  - `trailing_stop_pct` 從 3% → **5%**（減少過早止損）
+
+- 🆕 **重新啟用 BB Squeeze Break**
+  - 從 `disabled_signals` 移除 `BB Squeeze Break`
+  - 同步更新 `.env` 與 `config/settings.py` 預設值
+
+- **5年回測結果對比（2021-05-30 ~ 2026-05-30）**
+
+  | 指標 | 修改前 | 修改後 |
+  |------|--------|--------|
+  | 總報酬率 | -83.15% | **-31.95%** (+51.2%) |
+  | 最大回撤 | 83.21% | **32.59%** |
+  | 夏普比率 | -1.73 | **-1.41** |
+  | 勝率 | 40.80% | **43.10%** |
+  | BB Squeeze Break 交易 | 0 次 | **431 次** |
+  | Donchian Breakout 勝率 | 40.9% | **44.5%** |
+
+- ✅ 單元測試：新增 4 個測試（`test_trend_signals_skip_ma_alignment`、`test_rsi_oversold_exempt_from_rsi_min_entry`、`test_min_confirming_signals_blocks_single_signal`、`test_min_confirming_signals_allows_two_signals`），共 143 個測試通過
+
 ### v5.10.0 - 2026-05-29
 - 🆕 **Minervini 52 週高低點過濾（Filter 9）**
   - 新增 `require_52w_filter`（預設 `True`）：股價需在 52 週低點 30% 以上，且距 52 週高點不超過 35%

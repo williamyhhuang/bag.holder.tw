@@ -61,6 +61,7 @@ class BacktestRunner:
             finmind_api_token=settings.finmind.api_token or "",
             weekly_close_only=cfg.weekly_close_only,
             require_minervini_trend=cfg.require_minervini_trend,
+            min_confirming_signals=cfg.min_confirming_signals,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),

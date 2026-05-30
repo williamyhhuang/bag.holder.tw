@@ -353,7 +353,9 @@ class TestTechnicalStrategy:
         assert result_strict == SignalType.WATCH
 
     def test_ma_alignment_fails_blocks_signal(self):
-        """BUY signal should be blocked when MA5 <= MA10 (trend not fully aligned)."""
+        """Non-trend signals should be blocked when MA5 <= MA10 (trend not fully aligned).
+        Note: BB Squeeze Break and Volume Surge are now in TREND_SIGNAL_NAMES so they skip
+        this filter. Use RSI Overbought (a non-trend signal) to verify the filter logic."""
         from src.domain.models import TechnicalIndicators as TI
         indicators = TI(
             date=date(2025, 9, 1),
@@ -362,14 +364,57 @@ class TestTechnicalStrategy:
             ma20=Decimal('90'),
             ma60=Decimal('80'),
             volume_ma20=100000,
+            rsi14=Decimal('55'),  # RSI passes, isolate MA alignment failure
         )
         result = self.strategy._apply_buy_filters(
-            signal_name='BB Squeeze Break',
+            signal_name='RSI Overbought',  # non-trend signal → subject to MA alignment filter
             price=Decimal('100'),
             volume=200000,
             indicators=indicators,
         )
         assert result == SignalType.WATCH
+
+    def test_trend_signals_skip_ma_alignment(self):
+        """BB Squeeze Break and Volume Surge are trend signals — they skip MA alignment filter."""
+        from src.domain.models import TechnicalIndicators as TI
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('95'),    # MA5 < MA10 → misaligned (would block non-trend signals)
+            ma10=Decimal('100'),
+            ma20=Decimal('90'),
+            ma60=Decimal('80'),
+            volume_ma20=100000,
+            rsi14=Decimal('65'),  # RSI passes
+        )
+        for signal_name in ('BB Squeeze Break', 'Volume Surge'):
+            result = self.strategy._apply_buy_filters(
+                signal_name=signal_name,
+                price=Decimal('100'),
+                volume=200000,
+                indicators=indicators,
+            )
+            assert result == SignalType.BUY, f"{signal_name} should skip MA alignment and pass"
+
+    def test_rsi_oversold_exempt_from_rsi_min_entry(self):
+        """RSI Oversold is a mean-reversion signal — it should pass even when RSI < rsi_min_entry."""
+        from src.domain.models import TechnicalIndicators as TI
+        strategy = TechnicalStrategy(rsi_min_entry=50.0)
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'),
+            ma10=Decimal('100'),
+            ma20=Decimal('90'),
+            ma60=Decimal('80'),
+            volume_ma20=100000,
+            rsi14=Decimal('28'),  # RSI < 30 → oversold, but MEAN_REVERSION_SIGNALS bypass filter
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='RSI Oversold',
+            price=Decimal('100'),
+            volume=200000,
+            indicators=indicators,
+        )
+        assert result == SignalType.BUY, "RSI Oversold should bypass RSI min entry filter"
 
     def test_valid_buy_passes_all_filters(self):
         """BUY signal that passes all checks (MA alignment + RSI >= 50) should remain BUY."""
@@ -664,6 +709,69 @@ class TestTechnicalStrategy:
         # call 50 (pre-history) recorded last_buy_date; call 58 is within cooldown → WATCH
         assert len(buy_signals) == 0
         assert len(watch_signals) >= 1
+
+    def test_min_confirming_signals_blocks_single_signal(self):
+        """With min_confirming_signals=2, a single BUY signal should be downgraded to WATCH."""
+        strategy = TechnicalStrategy(
+            min_confirming_signals=2,
+            require_ma60_uptrend=False,
+            require_volume_confirmation=False,
+            rsi_min_entry=0,
+            donchian_period=0,
+            disabled_signals=[],
+        )
+
+        price_data = self._make_price_series("TEST", n=120)
+        call_count = [0]
+
+        def fake_detect(current_indicators, previous_indicators, current_price, volume, **kwargs):
+            call_count[0] += 1
+            # Emit only one BUY on call 50 (single signal → should be downgraded)
+            if call_count[0] == 50:
+                return [{'type': 'BUY', 'name': 'Golden Cross',
+                         'description': 'test', 'strength': 'MEDIUM',
+                         'price': current_price}]
+            return []
+
+        strategy.signal_detector.detect_signals = fake_detect
+        signals = strategy.generate_signals("TEST", price_data)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+
+        # Only 1 BUY signal on that day → downgraded to WATCH
+        assert len(buy_signals) == 0
+
+    def test_min_confirming_signals_allows_two_signals(self):
+        """With min_confirming_signals=2, two BUY signals on the same day should both pass."""
+        strategy = TechnicalStrategy(
+            min_confirming_signals=2,
+            require_ma60_uptrend=False,
+            require_volume_confirmation=False,
+            rsi_min_entry=0,
+            donchian_period=0,
+            disabled_signals=[],
+        )
+
+        price_data = self._make_price_series("TEST", n=120)
+        call_count = [0]
+
+        def fake_detect(current_indicators, previous_indicators, current_price, volume, **kwargs):
+            call_count[0] += 1
+            # Emit TWO distinct BUY signals on call 50 (e.g., Golden Cross + Donchian)
+            if call_count[0] == 50:
+                return [
+                    {'type': 'BUY', 'name': 'Golden Cross',
+                     'description': 'test', 'strength': 'MEDIUM', 'price': current_price},
+                    {'type': 'BUY', 'name': 'Donchian Breakout',
+                     'description': 'test', 'strength': 'STRONG', 'price': current_price},
+                ]
+            return []
+
+        strategy.signal_detector.detect_signals = fake_detect
+        signals = strategy.generate_signals("TEST", price_data)
+        buy_signals = [s for s in signals if s.signal_type == SignalType.BUY]
+
+        # 2 BUY signals on the same day → both remain BUY
+        assert len(buy_signals) == 2
 
 
 class TestPerformanceAnalyzer:

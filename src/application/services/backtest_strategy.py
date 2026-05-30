@@ -190,6 +190,14 @@ class TechnicalStrategy:
         "Donchian Breakout",
         "Golden Cross",
         "MACD Golden Cross",
+        "Volume Surge",
+        "BB Squeeze Break",
+    ]
+
+    # Mean-reversion signals that should skip the RSI min entry filter
+    # (they fire when RSI is LOW by definition, so requiring RSI >= 50 paradoxically blocks all of them)
+    MEAN_REVERSION_SIGNALS: List[str] = [
+        "RSI Oversold",
     ]
 
     def __init__(
@@ -227,6 +235,7 @@ class TechnicalStrategy:
         finmind_api_token: str = "",
         weekly_close_only: bool = False,
         require_minervini_trend: bool = False,
+        min_confirming_signals: int = 1,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -273,6 +282,8 @@ class TechnicalStrategy:
         self.finmind_api_token = finmind_api_token
         self.weekly_close_only = weekly_close_only
         self.require_minervini_trend = require_minervini_trend
+        # Filter 15: multi-signal confirmation — BUY only when >= N signals agree on the same day
+        self.min_confirming_signals = min_confirming_signals
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -702,6 +713,23 @@ class TechnicalStrategy:
 
                     signals.append(trading_signal)
 
+            # Filter 15: multi-signal confirmation
+            # Downgrade BUY to WATCH if fewer than min_confirming_signals BUY signals
+            # agree on the same (symbol, date).  Requires 2+ independent indicators
+            # to fire simultaneously, reducing false positives.
+            if self.min_confirming_signals > 1:
+                from collections import Counter
+                buy_count: dict = Counter(
+                    s.date for s in signals if s.signal_type == SignalType.BUY
+                )
+                for s in signals:
+                    if s.signal_type == SignalType.BUY and buy_count[s.date] < self.min_confirming_signals:
+                        s.signal_type = SignalType.WATCH
+                        self.logger.debug(
+                            f"Signal '{s.signal_name}' on {s.date} downgraded: "
+                            f"only {buy_count[s.date]}/{self.min_confirming_signals} confirming signals → WATCH"
+                        )
+
             self.logger.info(f"Generated {len(signals)} signals for {symbol}")
             return signals
 
@@ -785,7 +813,9 @@ class TechnicalStrategy:
         # A BB breakout with weak RSI (< 50) is typically a false breakout or dead-cat bounce.
         # Evidence: BB Squeeze Break win rate dropped from 54.1% (Q1-2026) to 44.8% (Q4-2025);
         # adding this filter aims to reject low-momentum breakouts that quickly reverse.
-        if self.rsi_min_entry > 0:
+        # Mean-reversion signals (RSI Oversold) are exempt: they fire when RSI is low by design;
+        # requiring RSI >= min_entry would paradoxically block all of them.
+        if self.rsi_min_entry > 0 and signal_name not in self.MEAN_REVERSION_SIGNALS:
             rsi = indicators.rsi14
             if rsi is not None and rsi < self.rsi_min_entry:
                 self.logger.debug(

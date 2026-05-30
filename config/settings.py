@@ -317,15 +317,15 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_STOP_LOSS_PCT",
         description="停損百分比（0.10 = 10%）",
     )
-    # 追蹤停損從 5% 縮至 3%：更早鎖住已實現的利潤
+    # 追蹤停損從 3% 放寬至 5%：給趨勢更多呼吸空間，延長持倉
     trailing_stop_pct: float = Field(
-        default=0.03,
+        default=0.05,
         env="BACKTEST_TRAILING_STOP_PCT",
-        description="追蹤停損百分比（0.03 = 3%）",
+        description="追蹤停損百分比（0.05 = 5%）",
     )
-    # 最長持倉從 30 天縮至 15 天：減少持有不動的死掌
+    # 最長持倉從 15 天延長至 30 天：讓趨勢有足夠發展空間
     max_holding_days: int = Field(
-        default=15,
+        default=30,
         env="BACKTEST_MAX_HOLDING_DAYS",
         description="最長持倉天數",
     )
@@ -372,9 +372,9 @@ class BacktestSettings(BaseSettings):
     # P1 (2026-04-08): 恢復 Golden Cross + MACD Golden Cross
     # 診斷顯示停用它們讓報酬率 -5.90%
     disabled_signals: str = Field(
-        default="BB Squeeze Break",
+        default="",
         env="BACKTEST_DISABLED_SIGNALS",
-        description="停用的訊號名稱，逗號分隔（預設停用 BB Squeeze Break，只用 Donchian Breakout）",
+        description="停用的訊號名稱，逗號分隔（空白 = 全部啟用；BB Squeeze Break 已加入 TREND_SIGNAL_NAMES 可正常觸發）",
     )
     # Filter 2: 個股價格需在 MA60 上方（長期上升趨勢）
     require_ma60_uptrend: bool = Field(
@@ -406,6 +406,14 @@ class BacktestSettings(BaseSettings):
         default=1000,
         env="BACKTEST_MIN_VOLUME_LOTS",
         description="最低成交張數門檻（1 張=1,000 股；0=停用）",
+    )
+    # Filter 15: 多訊號確認進場門檻
+    # 要求同一天同一股票有 >= N 個獨立 BUY 訊號才進場，降低假突破率
+    # 設 1 = 停用（任意單一訊號即可進場），設 2 = 至少兩個訊號同時觸發
+    min_confirming_signals: int = Field(
+        default=2,
+        env="BACKTEST_MIN_CONFIRMING_SIGNALS",
+        description="多訊號確認進場門檻（1=停用；2=同天需 2 個獨立 BUY 訊號）",
     )
 
     # ── 大盤市場環境過濾 ─────────────────────────────────────────────

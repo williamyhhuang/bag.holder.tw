@@ -144,9 +144,9 @@ SCENARIOS: List[Scenario] = [
         require_weekly_trend=True,    # P2: 周線 MA5 > MA20 確認中期趨勢
     ),
     Scenario(
-        name="9_donchian_only",
-        description="停用 BB Squeeze Break，只用 Donchian Breakout（目前生產設定 P2）",
-        disabled_signals=["BB Squeeze Break"],  # 回測最佳：PF 1.35, +6.78%, MDD 8.20%
+        name="9_multi_signal_confirm",
+        description="啟用所有訊號 + 多訊號確認進場（目前生產設定 P3）",
+        disabled_signals=[],  # 全部啟用：BB Squeeze Break 已加入 TREND_SIGNAL_NAMES
         use_market_regime=True,
         market_regime_check_ma5=True,
         market_regime_rsi_threshold=45.0,
