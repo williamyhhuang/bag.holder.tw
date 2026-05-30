@@ -1282,3 +1282,67 @@ class TechnicalStrategy:
             f"Built factor whitelist for {len(whitelist)} dates (top_n={top_n})"
         )
         return whitelist
+
+    def build_vol_ratio_whitelist(
+        self,
+        stock_data_dict: Dict[str, List[StockData]],
+        min_percentile: float = 0.50,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[date, Set[str]]:
+        """Build a daily vol_ratio whitelist: only stocks whose vol_ratio ≥ min_percentile
+        (cross-sectional) are allowed to enter the BUY candidate pool.
+
+        Implements the Phase 2 IC finding: vol_ratio has IC=0.0144, t=3.77 across the
+        full market universe. Applying this filter BEFORE signal generation lets the
+        factor's predictive power work at the pre-candidate stage.
+
+        Args:
+            stock_data_dict: Symbol → list of StockData.
+            min_percentile:  Minimum cross-sectional percentile (0.50 = above median).
+            start_date:      First date to include.
+            end_date:        Last date to include.
+
+        Returns:
+            Dict mapping each trading date to the set of symbols above the percentile.
+        """
+        from .factor_engine import _percentile_rank
+
+        # Collect all unique trading dates
+        all_dates: Set[date] = set()
+        for records in stock_data_dict.values():
+            for r in records:
+                all_dates.add(r.date)
+
+        if start_date:
+            all_dates = {d for d in all_dates if d >= start_date}
+        if end_date:
+            all_dates = {d for d in all_dates if d <= end_date}
+
+        whitelist: Dict[date, Set[str]] = {}
+
+        for target_date in sorted(all_dates):
+            vol_ratios: Dict[str, float] = {}
+            for sym, records in stock_data_dict.items():
+                valid = [r for r in records if r.date <= target_date]
+                valid.sort(key=lambda r: r.date)
+                if len(valid) < 21:
+                    continue
+                today_vol = float(valid[-1].volume)
+                ma20_vol = sum(float(r.volume) for r in valid[-21:-1]) / 20
+                if ma20_vol > 0:
+                    vol_ratios[sym] = today_vol / ma20_vol
+
+            if not vol_ratios:
+                continue
+
+            pct_ranks = _percentile_rank(vol_ratios)
+            whitelist[target_date] = {
+                sym for sym, pct in pct_ranks.items() if pct >= min_percentile
+            }
+
+        self.logger.info(
+            f"Built vol_ratio whitelist for {len(whitelist)} dates "
+            f"(min_percentile={min_percentile:.0%})"
+        )
+        return whitelist

@@ -337,6 +337,31 @@ class SignalsScanner:
         top30 = self._build_momentum_top_n(stock_data, target_date)
         self.logger.info(f"動能前30名: {len(top30) if top30 else '停用'}")
 
+        # 量能比率初篩白名單（Phase 2 IC：vol_ratio 在全市場截面有效）
+        vol_ratio_allowed: Optional[Set[str]] = None
+        if self.cfg.enable_vol_ratio_filter:
+            from .factor_engine import _percentile_rank
+            vol_ratios: Dict[str, float] = {}
+            for sym, data in stock_data.items():
+                valid = [d for d in data if d.date <= target_date]
+                valid.sort(key=lambda d: d.date)
+                if len(valid) < 21:
+                    continue
+                today_vol = float(valid[-1].volume)
+                ma20_vol = sum(float(d.volume) for d in valid[-21:-1]) / 20
+                if ma20_vol > 0:
+                    vol_ratios[sym] = today_vol / ma20_vol
+            if vol_ratios:
+                pct_ranks = _percentile_rank(vol_ratios)
+                vol_ratio_allowed = {
+                    sym for sym, pct in pct_ranks.items()
+                    if pct >= self.cfg.vol_ratio_min_percentile
+                }
+                self.logger.info(
+                    f"量能比率初篩：{len(vol_ratio_allowed)} 支通過"
+                    f"（門檻 {self.cfg.vol_ratio_min_percentile:.0%}）"
+                )
+
         # 計算族群趨勢（若啟用）
         strong_sectors = None
         sector_summary = []
@@ -430,6 +455,8 @@ class SignalsScanner:
                 in_top30 = top30 is None or sig.symbol in top30
                 entry["in_top30"] = in_top30
 
+                in_vol_ratio = vol_ratio_allowed is None or sig.symbol in vol_ratio_allowed
+
                 # 計算建議進場區間與停損
                 price_range = _calculate_price_range(sig.signal_name, sig.price, sig.indicators)
                 if price_range:
@@ -506,7 +533,10 @@ class SignalsScanner:
                             entry["reason"] = f"EPS YoY {eps_yoy:.1f}% < {self.cfg.min_eps_yoy_pct:.0f}%"
                     # 無 EPS 資料時 fail-open（不過濾）
 
-                if not in_top30:
+                if not in_vol_ratio:
+                    entry["reason"] = f"量能比率低於市場 {self.cfg.vol_ratio_min_percentile:.0%}"
+                    watch_list.append(entry)
+                elif not in_top30:
                     entry["reason"] = "動能排名不在前30"
                     watch_list.append(entry)
                 elif not in_strong_sector:

@@ -677,6 +677,21 @@ class BacktestSettings(BaseSettings):
         description="計算法人連續買超所需的歷史天數（自然日；預設 30）",
     )
 
+    # ── 量能比率初篩（Phase 2 IC 驗證結果：vol_ratio 在全市場截面 IC 顯著）──
+    # 在技術訊號觸發前過濾：只允許當日量能比率高於全市場前 X% 的股票進入候選池。
+    # IC 驗證顯示 vol_ratio 20日 IC=0.0144, t=3.77，但此效果在技術訊號候選池中
+    # 已被部分吸收，故在候選池形成前啟用才能發揮完整預測力。
+    enable_vol_ratio_filter: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_VOL_RATIO_FILTER",
+        description="啟用量能比率初篩（Phase 2 IC 驗證）；預設關閉",
+    )
+    vol_ratio_min_percentile: float = Field(
+        default=0.50,
+        env="BACKTEST_VOL_RATIO_MIN_PERCENTILE",
+        description="量能比率最低截面百分位（0.50=市場中位數，0.70=前30%；預設 0.50）",
+    )
+
     # ── 52 週高低點過濾（Minervini SEPA 條件）───────────────────────
     # 確保股票處於強勢上升趨勢中：
     #   - 現價距 52 週低點 ≥ above_52w_low_pct（防止接刀）
