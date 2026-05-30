@@ -326,6 +326,25 @@ class BacktestRunner:
             else:
                 self.logger.info("Step 5c: Sector trend filter disabled")
 
+            # Step 5d: Build factor whitelist (Phase 1 截面因子排名)
+            if cfg.enable_factor_ranking and cfg.factor_ranking_top_n > 0:
+                self.logger.info(
+                    f"Step 5d: Building factor whitelist "
+                    f"(top_n={cfg.factor_ranking_top_n})..."
+                )
+                factor_whitelist = self.strategy.build_factor_whitelist(
+                    stock_data_dict=stock_data,
+                    top_n=cfg.factor_ranking_top_n,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                self.engine.set_factor_whitelist(factor_whitelist)
+                self.logger.info(
+                    f"Factor whitelist set for {len(factor_whitelist)} trading dates"
+                )
+            else:
+                self.logger.info("Step 5d: Factor ranking disabled")
+
             # Step 6: Run backtest (pass benchmark for enhanced market regime filter)
             self.logger.info("Step 6: Running backtest...")
             result = self.engine.run_backtest(

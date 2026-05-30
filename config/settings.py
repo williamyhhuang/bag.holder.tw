@@ -799,7 +799,7 @@ class BacktestSettings(BaseSettings):
     # 格式：YYYY-MM-DD；留空則預設為今天（end_date）或程式預設值（start_date）
     # 欄位名不加 backtest_ 前綴，避免與 env_prefix="BACKTEST_" 疊加成 BACKTEST_BACKTEST_*
     start_date: Optional[date] = Field(
-        default=date(2024, 9, 1),
+        default=date(2022, 1, 1),
         description="回測起始日期（YYYY-MM-DD），留空使用程式預設值",
     )
     end_date: Optional[date] = Field(

@@ -1198,3 +1198,86 @@ class TechnicalStrategy:
             f"filter active on {strong_sector_dates} dates"
         )
         return whitelist
+    def build_factor_whitelist(
+        self,
+        stock_data_dict: Dict[str, List[StockData]],
+        top_n: int = 15,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[date, Set[str]]:
+        """Build a daily top-N factor whitelist from historical OHLCV data.
+
+        For each trading date, ranks all stocks by a composite factor score:
+          - RPS 3m (63 交易日報酬百分位): 25%
+          - RPS 6m (126 交易日報酬百分位): 25%
+          - 量能比率 (今日量/20日均量百分位): 20%
+          - 法人連續買超: 30%（回測中無歷史 T86，以 0.5 均等填充）
+
+        Note: Institutional data is skipped during backtesting (no historical T86
+        cache). All stocks receive the same institutional contribution (0.15),
+        so ranking is effectively determined by RPS + volume ratio.
+
+        Args:
+            stock_data_dict: Symbol → list of StockData (sorted by date ascending).
+            top_n:           Number of top-ranked symbols to allow per day.
+            start_date:      First date to include.
+            end_date:        Last date to include.
+
+        Returns:
+            Dict mapping each trading date to a set of top-N symbol strings.
+        """
+        from .factor_engine import FactorEngine, _percentile_rank
+
+        if top_n <= 0:
+            return {}
+
+        engine = FactorEngine()
+
+        # Build per-symbol OHLCV lookup for fast access
+        # {symbol: sorted list of StockData}
+        sorted_data: Dict[str, List[StockData]] = {
+            sym: sorted(records, key=lambda r: r.date)
+            for sym, records in stock_data_dict.items()
+        }
+
+        # Collect all unique trading dates
+        all_dates: Set[date] = set()
+        for records in stock_data_dict.values():
+            for r in records:
+                all_dates.add(r.date)
+
+        if start_date:
+            all_dates = {d for d in all_dates if d >= start_date}
+        if end_date:
+            all_dates = {d for d in all_dates if d <= end_date}
+
+        whitelist: Dict[date, Set[str]] = {}
+
+        for target_date in sorted(all_dates):
+            # Compute raw scores for all symbols
+            rps_3m_raw = engine._compute_rps(sorted_data, target_date, 63)
+            rps_6m_raw = engine._compute_rps(sorted_data, target_date, 126)
+            vol_ratio_raw = engine._compute_vol_ratio(sorted_data, target_date)
+
+            # Percentile rank across full universe
+            rps_3m_pct = _percentile_rank(rps_3m_raw)
+            rps_6m_pct = _percentile_rank(rps_6m_raw)
+            vol_ratio_pct = _percentile_rank(vol_ratio_raw)
+
+            # Composite score (institutional = 0.5 uniform for all)
+            composite: Dict[str, float] = {}
+            all_syms = set(rps_3m_pct) | set(rps_6m_pct) | set(vol_ratio_pct)
+            for sym in all_syms:
+                r3 = rps_3m_pct.get(sym, 0.5)
+                r6 = rps_6m_pct.get(sym, 0.5)
+                v = vol_ratio_pct.get(sym, 0.5)
+                composite[sym] = r3 * 0.25 + r6 * 0.25 + v * 0.20 + 0.5 * 0.30
+
+            # Top-N
+            ranked = sorted(composite, key=lambda s: composite[s], reverse=True)
+            whitelist[target_date] = set(ranked[:top_n])
+
+        self.logger.info(
+            f"Built factor whitelist for {len(whitelist)} dates (top_n={top_n})"
+        )
+        return whitelist
