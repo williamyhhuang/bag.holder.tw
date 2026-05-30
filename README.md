@@ -951,6 +951,41 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.16.0 - 2026-05-30
+
+**Phase 2：IC 驗證 Pipeline**
+
+新增 `ic-report` CLI 指令，對所有選股因子計算 IC（資訊係數），在正式使用前驗證預測力。
+
+**使用方式：**
+```bash
+python main.py ic-report
+python main.py ic-report --forward-days 5 10 20 --sampling-freq 5
+python main.py ic-report --factors rps_3m vol_ratio --forward-days 20
+```
+
+**實際驗證結果（1981 支股票，2022-2026）：**
+
+| 因子 | 預測期 | IC均值 | t-stat | IC>0率 | 結論 |
+|---|---|---|---|---|---|
+| vol_ratio | 20d | **+0.0144** | **3.77** | **63.2%** | 最強因子 |
+| vol_ratio | 10d | +0.0111 | 3.04 | 57.8% | 顯著 |
+| rps_6m | 20d | +0.0100 | 1.33 | 55.5% | 方向正確但不顯著 |
+| momentum_20d | 全部 | 負值 | 負值 | <55% | 反效果 |
+| momentum_5d | 全部 | 強負值 | -6 | 31% | 均值回歸效應 |
+
+**關鍵發現：**
+- **量能比率（vol_ratio）是目前唯一通過 IC 驗證的因子**（20日預測期）
+- **RPS（相對強度）**方向正確但 t-stat 不顯著，需更長觀察窗口或更嚴格篩選
+- **短期動能（5/20日）呈現負 IC**，台股有明顯均值回歸傾向，短期追漲效果差
+
+**新增檔案：**
+- `src/application/services/ic_validator.py` — IC 計算引擎（Spearman 相關，純 Python 無需 scipy）
+- `reports/ic_report.md` — IC 驗證報告輸出
+- `tests/test_ic_validator.py` — 27 個單元測試
+
+---
+
 ### v5.15.0 - 2026-05-30
 
 **Phase 1 回測整合：因子排名接入回測引擎**
