@@ -951,6 +951,79 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.15.0 - 2026-05-30
+
+**Phase 1 回測整合：因子排名接入回測引擎**
+
+將截面因子排名（Phase 1）整合進回測流程，可在回測中驗證因子排名的實際效果。
+
+**回測結果對比（2022-01-01 ~ 2026-05-30）：**
+
+| 指標 | 基準（無排名） | top_n=15 | top_n=30 |
+|---|---|---|---|
+| 總報酬率 | 38.16% | 20.78% | 23.29% |
+| 夏普比率 | 0.64 | **1.00** | 0.72 |
+| 最大回撤 | 10.68% | **4.06%** | 5.61% |
+| 勝率 | 53.08% | **59.04%** | 53.66% |
+| 交易次數 | 422 | 83 | 164 |
+
+**新增設定：**
+```env
+BACKTEST_ENABLE_FACTOR_RANKING=true   # 啟用因子排名
+BACKTEST_FACTOR_RANKING_TOP_N=30      # 保留前 N 名
+```
+
+**回測起始日更新：** 2024-09-01 → 2022-01-01（更長樣本，422 次交易）
+
+---
+
+### v5.14.0 - 2026-05-30
+
+**Phase 1：截面因子排名 (Factor Ranking)**
+
+在現有技術訊號規則篩選出 BUY 候選後，新增截面因子排名層，依四個因子的綜合分數排序並保留前 N 名，提升選股品質。
+
+**新增因子：**
+
+| 因子 | 權重 | 說明 |
+|------|------|------|
+| RPS 3個月 | 25% | 股價 63 交易日報酬在候選池的百分位排名 |
+| RPS 6個月 | 25% | 股價 126 交易日報酬在候選池的百分位排名 |
+| 量能比率 | 20% | 今日量 / 20日均量的截面百分位 |
+| 法人連續買超 | 30% | 外資×0.6 + 投信×0.4 連續買超天數截面百分位 |
+
+**法人資料來源：** TWSE T86 API（免費），快取至 `data/cache/institutional_history/`，無需 FinMind 付費帳號。
+
+**使用方式：**
+
+```bash
+# 啟用截面因子排名（預設關閉）
+export BACKTEST_ENABLE_FACTOR_RANKING=true
+
+# 保留前 N 名（預設 15；0 = 不限制）
+export BACKTEST_FACTOR_RANKING_TOP_N=15
+
+# 法人歷史資料天數（預設 30 自然日）
+export BACKTEST_FACTOR_INST_HISTORY_DAYS=30
+```
+
+或在 `.env` 中設定：
+
+```env
+BACKTEST_ENABLE_FACTOR_RANKING=true
+BACKTEST_FACTOR_RANKING_TOP_N=15
+BACKTEST_FACTOR_INST_HISTORY_DAYS=30
+```
+
+啟用後，掃描結果的每支股票會附加 `factor_score`（0~1）與 `factor_detail`（各子因子分數）欄位，並依 `factor_score` 降序排列。
+
+**新增檔案：**
+- `src/application/services/factor_engine.py` — 截面因子計算引擎
+- `src/infrastructure/market_data/institutional_history.py` — T86 歷史法人資料載入器
+- `tests/test_factor_engine.py` — 24 個單元測試
+
+---
+
 ### v5.13.0 - 2026-05-30
 
 **min_holding_days 最佳值調整：5 → 21 天**

@@ -658,6 +658,25 @@ class BacktestSettings(BaseSettings):
         description="計算動能的回看天數（預設 20 個交易日）",
     )
 
+    # ── Phase 1 截面因子排名 ─────────────────────────────────────────
+    # 在現有規則篩選出 BUY 候選後，依截面因子分數排名，只保留前 N 名。
+    # 因子：RPS 3m/6m、量能比率、法人連續買超天數。
+    enable_factor_ranking: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_FACTOR_RANKING",
+        description="啟用截面因子排名（Phase 1；預設關閉，需 enable=True 才生效）",
+    )
+    factor_ranking_top_n: int = Field(
+        default=15,
+        env="BACKTEST_FACTOR_RANKING_TOP_N",
+        description="因子排名後保留的最大 BUY 股票數（0 = 不限制）",
+    )
+    factor_inst_history_days: int = Field(
+        default=30,
+        env="BACKTEST_FACTOR_INST_HISTORY_DAYS",
+        description="計算法人連續買超所需的歷史天數（自然日；預設 30）",
+    )
+
     # ── 52 週高低點過濾（Minervini SEPA 條件）───────────────────────
     # 確保股票處於強勢上升趨勢中：
     #   - 現價距 52 週低點 ≥ above_52w_low_pct（防止接刀）
@@ -780,7 +799,7 @@ class BacktestSettings(BaseSettings):
     # 格式：YYYY-MM-DD；留空則預設為今天（end_date）或程式預設值（start_date）
     # 欄位名不加 backtest_ 前綴，避免與 env_prefix="BACKTEST_" 疊加成 BACKTEST_BACKTEST_*
     start_date: Optional[date] = Field(
-        default=date(2024, 9, 1),
+        default=date(2022, 1, 1),
         description="回測起始日期（YYYY-MM-DD），留空使用程式預設值",
     )
     end_date: Optional[date] = Field(
