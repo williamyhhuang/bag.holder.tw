@@ -21,10 +21,11 @@ SHEET_HEADERS = [
 class GoogleSheetsRecorder:
     """將交易記錄寫入 Google Sheets"""
 
-    def __init__(self):
+    def __init__(self, worksheet_name: Optional[str] = None):
         self.logger = get_logger(self.__class__.__name__)
         self._client = None
         self._worksheet = None
+        self._ws_name = worksheet_name  # None → 從 settings 讀取
 
     def _get_worksheet(self):
         """取得或初始化 Google Sheets worksheet（lazy init）"""
@@ -66,16 +67,17 @@ class GoogleSheetsRecorder:
         self._client = gspread.authorize(creds)
         spreadsheet = self._client.open_by_key(gs_cfg.spreadsheet_id)
 
-        # 取得或新建工作表
+        # 取得或新建工作表（優先用 constructor 傳入的名稱，否則從 settings 讀取）
+        ws_name = self._ws_name or gs_cfg.worksheet_name
         try:
-            self._worksheet = spreadsheet.worksheet(gs_cfg.worksheet_name)
+            self._worksheet = spreadsheet.worksheet(ws_name)
         except Exception:
             self._worksheet = spreadsheet.add_worksheet(
-                title=gs_cfg.worksheet_name, rows=1000, cols=len(SHEET_HEADERS)
+                title=ws_name, rows=1000, cols=len(SHEET_HEADERS)
             )
             # 寫入標題列
             self._worksheet.append_row(SHEET_HEADERS)
-            self.logger.info(f"已建立工作表: {gs_cfg.worksheet_name}")
+            self.logger.info(f"已建立工作表: {ws_name}")
 
         # 若工作表為空則補標題
         existing = self._worksheet.get_all_values()

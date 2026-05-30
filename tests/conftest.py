@@ -1,6 +1,13 @@
 """
 Pytest configuration and fixtures
 """
+import os
+
+# 測試環境安全防護：將 Google Sheets 寫入目標改為「單元測試」頁籤，
+# 避免測試資料汙染生產用的「交易記錄」頁籤。
+# 必須在 config.settings 被 import 之前設定，才能被 pydantic-settings 讀取。
+os.environ.setdefault("GOOGLE_SHEETS_WORKSHEET_NAME", "單元測試")
+
 import pytest
 import asyncio
 from datetime import datetime, date

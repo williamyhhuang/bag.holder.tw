@@ -372,9 +372,9 @@ class BacktestSettings(BaseSettings):
     # P1 (2026-04-08): 恢復 Golden Cross + MACD Golden Cross
     # 診斷顯示停用它們讓報酬率 -5.90%
     disabled_signals: str = Field(
-        default="",
+        default="BB Squeeze Break",
         env="BACKTEST_DISABLED_SIGNALS",
-        description="停用的訊號名稱，逗號分隔（空白 = 全部啟用）",
+        description="停用的訊號名稱，逗號分隔（預設停用 BB Squeeze Break，只用 Donchian Breakout）",
     )
     # Filter 2: 個股價格需在 MA60 上方（長期上升趨勢）
     require_ma60_uptrend: bool = Field(

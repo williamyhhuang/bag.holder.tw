@@ -1069,6 +1069,13 @@ docker compose up -d
   - 因事件名稱錯誤，`ws_connected` 從未設為 `True`，導致每 10 秒持續觸發重連，引發 `WebSocketException: socket is already opened`
   - 重連前先呼叫 `disconnect()` + `sleep(1)`，讓舊 `run_forever` 執行緒退出後再重建連線
 
+### v5.8.7 - 2026-05-30
+- 🐛 **修正 CI 測試失敗（BACKTEST_DISABLED_SIGNALS 與 production config 不一致）**：`settings.py` 的 `disabled_signals` 預設值從 `""` 改為 `"BB Squeeze Break"`，使 CI 環境（無 `.env`）與生產設定一致
+- 🐛 **修正測試寫入 Google Sheets「交易記錄」頁籤**：
+  - `GoogleSheetsRecorder` 新增 `worksheet_name` constructor 參數（與 `MTXSheetsRecorder` 一致），允許測試指定目標頁籤
+  - `tests/conftest.py` 頂端加入 `os.environ.setdefault("GOOGLE_SHEETS_WORKSHEET_NAME", "單元測試")`，確保所有測試寫入「單元測試」頁籤而非「交易記錄」
+  - 733 個單元測試全數通過
+
 ### v5.8.6 - 2026-05-30
 - 🐛 **修復 Fubon 非交易日下載失敗導致 GCP Workflow 中斷**：週六/假日 Fubon WebSocket 不開放，`download` Job 以 exit(1) 失敗，整個 workflow 停止
   - 更新 `src/interfaces/cli/download_main.py`：Fubon 下載失敗時自動 fallback 至 yfinance，只有兩個 source 都失敗才以 exit(1) 退出
