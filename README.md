@@ -1069,6 +1069,12 @@ docker compose up -d
   - 因事件名稱錯誤，`ws_connected` 從未設為 `True`，導致每 10 秒持續觸發重連，引發 `WebSocketException: socket is already opened`
   - 重連前先呼叫 `disconnect()` + `sleep(1)`，讓舊 `run_forever` 執行緒退出後再重建連線
 
+### v5.8.5 - 2026-05-29
+- 🔧 **signals_scanner 策略參數與 backtest 完整同步**：`SignalsScanner` 建構 `TechnicalStrategy` 時新增傳入所有缺漏參數，確保即時掃描與回測採用相同策略邏輯
+  - 補齊參數：`rsi_overbought_threshold`、`min_volume_lots`、`pre_breakout_mode`、`enable_momentum_signal`、`momentum_signal_days`、`momentum_signal_min_return`、`require_weekly_rsi`、`weekly_rsi_min`、`require_revenue_growth`、`revenue_yoy_min_pct`、`finmind_api_token`、`require_minervini_trend`
+  - `weekly_close_only` 刻意不傳入（即時掃描不適用「只在週五進場」的日期門檻）
+  - 733 個單元測試全數通過
+
 ### v5.8.4 - 2026-05-20
 - 🐛 **修復 MTX WebSocket 斷線後不重連**：夜盤連線約 30 分鐘後 Fubon 伺服器送 `Connection reset by peer`，原本無重連邏輯，整個盤收不到 tick，導致 0 訊號
   - 更新 `src/application/services/mtx_auto_trader.py`：加入 `on_error` / `on_close` callback 設 `ws_connected=False`；main loop 每 10 秒偵測並自動重連（`_ws_connect()` 重新 `connect` + `subscribe`）

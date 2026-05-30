@@ -164,8 +164,10 @@ class SignalsScanner:
             require_ma60_uptrend=cfg.require_ma60_uptrend,
             require_volume_confirmation=cfg.require_volume_confirmation,
             volume_confirmation_multiplier=cfg.volume_confirmation_multiplier,
+            rsi_overbought_threshold=cfg.rsi_overbought_threshold,
             rsi_min_entry=cfg.rsi_min_entry,
             donchian_period=cfg.donchian_period,
+            min_volume_lots=cfg.min_volume_lots,
             signal_cooldown_days=cfg.signal_cooldown_days,
             require_weekly_trend=cfg.require_weekly_trend,
             require_52w_filter=cfg.require_52w_filter,
@@ -173,6 +175,17 @@ class SignalsScanner:
             near_52w_high_pct=cfg.near_52w_high_pct,
             enable_vcp=cfg.enable_vcp,
             vcp_lookback=cfg.vcp_lookback,
+            pre_breakout_mode=cfg.pre_breakout_mode,
+            enable_momentum_signal=cfg.enable_momentum_signal,
+            momentum_signal_days=cfg.momentum_signal_days,
+            momentum_signal_min_return=cfg.momentum_signal_min_return,
+            require_weekly_rsi=cfg.require_weekly_rsi,
+            weekly_rsi_min=cfg.weekly_rsi_min,
+            require_revenue_growth=cfg.require_revenue_growth,
+            revenue_yoy_min_pct=cfg.revenue_yoy_min_pct,
+            finmind_api_token=settings.finmind.api_token,
+            require_minervini_trend=cfg.require_minervini_trend,
+            # weekly_close_only intentionally omitted: not applicable to live scanning
         )
         self.cfg = cfg
 
