@@ -143,6 +143,21 @@ SCENARIOS: List[Scenario] = [
         momentum_lookback_days=20,
         require_weekly_trend=True,    # P2: 周線 MA5 > MA20 確認中期趨勢
     ),
+    Scenario(
+        name="9_donchian_only",
+        description="停用 BB Squeeze Break，只用 Donchian Breakout（目前生產設定 P2）",
+        disabled_signals=["BB Squeeze Break"],  # 回測最佳：PF 1.35, +6.78%, MDD 8.20%
+        use_market_regime=True,
+        market_regime_check_ma5=True,
+        market_regime_rsi_threshold=45.0,
+        require_ma60_uptrend=True,
+        require_volume_confirmation=False,
+        volume_confirmation_multiplier=1.5,
+        rsi_min_entry=60.0,
+        momentum_top_n=30,
+        momentum_lookback_days=20,
+        require_weekly_trend=True,
+    ),
 ]
 
 # ─────────────────────────────────────────────

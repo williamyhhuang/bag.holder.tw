@@ -1069,6 +1069,12 @@ docker compose up -d
   - 因事件名稱錯誤，`ws_connected` 從未設為 `True`，導致每 10 秒持續觸發重連，引發 `WebSocketException: socket is already opened`
   - 重連前先呼叫 `disconnect()` + `sleep(1)`，讓舊 `run_forever` 執行緒退出後再重建連線
 
+### v5.8.6 - 2026-05-30
+- 🐛 **修復 Fubon 非交易日下載失敗導致 GCP Workflow 中斷**：週六/假日 Fubon WebSocket 不開放，`download` Job 以 exit(1) 失敗，整個 workflow 停止
+  - 更新 `src/interfaces/cli/download_main.py`：Fubon 下載失敗時自動 fallback 至 yfinance，只有兩個 source 都失敗才以 exit(1) 退出
+  - 更新 `scripts/diagnose_filters.py`：新增 Scenario 9（Donchian Only，停用 BB Squeeze Break）作為最新生產設定
+  - 733 個單元測試全數通過
+
 ### v5.8.5 - 2026-05-29
 - 🔧 **signals_scanner 策略參數與 backtest 完整同步**：`SignalsScanner` 建構 `TechnicalStrategy` 時新增傳入所有缺漏參數，確保即時掃描與回測採用相同策略邏輯
   - 補齊參數：`rsi_overbought_threshold`、`min_volume_lots`、`pre_breakout_mode`、`enable_momentum_signal`、`momentum_signal_days`、`momentum_signal_min_return`、`require_weekly_rsi`、`weekly_rsi_min`、`require_revenue_growth`、`revenue_yoy_min_pct`、`finmind_api_token`、`require_minervini_trend`

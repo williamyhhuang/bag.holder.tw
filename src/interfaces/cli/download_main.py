@@ -34,8 +34,7 @@ class DataDownloaderCLI:
             try:
                 client.login()
             except FubonDownloadError as e:
-                self.logger.error(f"Fubon login failed: {e}")
-                sys.exit(1)
+                raise RuntimeError(f"Fubon login failed: {e}") from e
             return client
         else:
             return YFinanceClient()
@@ -49,43 +48,51 @@ class DataDownloaderCLI:
             sys.exit(1)
 
     def run_download(self, args):
-        """Run the download command"""
-        try:
-            source = getattr(args, 'source', None) or settings.download.data_source
-            client = self._make_client(source)
-            self.logger.info(f"Data source: {source}")
+        """Run the download command.
 
-            start_date = None
-            end_date = None
+        If the configured source (fubon) fails for any reason (e.g. non-trading day,
+        WebSocket unavailable), automatically fall back to yfinance so the workflow
+        never exits with an error due to a broker API outage.
+        """
+        source = getattr(args, 'source', None) or settings.download.data_source
+        sources_to_try = [source]
+        if source == "fubon":
+            sources_to_try.append("yfinance")
 
-            if args.start_date:
-                start_date = self.parse_date(args.start_date)
-            if args.end_date:
-                end_date = self.parse_date(args.end_date)
+        start_date = None
+        end_date = None
+        if args.start_date:
+            start_date = self.parse_date(args.start_date)
+        if args.end_date:
+            end_date = self.parse_date(args.end_date)
 
-            # If no dates provided, download recent data
-            if start_date is None and end_date is None:
-                self.logger.info("No dates provided, downloading recent data")
-                count = client.download_recent_data()
-            else:
-                # If only start date provided, use today as end date
-                if start_date and not end_date:
-                    end_date = datetime.now()
+        last_error = None
+        for attempt_source in sources_to_try:
+            try:
+                client = self._make_client(attempt_source)
+                self.logger.info(f"Data source: {attempt_source}")
 
-                # If only end date provided, use yesterday as start date
-                if end_date and not start_date:
-                    start_date = client.get_last_trading_date()
+                if start_date is None and end_date is None:
+                    self.logger.info("No dates provided, downloading recent data")
+                    count = client.download_recent_data()
+                else:
+                    effective_end = end_date or datetime.now()
+                    effective_start = start_date or client.get_last_trading_date()
+                    markets = args.markets if args.markets else ["TSE", "OTC"]
+                    limit = args.limit if hasattr(args, 'limit') and args.limit else None
+                    count = client.download_all_stocks(effective_start, effective_end, markets, limit)
 
-                markets = args.markets if args.markets else ["TSE", "OTC"]
-                limit = args.limit if hasattr(args, 'limit') and args.limit else None
-                count = client.download_all_stocks(start_date, end_date, markets, limit)
+                self.logger.info(f"Download completed via {attempt_source}: {count} stocks processed")
+                return count
 
-            self.logger.info(f"Download completed: {count} stocks processed")
-            return count
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"Download via {attempt_source} failed: {e}")
+                if attempt_source != sources_to_try[-1]:
+                    self.logger.info(f"Falling back to {sources_to_try[sources_to_try.index(attempt_source) + 1]}...")
 
-        except Exception as e:
-            self.logger.error(f"Download failed: {e}")
-            sys.exit(1)
+        self.logger.error(f"All download sources failed. Last error: {last_error}")
+        sys.exit(1)
 
 def create_parser():
     """Create argument parser for download command"""
