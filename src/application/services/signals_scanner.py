@@ -185,6 +185,7 @@ class SignalsScanner:
             revenue_yoy_min_pct=cfg.revenue_yoy_min_pct,
             finmind_api_token=settings.finmind.api_token,
             require_minervini_trend=cfg.require_minervini_trend,
+            min_confirming_signals=cfg.min_confirming_signals,
             # weekly_close_only intentionally omitted: not applicable to live scanning
         )
         self.cfg = cfg

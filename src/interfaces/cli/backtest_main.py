@@ -70,6 +70,7 @@ class BacktestRunner:
             max_holding_days=cfg.max_holding_days,
             position_sizing=Decimal(str(cfg.position_sizing)),
             atr_stop_multiplier=cfg.atr_stop_multiplier,
+            min_holding_days=cfg.min_holding_days,
         )
         self.analyzer = PerformanceAnalyzer()
         self.reporter = BacktestReporter()
