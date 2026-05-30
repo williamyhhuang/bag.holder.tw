@@ -977,6 +977,72 @@ class TestBacktestEngineNew:
         # Trailing stop from peak 12 → 12*0.95=11.40 → exit at 11 (below stop)
         assert closed.exit_price <= Decimal('11.40')
 
+    def test_min_holding_days_prevents_early_trailing_exit(self):
+        """With min_holding_days, ALL stop exits are blocked during the lock window.
+        Only take profit is allowed. This prevents whipsawing out in first few days.
+
+        Sequence (execution happens at T+1 open price):
+          Sep1: signal at price=10; Sep2: executes at open=10, drops to 8 (below 10% stop)
+          Sep3...: continues falling
+        Without lock: stop loss fires on Sep2 (holding=1).
+        With min_holding_days=3: stop loss blocked on Sep2 (calendar_days=1 < 3), position survives.
+        """
+        from datetime import timedelta
+        import copy as _copy
+        base = date(2025, 9, 1)
+        # Stock drops immediately after entry: day1=signal, day2=execute+drops, day3=drops more
+        prices = [10, 8, 7, 6, 5]
+        dates = [base + timedelta(days=i) for i in range(len(prices))]
+        stock_data = [
+            StockData(
+                symbol="TEST", date=dates[i],
+                open_price=Decimal(str(prices[i])), high_price=Decimal(str(prices[i])),
+                low_price=Decimal(str(prices[i])), close_price=Decimal(str(prices[i])),
+                volume=100000,
+            )
+            for i in range(len(prices))
+        ]
+        sig = TradingSignal(
+            symbol="TEST", date=base,
+            signal_type=SignalType.BUY, signal_name="Test",
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=base)
+        )
+
+        # Without lock: stop loss fires on Sep2 (holding=1, entry=8, drop to 8 -> price=8=entry)
+        # Actually entry at 8 (T+1 open), stop=8*0.90=7.20, day3 price=7 < 7.20 → exit holding=2
+        engine_no = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.50'),
+            trailing_stop_pct=Decimal('0.10'),
+            max_holding_days=60,
+            atr_stop_multiplier=0,
+            min_holding_days=0,
+        )
+        engine_no.add_price_data("TEST", stock_data)
+        result_no = engine_no.run_backtest([_copy.copy(sig)], base, base + timedelta(days=4))
+        assert result_no.total_trades == 1
+        no_hold = result_no.trades[0].holding_days
+
+        # With min_holding_days=3: all stop exits blocked for 3 calendar days from entry_date
+        engine_lock = BacktestEngine(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.50'),
+            trailing_stop_pct=Decimal('0.10'),
+            max_holding_days=60,
+            atr_stop_multiplier=0,
+            min_holding_days=3,
+        )
+        engine_lock.add_price_data("TEST", stock_data)
+        result_lock = engine_lock.run_backtest([_copy.copy(sig)], base, base + timedelta(days=4))
+        assert result_lock.total_trades == 1
+        lock_hold = result_lock.trades[0].holding_days
+        assert lock_hold > no_hold, (
+            f"Expected longer hold with lockout ({lock_hold}) vs no lockout ({no_hold})"
+        )
+
     def test_market_filter_blocks_buy_when_bearish(self):
         """BUY signals should be suppressed when TAIEX is below its MA20."""
         engine = BacktestEngine(initial_capital=Decimal('1000000'))

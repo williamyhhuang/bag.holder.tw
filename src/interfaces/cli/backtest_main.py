@@ -224,6 +224,8 @@ class BacktestRunner:
                 trailing_stop_pct=Decimal(str(cfg.trailing_stop_pct)),
                 max_holding_days=cfg.max_holding_days,
                 position_sizing=Decimal(str(cfg.position_sizing)),
+                atr_stop_multiplier=cfg.atr_stop_multiplier,
+                min_holding_days=cfg.min_holding_days,
                 market_regime_strong_rsi=cfg.market_regime_strong_rsi,
                 strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
                 neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),

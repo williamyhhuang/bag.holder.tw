@@ -37,6 +37,10 @@ class BacktestEngine:
         strong_trend_multiplier: float = 1.0,
         # ATR dynamic stop loss (0 = disabled, use fixed stop_loss_pct instead)
         atr_stop_multiplier: float = 1.5,
+        # Minimum calendar days a position must be held before trailing stop ratcheting is active.
+        # Prevents immediate trailing stop exit when stock gaps up on entry day then pulls back.
+        # After min_holding_days, trailing stop ratchets normally. Hard stop loss always active.
+        min_holding_days: int = 0,
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -47,6 +51,7 @@ class BacktestEngine:
         self.max_holding_days = max_holding_days
         self.trailing_stop_pct = trailing_stop_pct
         self.atr_stop_multiplier = atr_stop_multiplier
+        self.min_holding_days = min_holding_days
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
@@ -356,11 +361,14 @@ class BacktestEngine:
             # Update trailing stop: ratchet up as price rises above entry
             # P6: use per-position trailing_stop_pct_override if explicitly set, else engine default
             # P3-B: Decimal('0') means trailing stop disabled (signal-based exit instead)
+            # min_holding_days: skip ratcheting for first N calendar days to prevent immediate
+            # trailing stop exit when stock gaps up on entry day then closes lower.
             if position.trailing_stop_pct_override is not None:
                 eff_trailing = position.trailing_stop_pct_override  # may be 0 = disabled
             else:
                 eff_trailing = self.trailing_stop_pct
-            if eff_trailing and current_price > position.entry_price:
+            calendar_days_held = (self.current_date - position.entry_date).days
+            if eff_trailing and current_price > position.entry_price and calendar_days_held >= self.min_holding_days:
                 new_trailing_stop = (
                     current_price * (Decimal('1') - eff_trailing)
                 ).quantize(Decimal('0.01'))
@@ -378,6 +386,14 @@ class BacktestEngine:
                     ).quantize(Decimal('0.01'))
                     if protection_stop > (position.stop_loss or Decimal('0')):
                         position.stop_loss = protection_stop
+
+            # During the minimum holding period, skip ALL stop-loss and trailing exits.
+            # Only take profit is allowed during this window (since it's a favourable exit).
+            # This prevents whipsawing out of positions in the first few days.
+            if calendar_days_held < self.min_holding_days:
+                if position.take_profit is not None and current_price >= position.take_profit:
+                    positions_to_close.append((symbol, current_price, "Take Profit"))
+                continue  # Skip stop loss and max holding exits
 
             # Check stop loss
             if position.stop_loss is not None and current_price <= position.stop_loss:
@@ -660,6 +676,14 @@ class BacktestEngine:
                 self.pending_signals.append((signal, sizing_override))
             elif signal.signal_type == SignalType.SELL and signal.symbol in self.positions:
                 position = self.positions[signal.symbol]
+                # Respect minimum holding period — skip signal-based exits during lockout
+                calendar_days_held = (self.current_date - position.entry_date).days
+                if calendar_days_held < self.min_holding_days:
+                    self.logger.debug(
+                        f"Signal exit '{signal.signal_name}' for {signal.symbol} blocked: "
+                        f"min_holding_days={self.min_holding_days} not reached ({calendar_days_held}d)"
+                    )
+                    continue
                 # P3-B: signal-based exit for trend positions
                 # If position specifies exit_on_signals, only exit on matching signals.
                 # Otherwise (mean-reversion positions), exit on any sell signal.
