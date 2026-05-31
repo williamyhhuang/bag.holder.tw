@@ -34,8 +34,8 @@ DATA_DIR = Path(__file__).parent.parent / "data" / "taifex_tick"
 MTX_PRODUCT = "MTX"
 
 # 停損/獲利 (points)
-STOP_LOSS_PTS = 30
-TAKE_PROFIT_PTS = 50
+STOP_LOSS_PTS = 50
+TAKE_PROFIT_PTS = 150
 MIN_PROFIT_KD_EXIT = 8
 
 # 盤別時間 (TWN local time)

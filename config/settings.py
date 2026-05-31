@@ -984,14 +984,14 @@ class MTXTraderSettings(BaseSettings):
         validation_alias=AliasChoices("MTX_SIM_WORKSHEET"),
         description="模擬交易記錄寫入的工作表名稱",
     )
-    # 停損點數（回測驗證：30pt 勝率 60.8%、淨損益 +6788元；15pt 勝率 49.3%、淨損益 -846元）
+    # 停損點數
     stop_loss_pts: float = Field(
-        default=30.0,
+        default=50.0,
         validation_alias=AliasChoices("MTX_STOP_LOSS_PTS"),
     )
     # 獲利目標點數
     take_profit_pts: float = Field(
-        default=50.0,
+        default=150.0,
         validation_alias=AliasChoices("MTX_TAKE_PROFIT_PTS"),
     )
     # 最大持倉口數
