@@ -838,11 +838,12 @@ FUBON_IS_SIMULATION=False   # False = 實單；True = 測試環境
 # MTX Feature Toggle（非敏感，可直接設在 Cloud Run 環境變數）
 MTX_LIVE_ORDER=false         # false = 模擬（寫 Google Sheets）；true = 實際下單
 MTX_SIM_WORKSHEET=微台交易紀錄  # 模擬模式寫入的 Google Sheets 頁籤名稱
-MTX_STOP_LOSS_PTS=15         # 停損點數（預設 15pt）
-MTX_TAKE_PROFIT_PTS=50       # 停利點數
+MTX_STOP_LOSS_PTS=50         # 停損點數（預設 50pt）
+MTX_TAKE_PROFIT_PTS=150      # 停利點數（預設 150pt）
 MTX_MAX_LOTS=3               # 最大持倉口數
 MTX_MIN_PROFIT_BEFORE_KD_EXIT=8  # KD 叉出場前需達到的最小獲利點數（0 = 停用門檻）
 MTX_LATE_SESSION_NO_ENTRY_MINUTES=30  # 距收盤 N 分鐘內禁止開新倉（0 = 停用）
+MTX_SIGNAL_5M_MEMORY_BARS=3  # 5m KD 交叉後訊號保持有效 K 棒數（策略 C；0 = 嚴格模式）
 ```
 
 ### 策略邏輯（SKILL.md）
@@ -950,6 +951,21 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.18.0 - 2026-05-31
+
+**MTX 切換策略 C（5m 信號記憶）+ 調整停損停利**
+
+- 停損：30pt → **50pt**，停利：50pt → **150pt**
+- 啟用策略 C（`signal_5m_memory_bars=3`）：5m KD 交叉後訊號保持 3 根 K 棒有效，避免 1m/5m 交叉時間差錯過進場
+- 新增 `MTX_SIGNAL_5M_MEMORY_BARS` 環境變數（0 = 嚴格模式，3 = 策略 C）
+
+**回測結果（30 交易日，2026-04-09 ～ 2026-05-21，停損 50pt / 停利 150pt）：**
+
+| 策略 | 說明 | 交易次數 | 勝率 | 獲利因子 | 總損益 |
+|------|------|----------|------|----------|--------|
+| A | 嚴格（原始） | 554 | 68.2% | 1.37 | +3601pt |
+| **C** | **5m 記憶（現採用）** | 792 | **69.6%** | **1.41** | **+5620pt** |
 
 ### v5.17.0 - 2026-05-31
 

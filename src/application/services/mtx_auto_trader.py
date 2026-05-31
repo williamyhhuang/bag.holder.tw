@@ -110,13 +110,14 @@ class MTXAutoTrader:
         fubon_client: FubonClient,
         notifier: Optional[TelegramNotifier] = None,
         dry_run: bool = False,
-        stop_loss_pts: float = 30.0,
-        take_profit_pts: float = 50.0,
+        stop_loss_pts: float = 50.0,
+        take_profit_pts: float = 150.0,
         max_lots: int = 3,
         live_order: Optional[bool] = None,
         sheets_recorder: Optional[MTXSheetsRecorder] = None,
         min_profit_before_kd_exit_pts: float = 8.0,
         late_session_no_entry_minutes: int = 30,
+        signal_5m_memory_bars: int = 3,
     ) -> None:
         self.client = fubon_client
         self.notifier = notifier
@@ -141,6 +142,7 @@ class MTXAutoTrader:
             stop_loss_pts=stop_loss_pts,
             take_profit_pts=take_profit_pts,
             min_profit_before_kd_exit_pts=min_profit_before_kd_exit_pts,
+            signal_5m_memory_bars=signal_5m_memory_bars,
         )
         self.position: Optional[Position] = None
         self.trades: List[TradeRecord] = []

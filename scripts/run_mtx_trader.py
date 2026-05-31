@@ -62,6 +62,7 @@ async def main(session_arg: str, dry_run: bool) -> None:
             max_lots=mtx_cfg.max_lots,
             min_profit_before_kd_exit_pts=mtx_cfg.min_profit_before_kd_exit_pts,
             late_session_no_entry_minutes=mtx_cfg.late_session_no_entry_minutes,
+            signal_5m_memory_bars=mtx_cfg.signal_5m_memory_bars,
         )
         await trader.initialize()
 
