@@ -59,11 +59,16 @@ def get_session(now: Optional[datetime] = None) -> SessionType:
 @dataclass
 class Position:
     symbol: str
-    direction: str      # 'LONG' | 'SHORT'
-    entry_price: float
+    direction: str          # 'LONG' | 'SHORT'
+    entry_price: float      # 首次進場價（保留供記錄用）
     lots: int
     entry_time: datetime
     order_no: str = ""
+    avg_entry_price: float = 0.0  # 加權平均進場價（停損/停利基準）
+
+    def __post_init__(self) -> None:
+        if self.avg_entry_price == 0.0:
+            self.avg_entry_price = self.entry_price
 
 
 @dataclass
@@ -408,7 +413,7 @@ class MTXAutoTrader:
         self.signal_engine.add_tick(price, volume, ts)
 
         pos_dir = self.position.direction if self.position else None
-        entry_p = self.position.entry_price if self.position else None
+        entry_p = self.position.avg_entry_price if self.position else None
         signal = self.signal_engine.evaluate(pos_dir, entry_p)
 
         await self._handle_signal(signal, is_night)
@@ -448,12 +453,16 @@ class MTXAutoTrader:
                 await self._close_position("多空反轉", price, is_night)
             if self.position is None and self._open_slots() > 0:
                 await self._open_position("LONG", price, 1, signal.reason, is_night)
+            elif self.position and self.position.direction == "LONG" and self._open_slots() > 0:
+                await self._add_to_position(price, signal.reason, is_night)
 
         elif direction == SignalDirection.SHORT:
             if self.position and self.position.direction == "LONG":
                 await self._close_position("多空反轉", price, is_night)
             if self.position is None and self._open_slots() > 0:
                 await self._open_position("SHORT", price, 1, signal.reason, is_night)
+            elif self.position and self.position.direction == "SHORT" and self._open_slots() > 0:
+                await self._add_to_position(price, signal.reason, is_night)
 
     def _open_slots(self) -> int:
         used = self.position.lots if self.position else 0
@@ -482,6 +491,24 @@ class MTXAutoTrader:
 
     # ------------------------------------------------------------------
     # Order helpers
+
+    async def _add_to_position(self, price: float, reason: str, is_night: bool) -> None:
+        """同方向加碼 1 口，更新加權平均進場價。"""
+        if not self.position:
+            return
+        pos = self.position
+        new_lots = pos.lots + 1
+        pos.avg_entry_price = (pos.avg_entry_price * pos.lots + price) / new_lots
+        pos.lots = new_lots
+        logger.info(
+            f"→ ADD {pos.direction} @ {price:.0f} → {new_lots}L "
+            f"avg={pos.avg_entry_price:.1f} — {reason}"
+        )
+        await self._notify(
+            f"📋 {'[DRY RUN] ' if self.dry_run else '[模擬] ' if not self.live_order else ''}"
+            f"加碼 {'多' if pos.direction == 'LONG' else '空'} → {new_lots}口\n"
+            f"加碼價：{price:.0f}　均價：{pos.avg_entry_price:.1f}　原因：{reason}"
+        )
 
     async def _open_position(
         self,
@@ -590,9 +617,9 @@ class MTXAutoTrader:
 
         pos = self.position
         pnl = (
-            price - pos.entry_price
+            price - pos.avg_entry_price
             if pos.direction == "LONG"
-            else pos.entry_price - price
+            else pos.avg_entry_price - price
         )
         logger.info(f"→ CLOSE {pos.direction} @ {price:.0f} | PnL={pnl:+.0f}pts — {reason}")
         session_label = "夜盤" if is_night else "日盤"

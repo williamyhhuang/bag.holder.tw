@@ -265,12 +265,13 @@ def entry_1m(bars_1m: List[Bar]) -> int:
 @dataclass
 class Trade:
     entry_ts: datetime
-    entry_price: float
-    direction: str   # LONG / SHORT
+    entry_price: float      # 平均進場價
+    direction: str          # LONG / SHORT
+    lots: int = 1           # 出場時持倉口數
     exit_ts: Optional[datetime] = None
     exit_price: Optional[float] = None
     exit_reason: str = ""
-    pnl: float = 0.0
+    pnl: float = 0.0        # 總損益 pts（已乘口數）
 
     @property
     def won(self) -> bool:
@@ -286,12 +287,14 @@ def simulate_session(
     take_profit: float = TAKE_PROFIT_PTS,
     min_profit_kd: float = MIN_PROFIT_KD_EXIT,
     signal_memory: int = 3,   # 策略C: 5m 訊號保持 N 根有效
+    max_lots: int = 3,        # 最大持倉口數（加碼上限）
 ) -> List[Trade]:
-    """在單一 session 的分鐘 K 棒序列上模擬交易"""
+    """在單一 session 的分鐘 K 棒序列上模擬交易（支援加碼至 max_lots 口）"""
     trades: List[Trade] = []
     position: Optional[str] = None
-    entry_price: Optional[float] = None
+    avg_entry: Optional[float] = None   # 加權平均進場價
     entry_ts: Optional[datetime] = None
+    lots: int = 0                        # 當前持倉口數
 
     # 策略C: 記憶 5m 訊號
     last_5m_signal: int = 0
@@ -309,58 +312,44 @@ def simulate_session(
         bars_5m_now = [b for b in ticks_5m if b.ts <= ts]
 
         # --- 出場邏輯 ---
-        if position is not None and entry_price is not None:
-            pnl = (price - entry_price) if position == "LONG" else (entry_price - price)
+        if position is not None and avg_entry is not None:
+            pnl_per_lot = (price - avg_entry) if position == "LONG" else (avg_entry - price)
+            pnl_total = pnl_per_lot * lots
 
-            # 停損
-            if pnl <= -stop_loss:
+            def _close(reason: str) -> None:
+                nonlocal position, avg_entry, entry_ts, lots
                 trades.append(Trade(
-                    entry_ts=entry_ts, entry_price=entry_price,
-                    direction=position,
+                    entry_ts=entry_ts, entry_price=avg_entry,
+                    direction=position, lots=lots,
                     exit_ts=ts, exit_price=price,
-                    exit_reason="停損", pnl=pnl,
+                    exit_reason=reason, pnl=pnl_total,
                 ))
                 position = None
+                avg_entry = None
+                lots = 0
+
+            # 停損（以每口計算）
+            if pnl_per_lot <= -stop_loss:
+                _close("停損")
                 continue
 
-            # 獲利了結
-            if pnl >= take_profit:
-                trades.append(Trade(
-                    entry_ts=entry_ts, entry_price=entry_price,
-                    direction=position,
-                    exit_ts=ts, exit_price=price,
-                    exit_reason="獲利", pnl=pnl,
-                ))
-                position = None
+            # 獲利了結（以每口計算）
+            if pnl_per_lot >= take_profit:
+                _close("獲利")
                 continue
 
-            # KD 反轉出場（需達最低獲利保護）
+            # KD 反轉出場（需達最低獲利保護，以每口計算）
             if len(bars_1m_now) >= 15:
                 k1m, d1m = compute_stoch(bars_1m_now)
-                if pnl >= min_profit_kd:
+                if pnl_per_lot >= min_profit_kd:
                     if position == "LONG" and death_cross(k1m, d1m):
-                        trades.append(Trade(
-                            entry_ts=entry_ts, entry_price=entry_price,
-                            direction=position,
-                            exit_ts=ts, exit_price=price,
-                            exit_reason="1mKD死叉", pnl=pnl,
-                        ))
-                        position = None
+                        _close("1mKD死叉")
                         continue
                     if position == "SHORT" and golden_cross(k1m, d1m):
-                        trades.append(Trade(
-                            entry_ts=entry_ts, entry_price=entry_price,
-                            direction=position,
-                            exit_ts=ts, exit_price=price,
-                            exit_reason="1mKD黃叉", pnl=pnl,
-                        ))
-                        position = None
+                        _close("1mKD黃叉")
                         continue
 
-        # --- 進場邏輯 ---
-        if position is not None:
-            continue
-
+        # --- 進場 / 加碼邏輯 ---
         s1m = entry_1m(bars_1m_now)
 
         if variant == "A":
@@ -378,29 +367,66 @@ def simulate_session(
                     last_5m_signal = 0
             s5m = last_5m_signal
         elif variant == "D":
-            s5m = 1 if db >= 0 else -1  # 不需要 5m 確認，直接用日線方向
+            s5m = 1 if db >= 0 else -1
 
-        # 做多
-        if db >= 0 and s5m == 1 and s1m == 1:
-            position = "LONG"
-            entry_price = price
-            entry_ts = ts
+        want_long = (db >= 0 and s5m == 1 and s1m == 1)
+        want_short = (db <= 0 and s5m == -1 and s1m == -1)
 
-        # 做空
-        elif db <= 0 and s5m == -1 and s1m == -1:
-            position = "SHORT"
-            entry_price = price
-            entry_ts = ts
+        # 方向反轉 → 先平倉
+        if position == "LONG" and want_short:
+            pnl_total = (price - avg_entry) * lots
+            trades.append(Trade(
+                entry_ts=entry_ts, entry_price=avg_entry,
+                direction=position, lots=lots,
+                exit_ts=ts, exit_price=price,
+                exit_reason="多空反轉", pnl=pnl_total,
+            ))
+            position = None
+            avg_entry = None
+            lots = 0
+        elif position == "SHORT" and want_long:
+            pnl_total = (avg_entry - price) * lots
+            trades.append(Trade(
+                entry_ts=entry_ts, entry_price=avg_entry,
+                direction=position, lots=lots,
+                exit_ts=ts, exit_price=price,
+                exit_reason="多空反轉", pnl=pnl_total,
+            ))
+            position = None
+            avg_entry = None
+            lots = 0
+
+        # 新倉 / 加碼
+        if want_long and (position is None or position == "LONG") and lots < max_lots:
+            if position is None:
+                position = "LONG"
+                avg_entry = price
+                entry_ts = ts
+                lots = 1
+            else:
+                # 加碼：更新加權平均進場價
+                avg_entry = (avg_entry * lots + price) / (lots + 1)
+                lots += 1
+
+        elif want_short and (position is None or position == "SHORT") and lots < max_lots:
+            if position is None:
+                position = "SHORT"
+                avg_entry = price
+                entry_ts = ts
+                lots = 1
+            else:
+                avg_entry = (avg_entry * lots + price) / (lots + 1)
+                lots += 1
 
     # session 結束強平
-    if position is not None and entry_price is not None and ticks_1m:
+    if position is not None and avg_entry is not None and ticks_1m:
         last_price = ticks_1m[-1].close
-        pnl = (last_price - entry_price) if position == "LONG" else (entry_price - last_price)
+        pnl_per_lot = (last_price - avg_entry) if position == "LONG" else (avg_entry - last_price)
         trades.append(Trade(
-            entry_ts=entry_ts, entry_price=entry_price,
-            direction=position,
+            entry_ts=entry_ts, entry_price=avg_entry,
+            direction=position, lots=lots,
             exit_ts=ticks_1m[-1].ts, exit_price=last_price,
-            exit_reason="收盤強平", pnl=pnl,
+            exit_reason="收盤強平", pnl=pnl_per_lot * lots,
         ))
 
     return trades
@@ -564,6 +590,9 @@ def run_backtest(
         gross_loss = abs(sum(t.pnl for t in losses))
         pf = gross_profit / gross_loss if gross_loss > 0 else float("inf")
         total_pnl = sum(t.pnl for t in ts)
+        total_lots_exited = sum(t.lots for t in ts)
+        fee = total_lots_exited * 50          # 50元/口，出場時收
+        net_ntd = int(total_pnl * 10 - fee)  # 微台每點10元
 
         rows.append({
             "策略": v,
@@ -574,6 +603,9 @@ def run_backtest(
             "平均虧損 pts": f"{avg_loss:.1f}",
             "獲利因子": f"{pf:.2f}",
             "總損益 pts": f"{total_pnl:.0f}",
+            "總損益 NTD": f"{int(total_pnl * 10):,}",
+            "手續費 NTD": f"-{fee:,}",
+            "淨損益 NTD": f"{net_ntd:,}",
         })
 
     df = pd.DataFrame(rows)
