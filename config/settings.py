@@ -1014,7 +1014,7 @@ class MTXTraderSettings(BaseSettings):
     )
     # 5m 訊號記憶 bars（策略 C）：0 = 嚴格模式（僅交叉當根有效）
     signal_5m_memory_bars: int = Field(
-        default=3,
+        default=0,
         validation_alias=AliasChoices("MTX_SIGNAL_5M_MEMORY_BARS"),
         description="5m KD 交叉後訊號保持有效的 K 棒數（0 = 嚴格模式）",
     )

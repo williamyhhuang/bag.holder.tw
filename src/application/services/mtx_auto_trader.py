@@ -122,7 +122,7 @@ class MTXAutoTrader:
         sheets_recorder: Optional[MTXSheetsRecorder] = None,
         min_profit_before_kd_exit_pts: float = 8.0,
         late_session_no_entry_minutes: int = 30,
-        signal_5m_memory_bars: int = 3,
+        signal_5m_memory_bars: int = 0,
     ) -> None:
         self.client = fubon_client
         self.notifier = notifier
