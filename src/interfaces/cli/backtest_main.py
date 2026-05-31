@@ -470,18 +470,21 @@ class BacktestRunner:
 
 async def main():
     """Main execution function"""
+    import argparse
+    parser = argparse.ArgumentParser(description="Backtest runner")
+    parser.add_argument('--quick', action='store_true', help='Run quick test mode')
+    parser.add_argument('--skip-download', action='store_true', help='Skip data download, use local data only')
+    args = parser.parse_args()
+
     runner = BacktestRunner()
 
-    # Check command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] == '--quick':
-        # Quick test mode
+    if args.quick:
         print("Running quick test...")
         result = runner.run_quick_test()
         print(f"Quick test completed. Return: {result.total_return_pct}%")
     else:
-        # Full backtest mode
         print("Running full backtest...")
-        result, files = await runner.run_full_backtest()
+        result, files = await runner.run_full_backtest(skip_download=args.skip_download)
         print(f"Full backtest completed. Check reports in: {files}")
 
 

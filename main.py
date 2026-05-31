@@ -72,12 +72,8 @@ def run_scan(args):
 
 def run_backtest(args):
     """Run backtest command"""
-    cmd = ['python', 'run_backtest.py']
+    cmd = ['python', '-m', 'src.interfaces.cli.backtest_main']
 
-    if hasattr(args, 'period') and args.period:
-        cmd.extend(['--period', args.period])
-    if hasattr(args, 'strategy') and args.strategy:
-        cmd.extend(['--strategy', args.strategy])
     if getattr(args, 'skip_download', False):
         cmd.append('--skip-download')
 
