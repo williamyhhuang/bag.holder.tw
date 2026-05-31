@@ -952,6 +952,18 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.20.0 - 2026-06-01
+
+**TAIFEX tick 資料自動補下載**
+
+- 新增 `scripts/download_taifex_tick.py`：從 TAIFEX「前30個交易日每筆成交資料」頁面自動偵測並補下載缺少的 zip
+- `docker/entrypoint-download.sh` 整合 TAIFEX tick 同步，每日下載排程自動維護 `data/taifex_tick/`，並備份至 GCS `taifex_tick.tar.gz`
+
+```bash
+# 手動補下載
+python scripts/download_taifex_tick.py
+```
+
 ### v5.19.0 - 2026-05-31
 
 **MTX 回測加入加碼邏輯（最多 3 口），實際交易同步支援；切回策略 A**

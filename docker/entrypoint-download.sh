@@ -38,4 +38,24 @@ else
   echo "[download-job] Upload complete."
 fi
 
+echo "[download-job] Syncing TAIFEX tick data..."
+mkdir -p "${DATA_DIR}/taifex_tick"
+
+# Pull existing taifex_tick archive
+if gsutil cp "${GCS_BUCKET}/taifex_tick.tar.gz" /tmp/taifex_tick.tar.gz 2>/dev/null; then
+  tar xzf /tmp/taifex_tick.tar.gz -C "${DATA_DIR}" 2>/dev/null || true
+fi
+
+# Download missing tick zips from TAIFEX (近 30 個交易日)
+python scripts/download_taifex_tick.py --out "${DATA_DIR}/taifex_tick"
+
+# Upload updated archive back to GCS
+TICK_COUNT=$(find "${DATA_DIR}/taifex_tick" -name "Daily_*.zip" 2>/dev/null | wc -l | tr -d ' ')
+echo "[download-job] TAIFEX tick files: ${TICK_COUNT}"
+if [ "${TICK_COUNT}" -gt 0 ]; then
+  tar czf /tmp/taifex_tick.tar.gz -C "${DATA_DIR}" taifex_tick
+  gsutil cp /tmp/taifex_tick.tar.gz "${GCS_BUCKET}/taifex_tick.tar.gz"
+  echo "[download-job] TAIFEX tick upload complete."
+fi
+
 echo "[download-job] Done."
