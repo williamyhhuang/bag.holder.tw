@@ -531,6 +531,11 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_DONCHIAN_PERIOD",
         description="Donchian Channel 突破回看天數（50 = 過去 50 個交易日最高，回測最佳值）",
     )
+    donchian_period_2: int = Field(
+        default=20,
+        env="BACKTEST_DONCHIAN_PERIOD_2",
+        description="第二 Donchian 週期（0 = 停用；20 = 捕捉短線突破，回測最佳值）",
+    )
 
     # ── P4 持倉規模設定 ──────────────────────────────────────────────
     # 每筆交易佔初始資金比例（0.05 = 5%）

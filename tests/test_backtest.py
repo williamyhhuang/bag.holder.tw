@@ -2052,6 +2052,59 @@ class TestP6TrendFollowing:
                          and s.signal_type == SignalType.BUY]
         assert len(donchian_buys) >= 1
 
+    def test_donchian_breakout_2_signal_generated(self):
+        """Donchian Breakout 2：第二 Donchian 週期（donchian_period_2）觸發 BUY 訊號"""
+        strategy = TechnicalStrategy(
+            donchian_period=50,         # 主週期（不會觸發）
+            donchian_period_2=5,        # 第二週期（5日，會觸發）
+            require_ma60_uptrend=False,
+            rsi_min_entry=0.0,
+            require_volume_confirmation=False,
+            pre_breakout_mode=False,    # 直接突破模式（close > donchian_high_2）
+        )
+        base = date(2025, 1, 1)
+        # 前 5 日最高 102，第 6 日收盤 103（突破近 5 日最高 102）→ 應觸發 Donchian Breakout 2
+        prices = [self._make_price("X", base + timedelta(days=i),
+                                   close=100 + i * 0.2, high=102)
+                  for i in range(5)]
+        prices.append(self._make_price("X", base + timedelta(days=5), close=103, high=103))
+
+        long_prices = [self._make_price("X", base - timedelta(days=130 - i),
+                                        close=80 + i * 0.1) for i in range(130)]
+        long_prices += prices
+
+        signals = strategy.generate_signals("X", long_prices,
+                                            start_date=base + timedelta(days=5),
+                                            end_date=base + timedelta(days=5))
+        d2_buys = [s for s in signals
+                   if s.signal_name == "Donchian Breakout 2"
+                   and s.signal_type == SignalType.BUY]
+        assert len(d2_buys) >= 1
+
+    def test_donchian_breakout_2_disabled_when_zero(self):
+        """donchian_period_2=0 時不應產生 Donchian Breakout 2 訊號"""
+        strategy = TechnicalStrategy(
+            donchian_period=5,
+            donchian_period_2=0,        # 停用
+            require_ma60_uptrend=False,
+            rsi_min_entry=0.0,
+            require_volume_confirmation=False,
+        )
+        base = date(2025, 1, 1)
+        prices = [self._make_price("X", base + timedelta(days=i),
+                                   close=100 + i * 0.2, high=102)
+                  for i in range(5)]
+        prices.append(self._make_price("X", base + timedelta(days=5), close=103, high=103))
+        long_prices = [self._make_price("X", base - timedelta(days=130 - i),
+                                        close=80 + i * 0.1) for i in range(130)]
+        long_prices += prices
+
+        signals = strategy.generate_signals("X", long_prices,
+                                            start_date=base + timedelta(days=5),
+                                            end_date=base + timedelta(days=5))
+        d2_buys = [s for s in signals if s.signal_name == "Donchian Breakout 2"]
+        assert len(d2_buys) == 0
+
     def test_trend_signal_uses_wider_stop_loss(self):
         """set_signal_exit_config: Donchian Breakout 倉位應使用 10% 停損（非預設 5%）"""
         engine = BacktestEngine(

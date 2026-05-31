@@ -266,6 +266,7 @@ class TechnicalStrategy:
         "BB Squeeze Break",
         "Weekly BB Squeeze Break",
         "Weekly Donchian Breakout",
+        "Donchian Breakout 2",
     ]
 
     # Mean-reversion signals that should skip the RSI min entry filter
@@ -313,6 +314,7 @@ class TechnicalStrategy:
         enable_weekly_signals: bool = False,
         weekly_bb_period: int = 20,
         weekly_donchian_period: int = 10,
+        donchian_period_2: int = 0,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -365,6 +367,7 @@ class TechnicalStrategy:
         self.enable_weekly_signals = enable_weekly_signals
         self.weekly_bb_period = weekly_bb_period
         self.weekly_donchian_period = weekly_donchian_period
+        self.donchian_period_2 = donchian_period_2
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -694,6 +697,34 @@ class TechnicalStrategy:
                                     'type': 'BUY',
                                     'name': 'Donchian Breakout',
                                     'description': f'收盤突破近 {self.donchian_period} 日最高（{donchian_high}）',
+                                    'strength': 'STRONG',
+                                    'price': close,
+                                })
+
+                # 方向 B: 第二 Donchian 週期（捕捉不同時間框架的突破）
+                if self.donchian_period_2 > 0 and i >= self.donchian_period_2:
+                    lookback_dates_2 = sorted_dates[i - self.donchian_period_2: i]
+                    donchian_high_2 = max(
+                        (price_lookup[d].high_price for d in lookback_dates_2 if d in price_lookup),
+                        default=None,
+                    )
+                    if donchian_high_2 is not None:
+                        close = current_price_data.close_price
+                        if self.pre_breakout_mode:
+                            if donchian_high_2 * Decimal('0.97') < close <= donchian_high_2:
+                                detected_signals.append({
+                                    'type': 'BUY',
+                                    'name': 'Donchian Breakout 2',
+                                    'description': f'接近近 {self.donchian_period_2} 日最高（{donchian_high_2}），前置佈局',
+                                    'strength': 'STRONG',
+                                    'price': close,
+                                })
+                        else:
+                            if close > donchian_high_2:
+                                detected_signals.append({
+                                    'type': 'BUY',
+                                    'name': 'Donchian Breakout 2',
+                                    'description': f'收盤突破近 {self.donchian_period_2} 日最高（{donchian_high_2}）',
                                     'strength': 'STRONG',
                                     'price': close,
                                 })

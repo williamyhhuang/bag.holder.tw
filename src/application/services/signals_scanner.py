@@ -191,6 +191,7 @@ class SignalsScanner:
             enable_weekly_signals=cfg.enable_weekly_signals,
             weekly_bb_period=cfg.weekly_bb_period,
             weekly_donchian_period=cfg.weekly_donchian_period,
+            donchian_period_2=cfg.donchian_period_2,
             # weekly_close_only intentionally omitted: not applicable to live scanning
         )
         self.cfg = cfg

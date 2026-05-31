@@ -951,6 +951,42 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.17.0 - 2026-05-31
+
+**雙 Donchian 突破（方向 B：短線 + 長線同步捕捉）**
+
+新增第二 Donchian 週期（`donchian_period_2`），與原有 50 日主週期並行運作，
+同時捕捉短線（20日）與長線（50日）的突破信號，觸發 `Donchian Breakout 2` 訊號。
+
+**回測 grid search 結果（2022-01-01 ~ 2026-05-31，週線信號 on）：**
+
+| 配置 | 報酬率 | 勝率 | Sharpe | 分數（報酬×勝率） |
+|---|---|---|---|---|
+| **週線 d10 + 雙 Donchian d20** | **63.70%** | 49.0% | **0.65** | **3122.57** |
+| 週線 d15 only | 52.77% | 49.3% | 0.56 | 2599.98 |
+| 週線 d5 only | 46.18% | 49.4% | 0.52 | 2283.14 |
+| 週線 d10 only（原預設） | 45.27% | 48.3% | 0.51 | 2188.35 |
+| 週線 d13 only | 39.15% | 48.5% | 0.45 | 1898.38 |
+| 週線 d8 only | 36.14% | 48.5% | 0.43 | 1753.51 |
+
+雙 Donchian 組合（d10 週線 + d20 日線第二週期）在報酬×勝率分數上比第二名高 20%，為最佳配置。
+
+**新增設定：**
+```env
+BACKTEST_DONCHIAN_PERIOD_2=20  # 第二 Donchian 週期（0=停用；預設 20 捕捉短線突破）
+```
+
+**使用範例：**
+```bash
+# 雙 Donchian（預設已啟用，donchian_period_2=20）
+BACKTEST_ENABLE_WEEKLY_SIGNALS=true python -m src.interfaces.cli.backtest_main
+
+# 停用第二 Donchian
+BACKTEST_DONCHIAN_PERIOD_2=0 python -m src.interfaces.cli.backtest_main
+```
+
+---
+
 ### v5.16.0 - 2026-05-31
 
 **週線訊號擴充（方向 A：擴大信號來源）**
