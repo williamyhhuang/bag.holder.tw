@@ -686,9 +686,9 @@ class BacktestSettings(BaseSettings):
     # 對週線 OHLCV 計算 BB Squeeze Break 與 Donchian Breakout，
     # 只在每週最後一個交易日觸發，捕捉較高時間框架的突破。
     enable_weekly_signals: bool = Field(
-        default=False,
+        default=True,
         env="BACKTEST_ENABLE_WEEKLY_SIGNALS",
-        description="啟用週線訊號（Weekly BB Squeeze Break、Weekly Donchian Breakout）",
+        description="啟用週線訊號（Weekly BB Squeeze Break、Weekly Donchian Breakout；回測驗證最佳，預設開啟）",
     )
     weekly_bb_period: int = Field(
         default=20,
