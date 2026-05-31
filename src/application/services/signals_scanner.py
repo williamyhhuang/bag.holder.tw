@@ -185,7 +185,7 @@ class SignalsScanner:
             weekly_rsi_min=cfg.weekly_rsi_min,
             require_revenue_growth=cfg.require_revenue_growth,
             revenue_yoy_min_pct=cfg.revenue_yoy_min_pct,
-            finmind_api_token=settings.finmind.api_token,
+            finmind_api_token=settings.finmind.api_token or "",
             require_minervini_trend=cfg.require_minervini_trend,
             min_confirming_signals=cfg.min_confirming_signals,
             enable_weekly_signals=cfg.enable_weekly_signals,
