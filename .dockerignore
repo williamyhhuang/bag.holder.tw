@@ -98,6 +98,7 @@ deploy/
 scripts/
 !scripts/run_backtest.py
 !scripts/run_mtx_trader.py
+!scripts/download_taifex_tick.py
 
 # Backup files
 *.backup
