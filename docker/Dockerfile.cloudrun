@@ -43,6 +43,7 @@ COPY src/ ./src/
 COPY main.py ./
 COPY scripts/run_backtest.py ./
 COPY scripts/run_mtx_trader.py ./scripts/run_mtx_trader.py
+COPY scripts/download_taifex_tick.py ./scripts/download_taifex_tick.py
 COPY config/ ./config/
 COPY docker/entrypoint-download.sh /entrypoint-download.sh
 COPY docker/entrypoint-signals.sh /entrypoint-signals.sh
