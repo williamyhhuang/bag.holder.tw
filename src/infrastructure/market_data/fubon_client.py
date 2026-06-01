@@ -5,6 +5,8 @@ Based on official Fubon Neo API v2.2.8
 Authentication: apikey_login(user_id, api_key, cert_path, cert_password)
 """
 import asyncio
+import base64
+import tempfile
 import time
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Any
@@ -89,10 +91,21 @@ class FubonClient:
     ):
         self.user_id = user_id
         self.password = password
-        self.cert_path = cert_path
         self.cert_password = cert_password or user_id  # default cert pw = user_id
         self.api_key = api_key
         self.is_simulation = is_simulation
+
+        # Resolve cert path: explicit path → decode FUBON_CERT_BASE64 to tmp file
+        self.cert_path = cert_path
+        self._cert_tmpfile = None  # keep reference so it isn't GC'd during login
+        if not self.cert_path:
+            from config.settings import settings as _settings
+            if _settings.fubon.cert_base64:
+                self._cert_tmpfile = tempfile.NamedTemporaryFile(suffix=".p12", delete=False)
+                self._cert_tmpfile.write(base64.b64decode(_settings.fubon.cert_base64))
+                self._cert_tmpfile.flush()
+                self.cert_path = self._cert_tmpfile.name
+                logger.debug("Decoded FUBON_CERT_BASE64 to temp file: %s", self.cert_path)
 
         self.sdk = None
         self.accounts = None

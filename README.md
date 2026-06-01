@@ -952,6 +952,13 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.21.0 - 2026-06-01
+
+**修正 MTX 日盤 Cloud Run Job 憑證讀取失敗**
+
+- `FubonClient` 新增 `FUBON_CERT_BASE64` 支援：若 `FUBON_CERT_PATH` 未設，自動解碼 base64 寫入暫存檔，與 `fubon_download_client.py` / `fubon_trades_syncer.py` 行為一致
+- 修正日盤 Cloud Run Job 每天 08:44 啟動後 15 秒即因 `No valid auth credentials` 崩潰的問題
+
 ### v5.20.0 - 2026-06-01
 
 **TAIFEX tick 資料自動補下載**
