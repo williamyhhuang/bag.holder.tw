@@ -194,7 +194,10 @@ class MTXAutoTrader:
         self._symbol = get_near_month_symbol(self.SYMBOL_ROOT)
         logger.info(f"MTX symbol: {self._symbol}")
 
-        await self._seed_bars()
+        try:
+            await asyncio.wait_for(self._seed_bars(), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("Initial _seed_bars timed out (>30s), starting without historical bars")
 
     async def _seed_bars(self) -> None:
         """Fetch intraday 1-min / 5-min / daily candles and pre-load the signal engine."""
@@ -376,7 +379,10 @@ class MTXAutoTrader:
 
             # Periodic bar refresh (every 5 min) to stay in sync with REST API
             if (now - last_seed).seconds >= 300:
-                await self._seed_bars()
+                try:
+                    await asyncio.wait_for(self._seed_bars(), timeout=20.0)
+                except asyncio.TimeoutError:
+                    logger.warning("_seed_bars timed out (>20s), skipping this refresh")
                 last_seed = now
 
             # Drain WebSocket queue

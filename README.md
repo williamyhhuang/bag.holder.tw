@@ -952,6 +952,14 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.23.0 - 2026-06-02
+
+**修正 _seed_bars REST call 阻塞 asyncio event loop**
+
+- `_seed_bars()` 內的 Fubon SDK REST 呼叫是同步阻塞，若 API 無回應會凍結整個 event loop
+- 主迴圈的週期性 seed refresh 加上 `asyncio.wait_for(..., timeout=20s)`，逾時直接跳過並記錄 warning
+- 初始化的 seed 也加上 30s timeout，確保啟動不會被卡住
+
 ### v5.22.0 - 2026-06-01
 
 **修正夜盤 Cloud Run Job 啟動即退出（timezone bug）**
