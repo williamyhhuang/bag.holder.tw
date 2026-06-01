@@ -22,6 +22,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, time
 from enum import Enum
 from typing import List, Optional
+from zoneinfo import ZoneInfo
+
+_TW = ZoneInfo("Asia/Taipei")
+
+
+def _now() -> datetime:
+    """Return current datetime in Asia/Taipei (works correctly in Cloud Run UTC)."""
+    return datetime.now(_TW)
 
 from ...infrastructure.market_data.fubon_client import FubonClient, get_near_month_symbol
 from ...infrastructure.notification.telegram_notifier import TelegramNotifier
@@ -44,7 +52,7 @@ class SessionType(Enum):
 
 def get_session(now: Optional[datetime] = None) -> SessionType:
     """Determine the current Taiwan-time trading session."""
-    t = (now or datetime.now()).time()
+    t = (now or _now()).time()
     if time(8, 45) <= t < time(13, 31):
         return SessionType.DAY
     if t >= time(15, 0) or t < time(5, 1):
@@ -343,15 +351,15 @@ class MTXAutoTrader:
         session_end: time = time(13, 31) if not is_night else time(5, 1)
 
         def _session_should_end() -> bool:
-            t = datetime.now().time()
+            t = _now().time()
             if not is_night:
                 return t >= session_end
             # Night session crosses midnight: end when 05:01 reached from above
             return time(5, 1) <= t < time(8, 45)
 
         # ------ Main loop ------
-        last_seed = datetime.now()
-        last_reconnect = datetime.now()
+        last_seed = _now()
+        last_reconnect = _now()
 
         while self.running:
             # Check if session ended
@@ -360,7 +368,7 @@ class MTXAutoTrader:
                 break
 
             # Reconnect if WebSocket dropped (throttle: max once per 10s)
-            now = datetime.now()
+            now = _now()
             if not ws_connected[0] and (now - last_reconnect).seconds >= 10:
                 last_reconnect = now
                 logger.info("🔄 WebSocket 重連中...")
@@ -407,7 +415,7 @@ class MTXAutoTrader:
 
         price = float(price_raw)
         volume = int(data.get("lastSize") or 0)
-        ts = datetime.now()
+        ts = _now()
 
         logger.debug(f"Tick  {price:.0f}  vol={volume}  {ts.strftime('%H:%M:%S')}")
         self.signal_engine.add_tick(price, volume, ts)
@@ -441,7 +449,7 @@ class MTXAutoTrader:
             return
 
         # ---- IOC cooldown: skip entry if last IOC failed in the current 1m bar ----
-        current_bar_ts = datetime.now().replace(second=0, microsecond=0)
+        current_bar_ts = _now().replace(second=0, microsecond=0)
         if self._ioc_failed_bar_ts is not None and self._ioc_failed_bar_ts >= current_bar_ts:
             logger.debug("IOC cooldown active — skip entry until next 1m bar")
             return
@@ -473,7 +481,7 @@ class MTXAutoTrader:
         if self.late_session_no_entry_minutes <= 0:
             return False
         from datetime import timedelta
-        now = datetime.now()
+        now = _now()
         now_t = now.time()
         if not is_night:
             session_end = now.replace(hour=13, minute=31, second=0, microsecond=0)
@@ -526,7 +534,7 @@ class MTXAutoTrader:
             self.position = Position(
                 symbol=self.symbol, direction=direction,
                 entry_price=price, lots=lots,
-                entry_time=datetime.now(), order_no="DRY",
+                entry_time=_now(), order_no="DRY",
             )
             await self._notify(
                 f"📋 [DRY RUN] {'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口\n"
@@ -547,7 +555,7 @@ class MTXAutoTrader:
             self.position = Position(
                 symbol=self.symbol, direction=direction,
                 entry_price=price, lots=lots,
-                entry_time=datetime.now(), order_no="SIM",
+                entry_time=_now(), order_no="SIM",
             )
             await self._notify(
                 f"📋 [模擬] {'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口\n"
@@ -576,7 +584,7 @@ class MTXAutoTrader:
 
             # IOC 完全未成交 → 不建立倉位，鎖定本根 1m K 棒不再重試
             if filled_lot == 0:
-                self._ioc_failed_bar_ts = datetime.now().replace(second=0, microsecond=0)
+                self._ioc_failed_bar_ts = _now().replace(second=0, microsecond=0)
                 logger.warning(f"Open position IOC unfilled (0/{lots}L) — cooldown until next 1m bar")
                 await self._notify(
                     f"⚠️ 開倉未成交（IOC 0/{lots}口）\n"
@@ -598,7 +606,7 @@ class MTXAutoTrader:
             self.position = Position(
                 symbol=self.symbol, direction=direction,
                 entry_price=actual_entry, lots=filled_lot,
-                entry_time=datetime.now(),
+                entry_time=_now(),
                 order_no=result.get("order_no", ""),
             )
             await self._notify(
@@ -668,7 +676,7 @@ class MTXAutoTrader:
                 lots=pos.lots,
                 pnl_pts=pnl * pos.lots,
                 entry_time=pos.entry_time,
-                exit_time=datetime.now(),
+                exit_time=_now(),
                 exit_reason=reason,
             )
         )

@@ -952,6 +952,13 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.22.0 - 2026-06-01
+
+**修正夜盤 Cloud Run Job 啟動即退出（timezone bug）**
+
+- `mtx_auto_trader.py` 所有 `datetime.now()` 改為 `_now()`（回傳 Asia/Taipei aware datetime），修正 Cloud Run 在 UTC 環境下 session 邊界判斷全部錯誤的問題
+- 夜盤 14:59 啟動時，UTC 06:59 滿足 `time(5,1) <= t < time(8,45)` → 錯判為 session 結束，修正後正確以台北時間判斷
+
 ### v5.21.0 - 2026-06-01
 
 **修正 MTX 日盤 Cloud Run Job 憑證讀取失敗**

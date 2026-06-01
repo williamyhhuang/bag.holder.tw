@@ -30,6 +30,7 @@ from src.application.services.mtx_signal_engine import (
     golden_cross,
 )
 from src.application.services.mtx_auto_trader import (
+    _now,
     MTXAutoTrader,
     Position,
     SessionType,
@@ -442,7 +443,7 @@ class TestMTXAutoTraderDryRun:
         trader.position = Position(
             symbol="TMFE6", direction="LONG",
             entry_price=20000.0, lots=3,
-            entry_time=datetime.now(),
+            entry_time=_now(),
         )
         assert trader._open_slots() == 0
 
@@ -464,7 +465,7 @@ class TestMTXAutoTraderDryRun:
     def test_signal_hold_doesnt_open_position(self):
         client = _mock_client()
         trader = MTXAutoTrader(client, dry_run=True)
-        hold = TradeSignal(SignalDirection.HOLD, 20000.0, datetime.now(), "hold", 0.0)
+        hold = TradeSignal(SignalDirection.HOLD, 20000.0, _now(), "hold", 0.0)
 
         async def _run():
             await trader._handle_signal(hold, False)
@@ -479,9 +480,9 @@ class TestMTXAutoTraderDryRun:
         trader.position = Position(
             symbol="TMFE6", direction="SHORT",
             entry_price=20000.0, lots=1,
-            entry_time=datetime.now(),
+            entry_time=_now(),
         )
-        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, datetime.now(), "flip", 0.9)
+        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, _now(), "flip", 0.9)
 
         async def _run():
             await trader._handle_signal(long_sig, False)
@@ -497,8 +498,8 @@ class TestMTXAutoTraderDryRun:
         client = _mock_client()
         trader = MTXAutoTrader(client, dry_run=True)
         trader.trades = [
-            TradeRecord("FIMTXE6", "LONG", 20000, 20060, 1, 60, datetime.now(), datetime.now(), "tp"),
-            TradeRecord("FIMTXE6", "SHORT", 20100, 20050, 2, 100, datetime.now(), datetime.now(), "tp"),
+            TradeRecord("FIMTXE6", "LONG", 20000, 20060, 1, 60, _now(), _now(), "tp"),
+            TradeRecord("FIMTXE6", "SHORT", 20100, 20050, 2, 100, _now(), _now(), "tp"),
         ]
         with caplog.at_level(logging.INFO):
             trader._log_summary()
@@ -593,9 +594,9 @@ class TestIOCFillValidation:
         })
         trader = MTXAutoTrader(client, live_order=True)
         # Simulate cooldown active for current bar
-        trader._ioc_failed_bar_ts = datetime.now().replace(second=0, microsecond=0)
+        trader._ioc_failed_bar_ts = _now().replace(second=0, microsecond=0)
 
-        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, datetime.now(), "test", 0.9)
+        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, _now(), "test", 0.9)
 
         async def _run():
             await trader._handle_signal(long_sig, False)
@@ -614,10 +615,10 @@ class TestIOCFillValidation:
         })
         trader = MTXAutoTrader(client, live_order=True, late_session_no_entry_minutes=0)
         # Cooldown from a past bar (1 minute ago)
-        past_bar = (datetime.now() - timedelta(minutes=1)).replace(second=0, microsecond=0)
+        past_bar = (_now() - timedelta(minutes=1)).replace(second=0, microsecond=0)
         trader._ioc_failed_bar_ts = past_bar
 
-        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, datetime.now(), "test", 0.9)
+        long_sig = TradeSignal(SignalDirection.LONG, 20000.0, _now(), "test", 0.9)
 
         async def _run():
             await trader._handle_signal(long_sig, False)
@@ -741,7 +742,7 @@ class TestLateSessionFilter:
     def test_late_session_blocks_long_entry(self):
         """LONG signal during late session must NOT open position."""
         trader = self._trader(30)
-        long_sig = TradeSignal(SignalDirection.LONG, 41000.0, datetime.now(), "test", 0.9)
+        long_sig = TradeSignal(SignalDirection.LONG, 41000.0, _now(), "test", 0.9)
 
         async def _run():
             with patch.object(trader, "_is_late_session", return_value=True):
@@ -753,7 +754,7 @@ class TestLateSessionFilter:
     def test_late_session_blocks_short_entry(self):
         """SHORT signal during late session must NOT open position."""
         trader = self._trader(30)
-        short_sig = TradeSignal(SignalDirection.SHORT, 41000.0, datetime.now(), "test", 0.9)
+        short_sig = TradeSignal(SignalDirection.SHORT, 41000.0, _now(), "test", 0.9)
 
         async def _run():
             with patch.object(trader, "_is_late_session", return_value=True):
@@ -768,9 +769,9 @@ class TestLateSessionFilter:
         trader.position = Position(
             symbol="TMFF6", direction="LONG",
             entry_price=41000.0, lots=1,
-            entry_time=datetime.now(),
+            entry_time=_now(),
         )
-        close_sig = TradeSignal(SignalDirection.CLOSE_LONG, 41010.0, datetime.now(), "KD叉", 0.8)
+        close_sig = TradeSignal(SignalDirection.CLOSE_LONG, 41010.0, _now(), "KD叉", 0.8)
 
         async def _run():
             with patch.object(trader, "_is_late_session", return_value=True):
