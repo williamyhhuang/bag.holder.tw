@@ -952,6 +952,16 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.24.0 - 2026-06-02
+
+**夜盤策略調整：停損 80pts + 只做多**
+
+- 回測顯示夜盤只做多勝率 85.2%（雙向 70.6%），淨損益最高
+- `MTXTraderSettings` 新增 `night_stop_loss_pts`（預設 80）、`night_long_only`（預設 True）
+- `MTXAutoTrader` 新增 `long_only` 參數，SHORT 訊號直接忽略
+- `run_mtx_trader.py` 依 session 自動套用夜盤/日盤專屬參數
+- 修正重複進場 bug：`_last_entry_bar_ts` dedup guard，同一根 1m bar 只進場一次
+
 ### v5.23.0 - 2026-06-02
 
 **修正 _seed_bars REST call 阻塞 asyncio event loop**

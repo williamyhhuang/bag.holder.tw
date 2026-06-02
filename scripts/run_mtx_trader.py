@@ -27,7 +27,7 @@ logging.basicConfig(
 )
 
 from config.settings import settings
-from src.application.services.mtx_auto_trader import MTXAutoTrader, SessionType
+from src.application.services.mtx_auto_trader import MTXAutoTrader, SessionType, get_session
 from src.infrastructure.market_data.fubon_client import FubonClient
 from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 from src.utils.logger import get_logger
@@ -53,16 +53,34 @@ async def main(session_arg: str, dry_run: bool) -> None:
 
     async with client:
         mtx_cfg = settings.mtx_trader
+
+        # 夜盤使用專屬參數（停損較寬、只做多）
+        is_night_session = session_arg == "night" or (
+            session_arg == "auto" and get_session().value == "night"
+        )
+        stop_loss = (
+            mtx_cfg.night_stop_loss_pts
+            if is_night_session and mtx_cfg.night_stop_loss_pts is not None
+            else mtx_cfg.stop_loss_pts
+        )
+        long_only = mtx_cfg.night_long_only if is_night_session else False
+
+        logger.info(
+            f"Session={'night' if is_night_session else 'day'}  "
+            f"stop_loss={stop_loss}pts  long_only={long_only}"
+        )
+
         trader = MTXAutoTrader(
             fubon_client=client,
             notifier=notifier,
             dry_run=dry_run,
-            stop_loss_pts=mtx_cfg.stop_loss_pts,
+            stop_loss_pts=stop_loss,
             take_profit_pts=mtx_cfg.take_profit_pts,
             max_lots=mtx_cfg.max_lots,
             min_profit_before_kd_exit_pts=mtx_cfg.min_profit_before_kd_exit_pts,
             late_session_no_entry_minutes=mtx_cfg.late_session_no_entry_minutes,
             signal_5m_memory_bars=mtx_cfg.signal_5m_memory_bars,
+            long_only=long_only,
         )
         await trader.initialize()
 

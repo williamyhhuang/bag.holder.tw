@@ -1018,6 +1018,18 @@ class MTXTraderSettings(BaseSettings):
         validation_alias=AliasChoices("MTX_SIGNAL_5M_MEMORY_BARS"),
         description="5m KD 交叉後訊號保持有效的 K 棒數（0 = 嚴格模式）",
     )
+    # 夜盤專屬停損點數（None = 沿用 stop_loss_pts）
+    night_stop_loss_pts: Optional[float] = Field(
+        default=80.0,
+        validation_alias=AliasChoices("MTX_NIGHT_STOP_LOSS_PTS"),
+        description="夜盤停損點數（夜盤波動較大，預設 80pts）",
+    )
+    # 夜盤只做多（True = 忽略所有做空訊號）
+    night_long_only: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MTX_NIGHT_LONG_ONLY"),
+        description="夜盤只做多，忽略做空訊號（回測顯示勝率更高）",
+    )
 
     model_config = {
         "extra": "ignore",

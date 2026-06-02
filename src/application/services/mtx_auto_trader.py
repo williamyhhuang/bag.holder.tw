@@ -131,11 +131,13 @@ class MTXAutoTrader:
         min_profit_before_kd_exit_pts: float = 8.0,
         late_session_no_entry_minutes: int = 30,
         signal_5m_memory_bars: int = 0,
+        long_only: bool = False,
     ) -> None:
         self.client = fubon_client
         self.notifier = notifier
         self.dry_run = dry_run
         self.max_lots = max_lots
+        self.long_only = long_only
         self.late_session_no_entry_minutes = late_session_no_entry_minutes
 
         # Feature toggle: live_order 明確傳入時使用傳入值，否則從 settings 讀取
@@ -165,6 +167,9 @@ class MTXAutoTrader:
         # IOC unfilled cooldown: block re-entry until the current 1m bar closes
         # Stores the floored 1-minute timestamp of the bar where IOC failed
         self._ioc_failed_bar_ts: Optional[datetime] = None
+
+        # Dedup guard: prevent double-entry from duplicate WS messages in the same 1m bar
+        self._last_entry_bar_ts: Optional[datetime] = None
 
         # Graceful shutdown on SIGTERM / SIGINT
         for sig in (_sys_signal.SIGTERM, _sys_signal.SIGINT):
@@ -460,6 +465,11 @@ class MTXAutoTrader:
             logger.debug("IOC cooldown active — skip entry until next 1m bar")
             return
 
+        # ---- Dedup: skip new entry if already entered in the same 1m bar ----
+        if self._last_entry_bar_ts is not None and self._last_entry_bar_ts >= current_bar_ts:
+            logger.debug("Dedup guard — already entered this 1m bar, skip duplicate signal")
+            return
+
         # ---- Entry signals ----
         if direction == SignalDirection.LONG:
             if self.position and self.position.direction == "SHORT":
@@ -471,6 +481,9 @@ class MTXAutoTrader:
                 await self._add_to_position(price, signal.reason, is_night)
 
         elif direction == SignalDirection.SHORT:
+            if self.long_only:
+                logger.debug("long_only mode — SHORT signal ignored")
+                return
             if self.position and self.position.direction == "LONG":
                 await self._close_position("多空反轉", price, is_night)
             if self.position is None and self._open_slots() > 0:
@@ -533,6 +546,7 @@ class MTXAutoTrader:
         is_night: bool,
     ) -> None:
         logger.info(f"→ OPEN {direction} {lots}L @ {price:.0f} — {reason}")
+        self._last_entry_bar_ts = _now().replace(second=0, microsecond=0)
         session_label = "夜盤" if is_night else "日盤"
 
         # ── DRY RUN ──
