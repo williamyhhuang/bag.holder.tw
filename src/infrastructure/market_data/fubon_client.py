@@ -343,15 +343,20 @@ class FubonClient:
                 raise FubonAPIError("Not logged in")
 
             restfutopt = self.sdk.marketdata.rest_client.futopt
+            loop = asyncio.get_event_loop()
 
             if timeframe == 'D':
-                # Daily bars via historical.daily endpoint
-                result = restfutopt.historical.daily(symbol=symbol)
+                # Daily bars via historical.daily endpoint — run in executor to avoid blocking event loop
+                result = await loop.run_in_executor(
+                    None, lambda: restfutopt.historical.daily(symbol=symbol)
+                )
             else:
                 kwargs = {'symbol': symbol, 'timeframe': timeframe}
                 if session:
                     kwargs['session'] = session
-                result = restfutopt.intraday.candles(**kwargs)
+                result = await loop.run_in_executor(
+                    None, lambda: restfutopt.intraday.candles(**kwargs)
+                )
 
             if not result or not hasattr(result, 'data') or not result.data:
                 return []

@@ -952,6 +952,13 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.25.0 - 2026-06-02
+
+**修正 get_futures_candles 同步呼叫阻塞 asyncio event loop**
+
+- `fubon_client.py` 的 `restfutopt.historical.daily()` / `intraday.candles()` 改用 `loop.run_in_executor(None, ...)` 執行，讓 `asyncio.wait_for` 的 timeout 真正有效
+- 之前 `asyncio.wait_for` 無法中斷同步 blocking call，導致 event loop 凍結、5 分鐘 seed refresh 完全無作用
+
 ### v5.24.0 - 2026-06-02
 
 **夜盤策略調整：停損 80pts + 只做多**
