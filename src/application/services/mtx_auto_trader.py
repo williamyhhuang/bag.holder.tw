@@ -170,6 +170,8 @@ class MTXAutoTrader:
 
         # Dedup guard: prevent double-entry from duplicate WS messages in the same 1m bar
         self._last_entry_bar_ts: Optional[datetime] = None
+        # Dedup guard: prevent double-close from duplicate WS messages
+        self._last_close_bar_ts: Optional[datetime] = None
 
         # Graceful shutdown on SIGTERM / SIGINT
         for sig in (_sys_signal.SIGTERM, _sys_signal.SIGINT):
@@ -476,6 +478,8 @@ class MTXAutoTrader:
                 # Reverse: close short first
                 await self._close_position("多空反轉", price, is_night)
             if self.position is None and self._open_slots() > 0:
+                # Set dedup flag BEFORE await so concurrent/duplicate messages are blocked immediately
+                self._last_entry_bar_ts = current_bar_ts
                 await self._open_position("LONG", price, 1, signal.reason, is_night)
             elif self.position and self.position.direction == "LONG" and self._open_slots() > 0:
                 await self._add_to_position(price, signal.reason, is_night)
@@ -487,6 +491,8 @@ class MTXAutoTrader:
             if self.position and self.position.direction == "LONG":
                 await self._close_position("多空反轉", price, is_night)
             if self.position is None and self._open_slots() > 0:
+                # Set dedup flag BEFORE await so concurrent/duplicate messages are blocked immediately
+                self._last_entry_bar_ts = current_bar_ts
                 await self._open_position("SHORT", price, 1, signal.reason, is_night)
             elif self.position and self.position.direction == "SHORT" and self._open_slots() > 0:
                 await self._add_to_position(price, signal.reason, is_night)
@@ -546,7 +552,6 @@ class MTXAutoTrader:
         is_night: bool,
     ) -> None:
         logger.info(f"→ OPEN {direction} {lots}L @ {price:.0f} — {reason}")
-        self._last_entry_bar_ts = _now().replace(second=0, microsecond=0)
         session_label = "夜盤" if is_night else "日盤"
 
         # ── DRY RUN ──
@@ -556,6 +561,7 @@ class MTXAutoTrader:
                 entry_price=price, lots=lots,
                 entry_time=_now(), order_no="DRY",
             )
+            self._last_close_bar_ts = None  # reset so next close is not blocked
             await self._notify(
                 f"📋 [DRY RUN] {'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口\n"
                 f"進場：{price:.0f}　原因：{reason}"
@@ -577,6 +583,7 @@ class MTXAutoTrader:
                 entry_price=price, lots=lots,
                 entry_time=_now(), order_no="SIM",
             )
+            self._last_close_bar_ts = None  # reset so next close is not blocked
             await self._notify(
                 f"📋 [模擬] {'🟢 做多' if direction == 'LONG' else '🔴 做空'} {lots}口\n"
                 f"進場：{price:.0f}　原因：{reason}\n"
@@ -642,6 +649,13 @@ class MTXAutoTrader:
     async def _close_position(self, reason: str, price: float, is_night: bool) -> None:
         if not self.position:
             return
+
+        # Dedup guard: prevent double-close from duplicate WS messages in the same 1m bar
+        current_bar_ts = _now().replace(second=0, microsecond=0)
+        if self._last_close_bar_ts is not None and self._last_close_bar_ts >= current_bar_ts:
+            logger.debug("Close dedup guard — already closed this 1m bar, skip duplicate signal")
+            return
+        self._last_close_bar_ts = current_bar_ts
 
         pos = self.position
         pnl = (

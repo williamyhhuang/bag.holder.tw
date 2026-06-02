@@ -11,6 +11,7 @@ Google Sheets「微台交易紀錄」頁籤，而不透過富邦 API 下單。
 from __future__ import annotations
 
 import json
+import time as _time
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -56,6 +57,11 @@ class MTXSheetsRecorder:
         self._ws_name = worksheet_name  # None → 從 settings 讀取
         self._client = None
         self._worksheet = None
+        # In-memory dedup: prevent duplicate writes within DEDUP_WINDOW_SECS seconds
+        self._last_write_key: Optional[str] = None
+        self._last_write_ts: float = 0.0
+        _DEDUP_WINDOW_SECS = 30  # stored on instance for testability
+        self._dedup_window: int = _DEDUP_WINDOW_SECS
 
     # ------------------------------------------------------------------
     # Internal: lazy worksheet initialisation
@@ -199,6 +205,16 @@ class MTXSheetsRecorder:
         session: str,
     ) -> bool:
         try:
+            # In-memory dedup: skip identical (action, direction, price) within dedup window
+            dedup_key = f"{action}:{direction}:{price:.0f}"
+            now_ts = _time.monotonic()
+            if (self._last_write_key == dedup_key
+                    and now_ts - self._last_write_ts < self._dedup_window):
+                logger.warning(
+                    f"Sheets dedup guard: skip duplicate {action} {direction} @ {price:.0f}"
+                )
+                return False
+
             ws = self._get_worksheet()
             now = datetime.now(_TZ)
             row = [
@@ -217,6 +233,8 @@ class MTXSheetsRecorder:
                 "模擬",                               # mode
             ]
             ws.append_row(row, value_input_option="USER_ENTERED")
+            self._last_write_key = dedup_key
+            self._last_write_ts = now_ts
             logger.info(
                 f"[模擬] Sheets 寫入 {action} {direction} {lots}口 @ {price:.0f}"
                 + (f" PnL={pnl_pts:+.0f}pts" if pnl_pts is not None else "")

@@ -1867,6 +1867,12 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.15.2 - 2026-06-01
+- 🐛 **MTX 交易重複紀錄修正（進場 / 出場各兩筆 Bug）**：
+  - **根本原因 A（WebSocket 同實例重複）**：`_last_entry_bar_ts` 原本在 `_open_position()` 內部才設定，若兩條 WS 重複訊息幾乎同時進入 drain loop，dedup 旗標未能及時攔截第二條；修復：將旗標移到 `_handle_signal()` 內、`await _open_position()` 之前立即設定
+  - **根本原因 B（出場無防重複機制）**：1mK死叉等離場訊號可能連續觸發兩次；修復：新增 `_last_close_bar_ts` 同分鐘出場 dedup 守衛，`_close_position()` 開頭即攔截重複呼叫，同時在新部位建立時重置旗標
+  - **根本原因 C（Sheets 寫入端無防護）**：`MTXSheetsRecorder._append_row()` 新增 in-memory dedup（30 秒 TTL），以 `action:direction:price` 為 key；防止同實例同秒寫入兩筆相同記錄（最後一道防線）
+
 ### v3.15.1 - 2026-05-30
 - 🐛 **修正週線收盤進場（`BACKTEST_WEEKLY_CLOSE_ONLY`）產生 0 筆交易的 Bug**：
   - 根本原因：BUY 訊號在週五（週最後交易日）發出後，回測引擎將其排入「次日開盤執行」佇列；但次日（週六）無市場資料，舊邏輯直接丟棄訊號，導致所有交易均被捨棄
