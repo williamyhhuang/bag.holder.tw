@@ -328,7 +328,7 @@ module "job_mtx_trader_night" {
   memory                = "1Gi"
   cpu                   = "1"
   task_timeout_seconds  = 51600   # ~14.3 小時
-  max_retries           = 0
+  max_retries           = 1       # watchdog sys.exit(1) 後自動重啟一次
   secret_env_vars       = local.common_secret_env_vars
   vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
   env_vars = merge(local.common_env_vars, {

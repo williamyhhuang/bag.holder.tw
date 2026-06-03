@@ -1867,6 +1867,12 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.15.3 - 2026-06-04
+- 🐛 **MTX 夜盤 Watchdog（防主迴圈凍結自動重啟）**：
+  - **問題**：Cloud Run scheduled maintenance 暫停/恢復後，SDK HTTP thread 卡死累積導致 executor thread pool 耗盡，主迴圈靜默凍結（無 log、無 crash、`runningCount=1` 假活）
+  - **方案 A**：`job_mtx_trader_night` 的 `max_retries` 改為 1，讓 Cloud Run 在 watchdog 觸發後自動重啟一次
+  - **方案 B**：`MTXAutoTrader` 內建 watchdog asyncio task，主迴圈每次迭代更新 `_last_alive_ts`；若 20 分鐘無心跳則發 Telegram 通知並 `sys.exit(1)` 觸發 Cloud Run 重啟
+
 ### v3.15.2 - 2026-06-01
 - 🐛 **MTX 交易重複紀錄修正（進場 / 出場各兩筆 Bug）**：
   - **根本原因 A（WebSocket 同實例重複）**：`_last_entry_bar_ts` 原本在 `_open_position()` 內部才設定，若兩條 WS 重複訊息幾乎同時進入 drain loop，dedup 旗標未能及時攔截第二條；修復：將旗標移到 `_handle_signal()` 內、`await _open_position()` 之前立即設定

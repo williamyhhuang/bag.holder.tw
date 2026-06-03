@@ -172,6 +172,9 @@ class MTXAutoTrader:
         self._last_entry_bar_ts: Optional[datetime] = None
         # Dedup guard: prevent double-close from duplicate WS messages
         self._last_close_bar_ts: Optional[datetime] = None
+        # Watchdog: updated every main-loop iteration; exit(1) if silent > threshold
+        self._last_alive_ts: datetime = _now()
+        self._watchdog_timeout_minutes: int = 20
 
         # Graceful shutdown on SIGTERM / SIGINT
         for sig in (_sys_signal.SIGTERM, _sys_signal.SIGINT):
@@ -355,6 +358,9 @@ class MTXAutoTrader:
 
         _ws_connect()
 
+        # ------ Watchdog ------
+        watchdog_task = asyncio.create_task(self._watchdog())
+
         # ------ Session end condition ------
         # Use expected session boundary instead of get_session() to avoid
         # exiting immediately when forced session starts before official open.
@@ -372,6 +378,7 @@ class MTXAutoTrader:
         last_reconnect = _now()
 
         while self.running:
+            self._last_alive_ts = _now()  # watchdog heartbeat
             # Check if session ended
             if _session_should_end():
                 logger.info("Session window closed — exiting loop")
@@ -407,6 +414,12 @@ class MTXAutoTrader:
             await asyncio.sleep(0.2)
 
         # ------ Cleanup ------
+        watchdog_task.cancel()
+        try:
+            await watchdog_task
+        except asyncio.CancelledError:
+            pass
+
         try:
             futopt_ws.unsubscribe({"channel": "aggregates", "symbol": self.symbol})
         except Exception:
@@ -733,6 +746,29 @@ class MTXAutoTrader:
 
     # ------------------------------------------------------------------
     # Utilities
+
+    async def _watchdog(self) -> None:
+        """
+        每 60 秒檢查主迴圈心跳。
+        若 _last_alive_ts 超過 _watchdog_timeout_minutes 未更新（主迴圈凍結），
+        記錄錯誤並 sys.exit(1)，讓 Cloud Run max_retries 自動重啟。
+        """
+        import sys
+        while self.running:
+            await asyncio.sleep(60)
+            if not self.running:
+                break
+            elapsed = (_now() - self._last_alive_ts).total_seconds()
+            threshold = self._watchdog_timeout_minutes * 60
+            if elapsed > threshold:
+                logger.error(
+                    f"Watchdog: 主迴圈已 {elapsed / 60:.1f} 分鐘無心跳 "
+                    f"（閾值 {self._watchdog_timeout_minutes} 分鐘）— 強制重啟"
+                )
+                await self._notify(
+                    f"⚠️ MTX Watchdog 觸發：主迴圈凍結 {elapsed / 60:.0f} 分鐘，強制重啟中…"
+                )
+                sys.exit(1)
 
     def _log_summary(self) -> None:
         total_pnl = sum(t.pnl_pts for t in self.trades)
