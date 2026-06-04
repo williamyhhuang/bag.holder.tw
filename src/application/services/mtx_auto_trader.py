@@ -222,6 +222,8 @@ class MTXAutoTrader:
             if c1m:
                 self.signal_engine.seed_1m(c1m)
                 logger.info(f"Seeded {len(c1m)} × 1-min bars")
+            else:
+                logger.debug(f"1-min seed: API returned empty (session={api_session})")
         except Exception as exc:
             logger.warning(f"1-min seed failed: {exc}")
 
@@ -233,6 +235,8 @@ class MTXAutoTrader:
             if c5m:
                 self.signal_engine.seed_5m(c5m)
                 logger.info(f"Seeded {len(c5m)} × 5-min bars")
+            else:
+                logger.debug(f"5-min seed: API returned empty (session={api_session})")
         except Exception as exc:
             logger.warning(f"5-min seed failed: {exc}")
 
@@ -241,6 +245,8 @@ class MTXAutoTrader:
             if cd:
                 self.signal_engine.seed_daily(cd)
                 logger.info(f"Seeded {len(cd)} × daily bars")
+            else:
+                logger.debug("Daily seed: API returned empty")
         except Exception as exc:
             logger.warning(f"Daily seed failed: {exc}")
 
@@ -376,6 +382,7 @@ class MTXAutoTrader:
         # ------ Main loop ------
         last_seed = _now()
         last_reconnect = _now()
+        last_status_log = _now()
 
         while self.running:
             self._last_alive_ts = _now()  # watchdog heartbeat
@@ -390,6 +397,23 @@ class MTXAutoTrader:
                 last_reconnect = now
                 logger.info("🔄 WebSocket 重連中...")
                 _ws_connect(reconnect=True)
+
+            # Hourly status log — shows signal state even when no trades occur
+            if (now - last_status_log).total_seconds() >= 3600:
+                db = self.signal_engine._daily_bias()
+                s5 = self.signal_engine._signal_5m()
+                s1 = self.signal_engine._entry_1m()
+                bars_1m = len(self.signal_engine.bar_1m)
+                bars_5m = len(self.signal_engine.bar_5m)
+                bars_d = len(self.signal_engine.bar_d)
+                logger.info(
+                    f"[Hourly] WS={'✅' if ws_connected[0] else '❌'}  "
+                    f"price={self.signal_engine.last_price}  "
+                    f"bars=1m:{bars_1m}/5m:{bars_5m}/D:{bars_d}  "
+                    f"Day={db:+d} 5m={s5:+d} 1m={s1:+d}  "
+                    f"pos={'None' if not self.position else f'{self.position.direction}×{self.position.lots}L'}"
+                )
+                last_status_log = now
 
             # Periodic bar refresh (every 5 min) to stay in sync with REST API
             if (now - last_seed).seconds >= 300:

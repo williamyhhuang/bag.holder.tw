@@ -1867,6 +1867,10 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.15.4 - 2026-06-04
+- 🔍 **MTX 每小時狀態 log**：主迴圈每 60 分鐘輸出一筆 `[Hourly]` 日誌，顯示 WebSocket 狀態、最新報價、各時間框架 bar 數量（1m/5m/D）、`Day/5m/1m` 訊號值與目前持倉，方便在無訊號的長時間段確認程式正常運行
+- 🔍 **`_seed_bars` 空資料 debug log**：API 回傳空 candles 時改為 DEBUG 級別記錄，避免無謂雜訊但保留可查性
+
 ### v3.15.3 - 2026-06-04
 - 🐛 **MTX 夜盤 Watchdog（防主迴圈凍結自動重啟）**：
   - **問題**：Cloud Run scheduled maintenance 暫停/恢復後，SDK HTTP thread 卡死累積導致 executor thread pool 耗盡，主迴圈靜默凍結（無 log、無 crash、`runningCount=1` 假活）
