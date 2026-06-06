@@ -820,6 +820,101 @@ class TestSessionEndCondition:
         assert not self._should_end(True, datetime(2026, 5, 19, 15, 0, 0))
 
 
+class TestRunSessionEarlyExit:
+    """_run_session must not send startup notification if session has already ended.
+
+    Regression: Cloud Run restarts with --session night at 05:11 (after 05:00
+    close) used to send a spurious '🟢 MTX 自動交易 啟動 — 夜盤' notification.
+    """
+
+    @staticmethod
+    def _already_ended(is_night: bool, now: datetime) -> bool:
+        """Replication of the early-exit guard added to _run_session."""
+        from datetime import time as _t
+        t = now.time()
+        if is_night:
+            return _t(5, 1) <= t < _t(8, 45)
+        return t >= _t(13, 31)
+
+    # ── night session ──────────────────────────────────────────────────────
+
+    def test_night_at_05h11_already_ended(self):
+        """05:11 — the scenario from the bug report — must be treated as ended."""
+        assert self._already_ended(True, datetime(2026, 6, 6, 5, 11, 0))
+
+    def test_night_at_05h01_already_ended(self):
+        assert self._already_ended(True, datetime(2026, 6, 6, 5, 1, 0))
+
+    def test_night_at_08h44_still_ended(self):
+        """08:44 is still in the closed gap after night session."""
+        assert self._already_ended(True, datetime(2026, 6, 6, 8, 44, 0))
+
+    def test_night_at_08h45_not_ended(self):
+        """08:45 is day open — night guard must NOT fire."""
+        assert not self._already_ended(True, datetime(2026, 6, 6, 8, 45, 0))
+
+    def test_night_at_04h59_not_ended(self):
+        """04:59 — still inside night session."""
+        assert not self._already_ended(True, datetime(2026, 6, 6, 4, 59, 0))
+
+    def test_night_at_15h00_not_ended(self):
+        """15:00 — night session just opened."""
+        assert not self._already_ended(True, datetime(2026, 6, 5, 15, 0, 0))
+
+    def test_night_at_02h05_not_ended(self):
+        """02:05 mid-session must NOT trigger early exit."""
+        assert not self._already_ended(True, datetime(2026, 6, 6, 2, 5, 0))
+
+    # ── day session ────────────────────────────────────────────────────────
+
+    def test_day_at_13h31_already_ended(self):
+        assert self._already_ended(False, datetime(2026, 6, 6, 13, 31, 0))
+
+    def test_day_at_14h00_already_ended(self):
+        assert self._already_ended(False, datetime(2026, 6, 6, 14, 0, 0))
+
+    def test_day_at_13h30_not_ended(self):
+        """13:30 — last minute of day session."""
+        assert not self._already_ended(False, datetime(2026, 6, 6, 13, 30, 59))
+
+    def test_day_at_09h00_not_ended(self):
+        assert not self._already_ended(False, datetime(2026, 6, 6, 9, 0, 0))
+
+    # ── integration: _run_session skips notify when ended ─────────────────
+
+    def test_run_session_skips_when_night_ended(self):
+        """_run_session must return without calling notifier at 05:11."""
+        client = _mock_client()
+        notifier = MagicMock()
+        trader = MTXAutoTrader(client, dry_run=True, notifier=notifier)
+
+        fake_now = datetime(2026, 6, 6, 5, 11, 0, tzinfo=__import__('zoneinfo').ZoneInfo("Asia/Taipei"))
+
+        async def _run():
+            with patch("src.application.services.mtx_auto_trader._now", return_value=fake_now):
+                await trader._run_session(is_night=True)
+
+        asyncio.run(_run())
+        notifier.send_message.assert_not_called()
+
+    def test_run_session_sends_notify_during_valid_night(self):
+        """_run_session must send startup notification at 22:00 (valid night)."""
+        client = _mock_client()
+        notifier = MagicMock()
+        trader = MTXAutoTrader(client, dry_run=True, notifier=notifier)
+
+        fake_now = datetime(2026, 6, 5, 22, 0, 0, tzinfo=__import__('zoneinfo').ZoneInfo("Asia/Taipei"))
+
+        # The session would run forever; we cancel it quickly via running=False
+        async def _run():
+            with patch("src.application.services.mtx_auto_trader._now", return_value=fake_now):
+                trader.running = False  # causes main loop to exit immediately
+                await trader._run_session(is_night=True)
+
+        asyncio.run(_run())
+        notifier.send_message.assert_called_once()
+
+
 class TestWebSocketReconnect:
     """WS disconnect flag and reconnect path."""
 

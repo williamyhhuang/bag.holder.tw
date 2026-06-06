@@ -294,6 +294,21 @@ class MTXAutoTrader:
     # Session loop
 
     async def _run_session(self, is_night: bool) -> None:
+        # Guard: abort silently if the session window has already closed.
+        # This prevents spurious startup notifications when Cloud Run restarts
+        # a container after the session has ended (e.g. forced --session night
+        # restart at 05:11 when the night session ended at 05:00).
+        _t = _now().time()
+        if is_night:
+            _already_ended = time(5, 1) <= _t < time(8, 45)
+        else:
+            _already_ended = _t >= time(13, 31)
+        if _already_ended:
+            logger.info(
+                f"{'夜盤' if is_night else '日盤'} 時段已結束（現在 {_t.strftime('%H:%M')}），跳過啟動。"
+            )
+            return
+
         if self.dry_run:
             mode_label = "⚠️  DRY RUN（不下單、不記錄）"
         elif not self.live_order:

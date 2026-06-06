@@ -1867,6 +1867,12 @@ BACKTEST_MIN_REVENUE_YOY_PCT=20 python main.py signals
   - `TelegramNotifier.send_message`：`parse_mode=None` 時不傳 `parse_mode` 欄位給 API
   - `run_ai_analysis`：AI 格式化輸出改用 `parse_mode=None`（純文字，無需 Markdown 解析）
 
+### v3.15.5 - 2026-06-06
+- 🐛 **MTX `_run_session` 時段結束後不再發送啟動通知**：
+  - **問題**：Cloud Run Watchdog 觸發 `sys.exit(1)` 後容器重啟，若重啟時間落在時段結束後（例如夜盤 05:01 後），程式以 `--session night` 啟動時會跳過 CLOSED 檢查，直接進入 `_run_session` 並發出「🟢 MTX 自動交易 啟動 — 夜盤」通知，使用者收到假訊息
+  - **修復**：`_run_session` 最開頭加入時段有效性 guard，夜盤在 05:01–08:44、日盤在 13:31 後啟動時直接 return，不發通知也不建立 WebSocket 連線
+  - **測試**：新增 `TestRunSessionEarlyExit`（13 個測試），覆蓋各邊界時間點及 notifier mock 驗證
+
 ### v3.15.4 - 2026-06-04
 - 🔍 **MTX 每小時狀態 log**：主迴圈每 60 分鐘輸出一筆 `[Hourly]` 日誌，顯示 WebSocket 狀態、最新報價、各時間框架 bar 數量（1m/5m/D）、`Day/5m/1m` 訊號值與目前持倉，方便在無訊號的長時間段確認程式正常運行
 - 🔍 **`_seed_bars` 空資料 debug log**：API 回傳空 candles 時改為 DEBUG 級別記錄，避免無謂雜訊但保留可查性
