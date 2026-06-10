@@ -112,7 +112,10 @@ class HoldingsChecker:
             h = holdings_by_code.get(code)
             if h:
                 alert['entry_price'] = h.entry_price
-                alert['holding_days'] = (today - date.fromisoformat(h.entry_date)).days
+                alert['holding_days'] = (
+                    (today - date.fromisoformat(h.entry_date)).days
+                    if h.entry_date else None
+                )
                 if h.entry_price and h.entry_price > 0:
                     alert['pnl_pct'] = round(
                         (alert['price'] - h.entry_price) / h.entry_price * 100, 2

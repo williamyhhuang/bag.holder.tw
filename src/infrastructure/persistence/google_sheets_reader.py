@@ -181,9 +181,12 @@ class GoogleSheetsReader:
 
     def get_open_positions(self) -> List[HoldingRecord]:
         """
-        讀取交易記錄，依 timestamp 升序排序後，取每支股票的最後一筆 action：
-          - 最後一筆為 '買入' → 未平倉，回傳 HoldingRecord
-          - 最後一筆為 '賣出' → 已平倉，略過
+        讀取「交易記錄」工作表，累計每支股票的淨倉位：
+          - 買入累加數量與成本，賣出扣減數量
+          - 淨數量 > 0 → 未平倉，回傳 HoldingRecord（支援減倉）
+          - 淨數量 <= 0 → 已平倉，略過
+        entry_price 使用買入均價（加權平均成本），
+        entry_date 使用當輪第一筆買入日期。
         """
         try:
             ws = self._trade_worksheet()
@@ -198,25 +201,57 @@ class GoogleSheetsReader:
 
         records_sorted = sorted(records, key=lambda r: str(r.get("timestamp", "")))
 
-        last_record: Dict[str, dict] = {}
+        # 每支股票的狀態：net_qty, total_cost, total_buy_qty, entry_date
+        stock_state: Dict[str, dict] = {}
+
         for r in records_sorted:
             code = str(r.get("stock_code", "")).strip()
             action = str(r.get("action", "")).strip()
-            if code and action in ("買入", "賣出"):
-                last_record[code] = r
+            if not code or action not in ("買入", "賣出"):
+                continue
+            try:
+                qty = int(r.get("quantity", 0))
+                price = float(r.get("price", 0))
+                rec_date = str(r.get("date", "")).strip()
+            except (ValueError, TypeError):
+                continue
+
+            if code not in stock_state:
+                stock_state[code] = {
+                    "net_qty": 0, "total_cost": 0.0,
+                    "total_buy_qty": 0, "entry_date": "",
+                }
+            s = stock_state[code]
+
+            if action == "買入":
+                # 若先前已全部出清（淨倉為 0），重置成本與進場日
+                if s["net_qty"] <= 0:
+                    s["total_cost"] = 0.0
+                    s["total_buy_qty"] = 0
+                    s["entry_date"] = rec_date
+                s["net_qty"] += qty
+                s["total_cost"] += price * qty
+                s["total_buy_qty"] += qty
+            elif action == "賣出":
+                s["net_qty"] -= qty
 
         open_positions: List[HoldingRecord] = []
-        for code, r in last_record.items():
-            if str(r.get("action", "")).strip() == "買入":
-                try:
-                    open_positions.append(HoldingRecord(
-                        stock_code=code,
-                        entry_price=float(r.get("price", 0)),
-                        entry_date=str(r.get("date", "")).strip(),
-                        quantity=int(r.get("quantity", 0)),
-                    ))
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"無法解析 {code} 的持倉資料: {e}")
+        for code, s in stock_state.items():
+            if s["net_qty"] <= 0:
+                continue
+            avg_price = (
+                s["total_cost"] / s["total_buy_qty"]
+                if s["total_buy_qty"] > 0 else 0.0
+            )
+            try:
+                open_positions.append(HoldingRecord(
+                    stock_code=code,
+                    entry_price=round(avg_price, 2),
+                    entry_date=s["entry_date"],
+                    quantity=s["net_qty"],
+                ))
+            except (ValueError, TypeError) as e:
+                logger.warning(f"無法建立 {code} 的持倉資料: {e}")
 
         logger.info(f"找到 {len(open_positions)} 支未平倉持倉")
         return open_positions

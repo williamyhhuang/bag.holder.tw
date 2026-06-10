@@ -12,7 +12,7 @@ class TestGetOpenPositions:
     """Test GoogleSheetsReader.get_open_positions()"""
 
     def _make_reader_with_records(self, records: list) -> object:
-        """Build a GoogleSheetsReader with mocked worksheet returning given records"""
+        """Build a GoogleSheetsReader with mocked 交易記錄 worksheet"""
         from src.infrastructure.persistence.google_sheets_reader import GoogleSheetsReader
         reader = GoogleSheetsReader()
         mock_ws = MagicMock()
@@ -23,14 +23,8 @@ class TestGetOpenPositions:
     def test_basic_open_position(self):
         """一筆買入，無賣出 → open"""
         reader = self._make_reader_with_records([
-            {
-                "timestamp": "2024-01-10T09:00:00+08:00",
-                "date": "2024-01-10",
-                "stock_code": "2330",
-                "action": "買入",
-                "price": 850.0,
-                "quantity": 1000,
-            }
+            {"timestamp": "2024-01-10T09:00:00+08:00", "date": "2024-01-10",
+             "stock_code": "2330", "action": "買入", "price": 850.0, "quantity": 1000},
         ])
         positions = reader.get_open_positions()
         assert len(positions) == 1
@@ -40,69 +34,64 @@ class TestGetOpenPositions:
         assert positions[0].quantity == 1000
 
     def test_closed_position(self):
-        """買入後賣出（最後是賣出）→ closed，不回傳"""
+        """買入後全部賣出 → closed，不回傳"""
         reader = self._make_reader_with_records([
-            {
-                "timestamp": "2024-01-10T09:00:00+08:00",
-                "date": "2024-01-10",
-                "stock_code": "2330",
-                "action": "買入",
-                "price": 850.0,
-                "quantity": 1000,
-            },
-            {
-                "timestamp": "2024-01-20T09:00:00+08:00",
-                "date": "2024-01-20",
-                "stock_code": "2330",
-                "action": "賣出",
-                "price": 900.0,
-                "quantity": 1000,
-            },
+            {"timestamp": "2024-01-10T09:00:00+08:00", "date": "2024-01-10",
+             "stock_code": "2330", "action": "買入", "price": 850.0, "quantity": 1000},
+            {"timestamp": "2024-01-20T09:00:00+08:00", "date": "2024-01-20",
+             "stock_code": "2330", "action": "賣出", "price": 900.0, "quantity": 1000},
         ])
         positions = reader.get_open_positions()
         assert len(positions) == 0
 
-    def test_multiple_rounds_buy_sell_buy(self):
-        """買→賣→買（最後是買入）→ open"""
+    def test_partial_sell_keeps_position(self):
+        """減倉（部分賣出）→ 仍視為持倉，數量正確"""
         reader = self._make_reader_with_records([
-            {
-                "timestamp": "2024-01-05T09:00:00+08:00",
-                "date": "2024-01-05",
-                "stock_code": "2454",
-                "action": "買入",
-                "price": 700.0,
-                "quantity": 1000,
-            },
-            {
-                "timestamp": "2024-01-15T09:00:00+08:00",
-                "date": "2024-01-15",
-                "stock_code": "2454",
-                "action": "賣出",
-                "price": 750.0,
-                "quantity": 1000,
-            },
-            {
-                "timestamp": "2024-02-01T09:00:00+08:00",
-                "date": "2024-02-01",
-                "stock_code": "2454",
-                "action": "買入",
-                "price": 720.0,
-                "quantity": 1000,
-            },
+            {"timestamp": "2024-01-10T09:00:00+08:00", "date": "2024-01-10",
+             "stock_code": "2330", "action": "買入", "price": 850.0, "quantity": 1000},
+            {"timestamp": "2024-01-20T09:00:00+08:00", "date": "2024-01-20",
+             "stock_code": "2330", "action": "賣出", "price": 900.0, "quantity": 500},
+        ])
+        positions = reader.get_open_positions()
+        assert len(positions) == 1
+        assert positions[0].stock_code == "2330"
+        assert positions[0].quantity == 500
+        assert positions[0].entry_date == "2024-01-10"  # 進場日保留原始買入日
+
+    def test_multiple_rounds_buy_sell_buy(self):
+        """買→賣→買（最後是買入）→ open，進場日重置為第二輪買入日"""
+        reader = self._make_reader_with_records([
+            {"timestamp": "2024-01-05T09:00:00+08:00", "date": "2024-01-05",
+             "stock_code": "2454", "action": "買入", "price": 700.0, "quantity": 1000},
+            {"timestamp": "2024-01-15T09:00:00+08:00", "date": "2024-01-15",
+             "stock_code": "2454", "action": "賣出", "price": 750.0, "quantity": 1000},
+            {"timestamp": "2024-02-01T09:00:00+08:00", "date": "2024-02-01",
+             "stock_code": "2454", "action": "買入", "price": 720.0, "quantity": 1000},
         ])
         positions = reader.get_open_positions()
         assert len(positions) == 1
         assert positions[0].stock_code == "2454"
-        assert positions[0].entry_price == 720.0  # 最後一次買入價格
+        assert positions[0].entry_price == 720.0
         assert positions[0].entry_date == "2024-02-01"
+
+    def test_weighted_avg_price(self):
+        """多次加碼 → entry_price 為加權平均成本"""
+        reader = self._make_reader_with_records([
+            {"timestamp": "2024-01-05T09:00:00+08:00", "date": "2024-01-05",
+             "stock_code": "2330", "action": "買入", "price": 800.0, "quantity": 1000},
+            {"timestamp": "2024-01-10T09:00:00+08:00", "date": "2024-01-10",
+             "stock_code": "2330", "action": "買入", "price": 900.0, "quantity": 1000},
+        ])
+        positions = reader.get_open_positions()
+        assert len(positions) == 1
+        assert positions[0].quantity == 2000
+        assert positions[0].entry_price == 850.0  # (800*1000 + 900*1000) / 2000
 
     def test_mixed_open_and_closed(self):
         """多支股票，部分平倉部分未平倉"""
         reader = self._make_reader_with_records([
-            # 2330: 買入 (open)
             {"timestamp": "2024-01-10T09:00:00+08:00", "date": "2024-01-10",
              "stock_code": "2330", "action": "買入", "price": 850.0, "quantity": 1000},
-            # 2454: 買入後賣出 (closed)
             {"timestamp": "2024-01-10T09:05:00+08:00", "date": "2024-01-10",
              "stock_code": "2454", "action": "買入", "price": 700.0, "quantity": 1000},
             {"timestamp": "2024-01-20T09:00:00+08:00", "date": "2024-01-20",
