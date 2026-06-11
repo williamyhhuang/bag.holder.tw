@@ -416,6 +416,81 @@ class TestTechnicalStrategy:
         )
         assert result == SignalType.BUY, "RSI Oversold should bypass RSI min entry filter"
 
+    def test_b1_oversold_uptrend_blocks_below_ma60(self):
+        """B1: when rsi_oversold_require_uptrend, RSI Oversold below MA60 is a falling knife → WATCH.
+
+        require_ma60_uptrend is disabled so we isolate the B1 guard (not Filter 2)."""
+        from src.domain.models import TechnicalIndicators as TI
+        strategy = TechnicalStrategy(
+            require_ma60_uptrend=False,           # isolate B1
+            rsi_oversold_require_uptrend=True,
+        )
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'), ma10=Decimal('100'), ma20=Decimal('90'),
+            ma60=Decimal('120'),                  # price 100 < MA60 120 → downtrend
+            volume_ma20=100000, rsi14=Decimal('28'),
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='RSI Oversold', price=Decimal('100'), volume=200000,
+            indicators=indicators,
+        )
+        assert result == SignalType.WATCH, "oversold below MA60 should be blocked (falling knife)"
+
+    def test_b1_oversold_uptrend_blocks_weekly_downtrend(self):
+        """B1: RSI Oversold above MA60 but in a weekly downtrend (wMA5<=wMA20) → WATCH."""
+        from src.domain.models import TechnicalIndicators as TI
+        strategy = TechnicalStrategy(
+            require_ma60_uptrend=False, rsi_oversold_require_uptrend=True,
+        )
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'), ma10=Decimal('100'), ma20=Decimal('90'),
+            ma60=Decimal('80'),                   # price 100 > MA60 80 → daily uptrend ok
+            volume_ma20=100000, rsi14=Decimal('28'),
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='RSI Oversold', price=Decimal('100'), volume=200000,
+            indicators=indicators,
+            weekly_ma5=Decimal('90'), weekly_ma20=Decimal('100'),  # weekly downtrend
+        )
+        assert result == SignalType.WATCH
+
+    def test_b1_oversold_uptrend_passes_in_uptrend(self):
+        """B1: RSI Oversold above MA60 AND weekly uptrend → BUY (承接上升趨勢中的回檔)."""
+        from src.domain.models import TechnicalIndicators as TI
+        strategy = TechnicalStrategy(
+            require_ma60_uptrend=False, rsi_oversold_require_uptrend=True,
+        )
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'), ma10=Decimal('100'), ma20=Decimal('90'),
+            ma60=Decimal('80'), volume_ma20=100000, rsi14=Decimal('28'),
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='RSI Oversold', price=Decimal('100'), volume=200000,
+            indicators=indicators,
+            weekly_ma5=Decimal('110'), weekly_ma20=Decimal('100'),  # weekly uptrend
+        )
+        assert result == SignalType.BUY
+
+    def test_b1_disabled_allows_falling_knife(self):
+        """B1 off: legacy behaviour — RSI Oversold below MA60 still passes (when MA60 filter off)."""
+        from src.domain.models import TechnicalIndicators as TI
+        strategy = TechnicalStrategy(
+            require_ma60_uptrend=False, rsi_oversold_require_uptrend=False,
+        )
+        indicators = TI(
+            date=date(2025, 9, 1),
+            ma5=Decimal('105'), ma10=Decimal('100'), ma20=Decimal('90'),
+            ma60=Decimal('120'), volume_ma20=100000, rsi14=Decimal('28'),
+        )
+        result = strategy._apply_buy_filters(
+            signal_name='RSI Oversold', price=Decimal('100'), volume=200000,
+            indicators=indicators,
+        )
+        assert result == SignalType.BUY
+
     def test_valid_buy_passes_all_filters(self):
         """BUY signal that passes all checks (MA alignment + RSI >= 50) should remain BUY."""
         from src.domain.models import TechnicalIndicators as TI
@@ -1042,6 +1117,81 @@ class TestBacktestEngineNew:
         assert lock_hold > no_hold, (
             f"Expected longer hold with lockout ({lock_hold}) vs no lockout ({no_hold})"
         )
+
+    def test_a1_profit_protection_locks_win_on_all_positions(self):
+        """A1: engine-wide profit-protection trailing converts a round-trip winner into a
+        realised win on a NON-trend position. Control (no protection) gives it back to a loss.
+
+        prices (T+1 open entry): Sep1 signal@10, Sep2 entry=10, Sep3=11 (+10% → lock 6%),
+        Sep4=10.3, Sep5=9.0.
+          With protection: lock at 11*0.94=10.34 → exit Sep4 @10.3 → WIN.
+          Without:        stop stays 9.0 → survives to Sep5 → exit @9.0 → LOSS.
+        """
+        from datetime import timedelta
+        import copy as _copy
+        base = date(2025, 9, 1)
+        prices = [10, 10, 11, 10.3, 9.0]
+        stock_data = self._make_stock_data("TEST", prices)
+        sig = TradingSignal(
+            symbol="TEST", date=base, signal_type=SignalType.BUY, signal_name="BB Squeeze Break",
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=base),
+        )
+        common = dict(
+            initial_capital=Decimal('1000000'), stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.50'), trailing_stop_pct=Decimal('0'),
+            max_holding_days=60, atr_stop_multiplier=0, min_holding_days=0,
+        )
+        eng = BacktestEngine(profit_threshold_pct=Decimal('0.05'),
+                             profit_trailing_pct=Decimal('0.06'), **common)
+        eng.add_price_data("TEST", stock_data)
+        res = eng.run_backtest([_copy.copy(sig)], base, base + timedelta(days=4))
+        assert res.total_trades == 1
+        trade = res.trades[0]
+        assert trade.pnl > 0, "profit-protection should lock a win"
+        assert Decimal('10') < trade.exit_price <= Decimal('10.34')
+
+        ctrl = BacktestEngine(**common)  # no profit-protection
+        ctrl.add_price_data("TEST", stock_data)
+        res_ctrl = ctrl.run_backtest([_copy.copy(sig)], base, base + timedelta(days=4))
+        assert res_ctrl.trades[0].pnl < 0, "without protection the winner round-trips to a loss"
+
+    def test_a2_catastrophic_stop_fires_inside_lockout(self):
+        """A2: catastrophic stop exits a disaster loser EVEN during the min_holding lockout,
+        whereas a 0 catastrophic lets it ride until the lockout/backtest ends.
+
+        prices: Sep1 signal@10, Sep2 entry=10, Sep3=8 (-20%). catastrophic 15% → level 8.5.
+        """
+        from datetime import timedelta
+        import copy as _copy
+        base = date(2025, 9, 1)
+        stock_data = self._make_stock_data("TEST", [10, 10, 8, 8, 8])
+        sig = TradingSignal(
+            symbol="TEST", date=base, signal_type=SignalType.BUY, signal_name="BB Squeeze Break",
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=base),
+        )
+        common = dict(
+            initial_capital=Decimal('1000000'), stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.50'), trailing_stop_pct=Decimal('0.10'),
+            max_holding_days=60, atr_stop_multiplier=0, min_holding_days=10,
+        )
+        cata = BacktestEngine(catastrophic_stop_pct=Decimal('0.15'), **common)
+        cata.add_price_data("TEST", stock_data)
+        res_cata = cata.run_backtest([_copy.copy(sig)], base, base + timedelta(days=4))
+        assert res_cata.total_trades == 1
+        cata_hold = res_cata.trades[0].holding_days
+
+        nocata = BacktestEngine(catastrophic_stop_pct=Decimal('0'), **common)
+        nocata.add_price_data("TEST", stock_data)
+        res_nocata = nocata.run_backtest([_copy.copy(sig)], base, base + timedelta(days=4))
+        nocata_hold = res_nocata.trades[0].holding_days
+
+        assert cata_hold == 2, "catastrophic stop should fire on Sep3 (2 calendar days from entry)"
+        assert cata_hold < nocata_hold, (
+            f"catastrophic exit ({cata_hold}d) should be earlier than lockout ride ({nocata_hold}d)"
+        )
+        assert res_cata.trades[0].pnl < 0 and res_nocata.trades[0].pnl < 0
 
     def test_market_filter_blocks_buy_when_bearish(self):
         """BUY signals should be suppressed when TAIEX is below its MA20."""

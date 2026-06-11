@@ -315,6 +315,7 @@ class TechnicalStrategy:
         weekly_bb_period: int = 20,
         weekly_donchian_period: int = 10,
         donchian_period_2: int = 0,
+        rsi_oversold_require_uptrend: bool = True,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -368,6 +369,12 @@ class TechnicalStrategy:
         self.weekly_bb_period = weekly_bb_period
         self.weekly_donchian_period = weekly_donchian_period
         self.donchian_period_2 = donchian_period_2
+        # B1 (win-rate): mean-reversion signals (RSI Oversold) are exempt from the RSI min-entry
+        # filter by design, which risks "catching a falling knife" in a downtrend. When enabled,
+        # require RSI Oversold to additionally sit in an uptrend context (price > MA60 AND
+        # weekly MA5 > MA20) regardless of the global require_ma60_uptrend / require_weekly_trend
+        # toggles — only buy oversold dips inside an established uptrend.
+        self.rsi_oversold_require_uptrend = rsi_oversold_require_uptrend
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -985,6 +992,27 @@ class TechnicalStrategy:
                 self.logger.debug(
                     f"Signal '{signal_name}' blocked: RSI {rsi} < min entry "
                     f"{self.rsi_min_entry} → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 5b (B1): mean-reversion uptrend guard.
+        # RSI Oversold is exempt from the RSI min-entry filter (it fires when RSI is low by
+        # design). Without a trend context this catches falling knives. When enabled, require
+        # the oversold dip to occur inside an established uptrend: price > MA60 AND weekly
+        # MA5 > MA20 (when the data is available). Applies independently of the global
+        # require_ma60_uptrend / require_weekly_trend toggles.
+        if self.rsi_oversold_require_uptrend and signal_name in self.MEAN_REVERSION_SIGNALS:
+            ma60 = indicators.ma60
+            if ma60 is not None and price < ma60:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: oversold but price {price} < MA60 {ma60} "
+                    f"(falling knife) → WATCH"
+                )
+                return SignalType.WATCH
+            if weekly_ma5 is not None and weekly_ma20 is not None and weekly_ma5 <= weekly_ma20:
+                self.logger.debug(
+                    f"Signal '{signal_name}' blocked: oversold but weekly MA5 {weekly_ma5:.2f} "
+                    f"<= weekly MA20 {weekly_ma20:.2f} (weekly downtrend) → WATCH"
                 )
                 return SignalType.WATCH
 

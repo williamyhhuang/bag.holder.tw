@@ -66,6 +66,7 @@ class BacktestRunner:
             weekly_bb_period=cfg.weekly_bb_period,
             weekly_donchian_period=cfg.weekly_donchian_period,
             donchian_period_2=cfg.donchian_period_2,
+            rsi_oversold_require_uptrend=cfg.rsi_oversold_require_uptrend,
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
@@ -231,6 +232,17 @@ class BacktestRunner:
                 position_sizing=Decimal(str(cfg.position_sizing)),
                 atr_stop_multiplier=cfg.atr_stop_multiplier,
                 min_holding_days=cfg.min_holding_days,
+                # A1: profit-protection trailing for ALL positions (None when disabled)
+                profit_threshold_pct=(
+                    Decimal(str(cfg.profit_threshold_pct))
+                    if cfg.enable_profit_protection else None
+                ),
+                profit_trailing_pct=(
+                    Decimal(str(cfg.profit_trailing_pct))
+                    if cfg.enable_profit_protection else None
+                ),
+                # A2: catastrophic hard stop active inside the min_holding lockout window
+                catastrophic_stop_pct=Decimal(str(cfg.catastrophic_stop_pct)),
                 market_regime_strong_rsi=cfg.market_regime_strong_rsi,
                 strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
                 neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),

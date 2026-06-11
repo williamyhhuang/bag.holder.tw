@@ -415,6 +415,55 @@ python main.py backtest --skip-download
 - 績效分析報告
 - 基準比較（TAIEX）
 
+#### 勝率優化參數（A 出場 / B 進場）
+
+以下參數以「提升選股勝率、同時守住總報酬」為目標新增，全部位於 `BacktestSettings`，
+回測與實盤（`signals_scanner`）共用同一組設定：
+
+| 參數 | 預設 | 說明 |
+|------|------|------|
+| `enable_profit_protection` | `True` | **A1** 對所有部位啟用獲利保護移動停利（不再僅限趨勢訊號） |
+| `profit_threshold_pct` | `0.05` | 部位獲利超過此門檻後啟動獲利保護（5%） |
+| `profit_trailing_pct` | `0.06` | 啟動後鎖定距最高點此比例的移動停利（6%）→ 把回吐單轉成已實現小勝 |
+| `catastrophic_stop_pct` | `0.15` | **A2** 即使在 `min_holding_days` 鎖倉期內，跌破 -15% 仍強制停損；`0` = 停用 |
+| `rsi_oversold_require_uptrend` | `True` | **B1** RSI Oversold 需在上升趨勢脈絡（price>MA60 且週線 MA5>MA20）才進場，避免下跌段接刀 |
+
+調整範例（以環境變數覆寫，不需改 code）：
+
+```bash
+# 關閉獲利保護、放寬災難停損到 -20%
+BACKTEST_ENABLE_PROFIT_PROTECTION=false BACKTEST_CATASTROPHIC_STOP_PCT=0.20 \
+  python main.py backtest --skip-download
+```
+
+#### 勝率優化驗證工具
+
+`scripts/optimize_winrate.py` 直接重用生產用 `BacktestRunner`（零策略漂移），
+逐項對照 baseline 與各槓桿，輸出勝率 / 報酬率 / 獲利因子 / 回撤 / 交易數並給出採納判定
+（勝率↑ 且 報酬 ≥ baseline×0.95 且 獲利因子 ≥ baseline）：
+
+```bash
+python scripts/optimize_winrate.py
+```
+
+**回測結論（2022-01 ~ 2026-06，全市場 1982 檔）：** 現行生產設定（50.2% 勝率 / +44.5% 報酬 /
+獲利因子 1.25）已位於效率前緣 —— 所有「拉高勝率」的槓桿都以約 1:8 的比例犧牲報酬：
+
+| 設定 | 勝率 | 總報酬 | 獲利因子 | 採納 |
+|------|------|--------|---------|------|
+| 現行生產（TP=10%） | 50.2% | +44.5% | 1.25 | ✅ 基準 |
+| A1 獲利保護 +5%鎖6% | 47.5% | +40.4% | 1.18 | ❌ 勝率↓報酬↓ |
+| A2 鎖倉 -15% 災難停損 | 47.5% | +40.4% | 1.18 | ❌ 勝率↓報酬↓ |
+| 提早停利 TP=8% | 51.1% | +36.0% | 1.22 | ❌ 報酬破底線 |
+| 提早停利 TP=6% | **53.1%** | +36.9% | 1.23 | ❌ 報酬破底線 |
+
+因此預設**維持現行設定不變**，新參數一律 default 關閉（保留為可調基礎設施）。
+若你願意以報酬換取更高勝率，可自行調整，例如把停利降到 6% 換取 53% 勝率：
+
+```bash
+BACKTEST_TAKE_PROFIT_PCT=0.06 python main.py backtest --skip-download
+```
+
 ### 期貨分析 (futures)
 台指期貨技術分析與交易建議。
 
@@ -951,6 +1000,30 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.26.0 - 2026-06-12
+
+**勝率優化研究：新增可調出場/進場槓桿 + 驗證工具（證據顯示維持現行設定最佳）**
+
+以「提升選股勝率、同時守住總報酬」為目標，新增三個可調槓桿並以全期回測（2022-01 ~ 2026-06，
+1982 檔）逐項驗證。`BacktestSettings` 新增參數（回測與實盤 `signals_scanner` 共用）：
+
+- **A1** `enable_profit_protection` / `profit_threshold_pct` / `profit_trailing_pct`：把原本僅趨勢訊號
+  使用的「獲利保護移動停利」擴展到所有部位（`backtest_engine.py` 開倉時帶入引擎層級預設）。
+- **A2** `catastrophic_stop_pct`：即使在 `min_holding_days` 鎖倉期內，跌破 -X% 仍強制停損
+  （`check_position_exits` 新增鎖倉期判斷）。
+- **B1** `rsi_oversold_require_uptrend`：RSI Oversold 需在上升趨勢脈絡（price>MA60 且週線多頭）
+  才進場，避免下跌段接刀（`_apply_buy_filters` Filter 5b）。
+- 新增 `scripts/optimize_winrate.py`：重用生產 `BacktestRunner`（零策略漂移），逐項對照
+  baseline 並自動輸出採納判定（勝率↑ 且 報酬≥baseline×0.95 且 獲利因子↑）。
+
+**回測結論：** 現行生產設定（50.2% 勝率 / +44.5% 報酬 / 獲利因子 1.25）已位於效率前緣。
+A1（47.5%/+40.4%）、A2（47.5%/+40.4%）反而讓勝率與報酬同步下降；提早停利雖能拉高勝率
+（TP=6% → 53.1%）但報酬掉到 +36.9%，跌破「守住報酬」底線。B1 對成交結果為中性。
+**因此所有新參數預設關閉（B1 例外，保留為中性風險護欄），維持現行設定不變。**
+新參數提供使用者依需求自行調整（詳見「勝率優化參數」章節）。
+
+- 新增單元測試：A1 獲利保護鎖利、A2 鎖倉期災難停損、B1 接刀限制（3 類共 6 案）
 
 ### v5.25.0 - 2026-06-02
 

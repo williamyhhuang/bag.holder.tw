@@ -41,6 +41,17 @@ class BacktestEngine:
         # Prevents immediate trailing stop exit when stock gaps up on entry day then pulls back.
         # After min_holding_days, trailing stop ratchets normally. Hard stop loss always active.
         min_holding_days: int = 0,
+        # A1 (win-rate): profit-protection trailing stop applied to ALL positions (not just
+        # trend signals). Once a position is in profit > profit_threshold_pct it locks a
+        # trailing stop at profit_trailing_pct from the peak, converting round-trip winners
+        # into realised small wins → raises win rate without capping upside hard.
+        # None = disabled (mean-reversion positions keep the legacy symmetric exit).
+        profit_threshold_pct: Optional[Decimal] = None,
+        profit_trailing_pct: Optional[Decimal] = None,
+        # A2 (win-rate): catastrophic hard stop that fires EVEN during the min_holding_days
+        # lockout window, capping rare disaster losers that the lockout would otherwise let
+        # run for the full min_holding period. Decimal('0') = disabled.
+        catastrophic_stop_pct: Decimal = Decimal('0'),
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -52,6 +63,12 @@ class BacktestEngine:
         self.trailing_stop_pct = trailing_stop_pct
         self.atr_stop_multiplier = atr_stop_multiplier
         self.min_holding_days = min_holding_days
+        # A1: engine-wide profit-protection defaults (fallback when a position has no
+        # per-signal exit_cfg override). Trend signals still override via signal_exit_config.
+        self.profit_threshold_pct: Optional[Decimal] = profit_threshold_pct
+        self.profit_trailing_pct: Optional[Decimal] = profit_trailing_pct
+        # A2: catastrophic stop active even during min_holding_days lockout
+        self.catastrophic_stop_pct: Decimal = catastrophic_stop_pct
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
@@ -239,8 +256,10 @@ class BacktestEngine:
             eff_trailing_pct = exit_cfg.get("trailing_stop_pct", None)
             eff_max_holding = exit_cfg.get("max_holding_days", None)
             eff_exit_on_signals = exit_cfg.get("exit_on_signals", None)
-            eff_profit_threshold = exit_cfg.get("profit_threshold_pct", None)
-            eff_profit_trailing = exit_cfg.get("profit_trailing_pct", None)
+            # A1: per-signal exit_cfg (trend signals) takes precedence; otherwise fall back to
+            # the engine-wide profit-protection defaults so ALL positions get the protection.
+            eff_profit_threshold = exit_cfg.get("profit_threshold_pct", self.profit_threshold_pct)
+            eff_profit_trailing = exit_cfg.get("profit_trailing_pct", self.profit_trailing_pct)
 
             # Compute stop loss: ATR-based if enabled and ATR is available,
             # otherwise fall back to fixed percentage.
@@ -394,7 +413,13 @@ class BacktestEngine:
             if calendar_days_held < self.min_holding_days:
                 if position.take_profit is not None and current_price >= position.take_profit:
                     positions_to_close.append((symbol, current_price, "Take Profit"))
-                continue  # Skip stop loss and max holding exits
+                # A2: catastrophic hard stop still fires inside the lockout window to cap
+                # rare disaster losers (e.g. -15%) that the lockout would otherwise let run.
+                elif self.catastrophic_stop_pct > 0:
+                    catastrophic_level = position.entry_price * (Decimal('1') - self.catastrophic_stop_pct)
+                    if current_price <= catastrophic_level:
+                        positions_to_close.append((symbol, current_price, "Catastrophic Stop"))
+                continue  # Skip normal stop loss and max holding exits during lockout
 
             # Check stop loss
             if position.stop_loss is not None and current_price <= position.stop_loss:

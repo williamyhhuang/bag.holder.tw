@@ -330,6 +330,38 @@ class BacktestSettings(BaseSettings):
         description="最長持倉天數",
     )
 
+    # ── A1 獲利保護移動停利（套用至所有部位，非僅趨勢訊號）─────────────
+    # 部位獲利超過 profit_threshold_pct 後，鎖定距最高點 profit_trailing_pct 的移動停利，
+    # 把「曾經 +X% 後回吐」的單轉成已實現小勝 → 提升勝率而不硬砍上檔。
+    # 趨勢訊號仍可由 trend_profit_* 覆寫；此處為基礎/均值回歸部位的預設保護。
+    # 回測（2022-01 ~ 2026-06）顯示：對所有部位啟用反而讓勝率 -2.8pp、報酬 -4.2pp
+    # （+5%鎖6% 太緊，提早砍掉會繼續上漲的單）→ 預設關閉，保留為可調基礎設施
+    enable_profit_protection: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_PROFIT_PROTECTION",
+        description="是否對所有部位啟用獲利保護移動停利（回測顯示預設參數會降低勝率，故預設關閉）",
+    )
+    profit_threshold_pct: float = Field(
+        default=0.05,
+        env="BACKTEST_PROFIT_THRESHOLD_PCT",
+        description="啟動獲利保護移動停利的獲利門檻（0.05 = 5%）",
+    )
+    profit_trailing_pct: float = Field(
+        default=0.06,
+        env="BACKTEST_PROFIT_TRAILING_PCT",
+        description="獲利保護移動停利從最高點回撤百分比（0.06 = 6%）",
+    )
+    # ── A2 鎖倉期災難停損 ────────────────────────────────────────────
+    # min_holding_days 鎖倉期內預設跳過所有停損；此參數讓「跌破 -X%」仍強制停損，
+    # 避免極端輸家在鎖倉期放任 3 週。0 = 停用（維持純鎖倉行為）。
+    # 回測顯示：鎖倉期 -15% 災難停損會砍掉部分後續反彈的單，勝率/報酬皆下降
+    # → 預設停用（0），保留參數供需要時調整
+    catastrophic_stop_pct: float = Field(
+        default=0.0,
+        env="BACKTEST_CATASTROPHIC_STOP_PCT",
+        description="鎖倉期災難停損百分比（0.15 = 跌破 -15% 仍強制停損；0 = 停用，回測顯示開啟會降低勝率）",
+    )
+
     # ── 進場品質過濾 ────────────────────────────────────────────────
     # RSI 最低進場門檻：確認股票具備強勁上漲動能，避免 BB 假突破
     # 回測（2024-09 ~ 2026-05）：RSI≥76 勝率 52.10%、報酬 49.14%（同日成交，有 look-ahead bias）
@@ -358,6 +390,16 @@ class BacktestSettings(BaseSettings):
         default=True,
         env="BACKTEST_PRE_BREAKOUT_MODE",
         description="True = 前置突破訊號（接近但未突破）；False = 確認突破訊號（收盤已突破）",
+    )
+    # B1: RSI Oversold（均值回歸訊號）接刀限制
+    # RSI Oversold 豁免 RSI 進場門檻，易在下跌段接刀；啟用後要求其落在上升趨勢
+    # 脈絡（price > MA60 且週線 MA5 > MA20）才成立，僅承接上升趨勢中的超賣回檔。
+    # 回測（2022-01 ~ 2026-06）：對交易結果為中性（RSI Oversold 在 min_confirming_signals=2
+    # 與 MA 排列過濾下幾乎不會單獨成交）；預設保持 True 作為保守風險護欄，避免極端行情接刀。
+    rsi_oversold_require_uptrend: bool = Field(
+        default=True,
+        env="BACKTEST_RSI_OVERSOLD_REQUIRE_UPTREND",
+        description="RSI Oversold 需在上升趨勢脈絡（price>MA60 且週線多頭）才進場（True = 避免接刀；回測中性，保守護欄）",
     )
     enable_momentum_signal: bool = Field(
         default=False,
