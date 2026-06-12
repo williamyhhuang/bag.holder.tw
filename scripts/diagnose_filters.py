@@ -145,8 +145,9 @@ SCENARIOS: List[Scenario] = [
     ),
     Scenario(
         name="9_multi_signal_confirm",
-        description="啟用所有訊號 + 多訊號確認進場（目前生產設定 P3）",
-        disabled_signals=[],  # 全部啟用：BB Squeeze Break 已加入 TREND_SIGNAL_NAMES
+        description="多訊號確認進場 + 停用 DB2/BBS（目前生產設定 v5.28.0）",
+        # v5.28.0 LOO+OOS 驗證：DB2 資金排擠主力 Donchian、BBS 期望值 +0.10% 純死重
+        disabled_signals=["Donchian Breakout 2", "BB Squeeze Break"],
         use_market_regime=True,
         market_regime_check_ma5=True,
         market_regime_rsi_threshold=45.0,

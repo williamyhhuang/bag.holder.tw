@@ -544,6 +544,37 @@ BACKTEST_ENABLE_FACTOR_RANKING=true python main.py backtest --skip-download
 法人過濾濾掉的反而是好交易。因子排名（B/C）兩期皆大幅落後，同樣不採納。
 T86 資料與工具保留，供未來測試其他用法（不同連買門檻、外資/投信分開等）。
 
+#### 分批出場（scale-out，預設停用）
+
+獲利達門檻時先賣出部分持股（捨入到整張）鎖住獲利，剩餘部位取消固定停利、
+改由追蹤停損讓利潤奔跑：
+
+```bash
+# +10% 時賣一半，剩餘讓利潤奔跑
+BACKTEST_SCALE_OUT_TRIGGER_PCT=0.10 python main.py backtest --skip-download
+
+# 調整賣出比例（預設 0.5 = 一半）
+BACKTEST_SCALE_OUT_TRIGGER_PCT=0.10 BACKTEST_SCALE_OUT_RATIO=0.3 python main.py backtest --skip-download
+```
+
+**IS/OOS 驗證結論（2026-06-12）：不採納為預設**（`scale_out_trigger_pct` 預設 0 = 停用）：
+
+| 期間 | 配置 | 勝率 | 報酬 | Sharpe | 回撤 | 勝率×報酬×Sharpe |
+|------|------|------|------|--------|------|------------------|
+| IS 2022–2024 | baseline | 50.9% | +26.44% | 0.73 | 10.06% | 982 |
+| IS 2022–2024 | 分批 +10% | 55.4% | +24.96% | 0.77 | 7.97% | 1065 |
+| IS 2022–2024 | 分批 +15% | 53.6% | +26.60% | 0.77 | 7.96% | 1098 |
+| OOS 2025–2026 | baseline | 55.2% | +39.24% | **1.90** | 5.42% | **4116** |
+| OOS 2025–2026 | 分批 +10% | **58.6%** | +28.37% | 1.48 | 6.25% | 2461 |
+| OOS 2025–2026 | 分批 +15% | 56.9% | +29.36% | 1.50 | 6.20% | 2506 |
+
+→ 勝率兩期皆提升（機械性：部分獲利提前落袋），但 OOS 報酬 −10.9pp、Sharpe 1.90→1.48——
+砍掉大贏家上半段的代價遠超勝率增益，綜合分數 OOS 期 baseline 大勝（4116 vs 2506）。
+
+同場驗證：ATR 動態停損（乘數 1.5–3.0 grid search）亦無效果——
+`min_holding_days=21` 前 21 天封鎖停損 + 獲利保護 trailing 主導出場，ATR 停損幾乎無觸發機會，
+全部配置與 baseline 差異 <1%（雜訊），維持預設 0（停用）。
+
 ### 期貨分析 (futures)
 台指期貨技術分析與交易建議。
 
@@ -1080,6 +1111,20 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.29.0 - 2026-06-12
+
+**出場優化研究：分批出場功能 + ATR 停損 grid search（兩者皆不採納為預設）**
+
+- 新增分批出場（scale-out）engine 功能：獲利達 `scale_out_trigger_pct` 時賣出
+  `scale_out_ratio` 比例持股（捨入整張），剩餘部位取消固定停利改追蹤停損
+- 新增 `BacktestSettings.scale_out_trigger_pct`（預設 0 = 停用）與 `scale_out_ratio`（預設 0.5）
+- IS/OOS 驗證：勝率兩期提升（OOS +3.4pp）但 OOS 報酬 −10.9pp、Sharpe 1.90→1.48，
+  以勝率×報酬×Sharpe 綜合分數判定 baseline 大勝 → 不採納，功能保留供研究
+- ATR 動態停損 grid search（1.5/2.0/2.5/3.0 × IS/OOS）：全部與 baseline 差異 <1%（雜訊），
+  維持停用——min_holding 鎖倉 + 獲利保護 trailing 使 ATR 停損無觸發機會
+- 修正 `scripts/diagnose_filters.py` 最終情境未鏡像 v5.28.0 生產預設（停 DB2+BBS）
+- 新增 TestScaleOut 單元測試 4 案：觸發/取消停利/單張不拆/預設停用
 
 ### v5.28.1 - 2026-06-12
 

@@ -52,6 +52,12 @@ class BacktestEngine:
         # lockout window, capping rare disaster losers that the lockout would otherwise let
         # run for the full min_holding period. Decimal('0') = disabled.
         catastrophic_stop_pct: Decimal = Decimal('0'),
+        # Scale-out (分批出場): when profit reaches scale_out_trigger_pct, sell
+        # scale_out_ratio of the position (rounded down to whole lots) and cancel the
+        # fixed take-profit on the remainder so trailing stops let profits run.
+        # Decimal('0') trigger = disabled.
+        scale_out_trigger_pct: Decimal = Decimal('0'),
+        scale_out_ratio: Decimal = Decimal('0.5'),
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -69,6 +75,9 @@ class BacktestEngine:
         self.profit_trailing_pct: Optional[Decimal] = profit_trailing_pct
         # A2: catastrophic stop active even during min_holding_days lockout
         self.catastrophic_stop_pct: Decimal = catastrophic_stop_pct
+        # Scale-out partial profit taking
+        self.scale_out_trigger_pct: Decimal = scale_out_trigger_pct
+        self.scale_out_ratio: Decimal = scale_out_ratio
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
@@ -351,7 +360,8 @@ class BacktestEngine:
             position.exit_date = self.current_date
             position.status = PositionStatus.CLOSED
             position.holding_days = (self.current_date - position.entry_date).days
-            position.pnl = proceeds - (position.entry_price * quantity)
+            # Fold in any realised PnL from an earlier scale-out partial sell
+            position.pnl = proceeds - (position.entry_price * quantity) + position.scale_out_pnl
             position.pnl_percent = ((price - position.entry_price) / position.entry_price * Decimal('100')).quantize(Decimal('0.01'))
 
             self.closed_positions.append(position)
@@ -364,6 +374,50 @@ class BacktestEngine:
         except Exception as e:
             self.logger.error(f"Error executing sell order for {symbol}: {e}")
             return False
+
+    def execute_scale_out(self, symbol: str, price: Decimal) -> bool:
+        """Sell scale_out_ratio of the position (rounded down to whole 1000-share lots),
+        realising partial profit. The remainder loses its fixed take-profit so the
+        trailing/profit-protection stops let it run.
+
+        Positions too small to split (1 lot) are marked scaled_out without selling,
+        so the check does not re-fire every day.
+        """
+        position = self.positions[symbol]
+        sell_qty = int(int(position.quantity * self.scale_out_ratio) / 1000) * 1000
+        position.scaled_out = True
+        if sell_qty < 1000 or sell_qty >= position.quantity:
+            return False  # cannot split into a meaningful partial sell
+
+        commission, tax = self.calculate_trading_costs(price, sell_qty, is_buy=False)
+        proceeds = price * sell_qty - commission - tax
+
+        order = Order(
+            order_id=str(uuid.uuid4()),
+            symbol=symbol,
+            order_type=OrderType.MARKET,
+            signal_type=SignalType.SELL,
+            quantity=sell_qty,
+            price=price,
+            timestamp=datetime.combine(self.current_date, datetime.min.time()),
+            executed_price=price,
+            executed_quantity=sell_qty,
+            executed_time=datetime.combine(self.current_date, datetime.min.time()),
+            commission=commission,
+            tax=tax,
+        )
+
+        self.cash += proceeds
+        position.scale_out_pnl += proceeds - position.entry_price * sell_qty
+        position.quantity -= sell_qty
+        position.take_profit = None  # let the remainder ride on trailing stops
+        self.orders.append(order)
+
+        self.logger.info(
+            f"SCALE-OUT {symbol}: {sell_qty} shares @ {price} "
+            f"(remaining {position.quantity}) partial PnL: {position.scale_out_pnl}"
+        )
+        return True
 
     def check_position_exits(self):
         """Check and execute position exits based on stop loss, take profit, or max holding period"""
@@ -406,6 +460,13 @@ class BacktestEngine:
                     ).quantize(Decimal('0.01'))
                     if protection_stop > (position.stop_loss or Decimal('0')):
                         position.stop_loss = protection_stop
+
+            # Scale-out: partial profit taking at scale_out_trigger_pct. Like take profit,
+            # this is a favourable exit so it is allowed even during the lockout window.
+            if (self.scale_out_trigger_pct > 0
+                    and not position.scaled_out
+                    and current_price >= position.entry_price * (Decimal('1') + self.scale_out_trigger_pct)):
+                self.execute_scale_out(symbol, current_price)
 
             # During the minimum holding period, skip ALL stop-loss and trailing exits.
             # Only take profit is allowed during this window (since it's a favourable exit).
@@ -452,8 +513,10 @@ class BacktestEngine:
                 entry_value = position.entry_price * position.quantity
                 unrealized_pnl += position_value - entry_value
 
-        # Calculate realized PnL
+        # Calculate realized PnL (closed positions include their own scale-out PnL;
+        # open positions may carry realised scale-out PnL not yet folded into pnl)
         realized_pnl = sum(pos.pnl or Decimal('0') for pos in self.closed_positions)
+        realized_pnl += sum(pos.scale_out_pnl for pos in self.positions.values())
         total_pnl = realized_pnl + unrealized_pnl
 
         # Create portfolio snapshot

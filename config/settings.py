@@ -378,6 +378,16 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_ATR_STOP_MULTIPLIER",
         description="ATR 動態停損乘數（停損距離 = ATR × 此值），0 = 停用 ATR 停損，改用固定百分比",
     )
+    scale_out_trigger_pct: float = Field(
+        default=0,
+        env="BACKTEST_SCALE_OUT_TRIGGER_PCT",
+        description="分批出場觸發獲利門檻（如 0.10 = +10% 時賣出部分持股），0 = 停用分批出場",
+    )
+    scale_out_ratio: float = Field(
+        default=0.5,
+        env="BACKTEST_SCALE_OUT_RATIO",
+        description="分批出場賣出比例（0.5 = 賣一半，捨入到整張）；觸發後剩餘部位取消固定停利、改由追蹤停損讓利潤奔跑",
+    )
     # 最小持倉天數 — trailing stop 啟動的最低門檻（日曆天）
     # 進場後前 N 天不啟動 trailing stop ratcheting，避免跳空上漲後當天回落立即出場
     # 固定停損（stop_loss_pct）仍然全程有效（保護大跌）

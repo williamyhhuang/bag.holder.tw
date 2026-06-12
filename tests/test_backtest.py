@@ -3488,5 +3488,109 @@ class TestPendingSignalCarryForward:
         )
 
 
+class TestScaleOut:
+    """Scale-out (分批出場): partial profit taking at scale_out_trigger_pct."""
+
+    def _make_stock_data(self, symbol, prices):
+        from datetime import timedelta as _td
+        result = []
+        for i, p in enumerate(prices):
+            d = date(2025, 9, 1) + _td(days=i)
+            result.append(StockData(
+                symbol=symbol, date=d,
+                open_price=Decimal(str(p)), high_price=Decimal(str(p)),
+                low_price=Decimal(str(p)), close_price=Decimal(str(p)),
+                volume=100000
+            ))
+        return result
+
+    def _sig(self, price=10):
+        base = date(2025, 9, 1)
+        return TradingSignal(
+            symbol="TEST", date=base,
+            signal_type=SignalType.BUY, signal_name="Test",
+            price=Decimal(str(price)), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=base)
+        )
+
+    def _engine(self, **overrides):
+        kwargs = dict(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.50'),
+            trailing_stop_pct=Decimal('0'),
+            max_holding_days=3,
+            atr_stop_multiplier=0,
+            min_holding_days=0,
+            scale_out_trigger_pct=Decimal('0.10'),
+            scale_out_ratio=Decimal('0.5'),
+        )
+        kwargs.update(overrides)
+        return BacktestEngine(**kwargs)
+
+    def test_scale_out_fires_at_trigger(self):
+        """+10% → sell half (whole lots), cancel take profit, remainder rides."""
+        from datetime import timedelta
+        # Sep1 signal@10, Sep2 entry=10 (10,000 shares), Sep3=11.1 (+11%) → scale out 5,000
+        engine = self._engine()
+        engine.add_price_data("TEST", self._make_stock_data("TEST", [10, 10, 11.1, 11.1, 11.1]))
+        base = date(2025, 9, 1)
+        result = engine.run_backtest([self._sig()], base, base + timedelta(days=4))
+
+        sells = [o for o in engine.orders if o.signal_type == SignalType.SELL]
+        assert len(sells) == 2, "expected one partial sell + one final close"
+        assert sells[0].quantity == 5000
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.scaled_out is True
+        assert trade.scale_out_pnl > 0
+        # final pnl folds in the scale-out leg: both legs exited at 11.1 → win
+        assert trade.pnl > trade.scale_out_pnl
+
+    def test_scale_out_cancels_take_profit(self):
+        """After scale-out the remainder must not exit via fixed take profit."""
+        from datetime import timedelta
+        # take_profit 0.15 would fire at 11.5; scale-out at +11% must cancel it first
+        engine = self._engine(take_profit_pct=Decimal('0.15'), max_holding_days=10)
+        engine.add_price_data("TEST", self._make_stock_data(
+            "TEST", [10, 10, 11.1, 11.6, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5]))
+        base = date(2025, 9, 1)
+        result = engine.run_backtest([self._sig()], base, base + timedelta(days=11))
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.scaled_out is True
+        # without cancellation the remainder would exit Sep4 @11.6 (take profit);
+        # with cancellation it rides to the max-holding close @12.5
+        assert trade.exit_price == Decimal('12.5')
+
+    def test_scale_out_skips_single_lot(self):
+        """1-lot positions cannot split — mark scaled_out without selling."""
+        from datetime import timedelta
+        # price 100 → 100,000/100 = 1,000 shares = 1 lot only
+        engine = self._engine()
+        engine.add_price_data("TEST", self._make_stock_data("TEST", [100, 100, 111, 111, 111]))
+        base = date(2025, 9, 1)
+        result = engine.run_backtest([self._sig(price=100)], base, base + timedelta(days=4))
+
+        sells = [o for o in engine.orders if o.signal_type == SignalType.SELL]
+        assert len(sells) == 1, "no partial sell possible for a single-lot position"
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.scaled_out is True
+        assert trade.scale_out_pnl == 0
+
+    def test_scale_out_disabled_by_default(self):
+        """trigger=0 (production default) → no scale-out, take profit intact."""
+        from datetime import timedelta
+        engine = self._engine(scale_out_trigger_pct=Decimal('0'))
+        engine.add_price_data("TEST", self._make_stock_data("TEST", [10, 10, 11.1, 11.1, 11.1]))
+        base = date(2025, 9, 1)
+        result = engine.run_backtest([self._sig()], base, base + timedelta(days=4))
+        sells = [o for o in engine.orders if o.signal_type == SignalType.SELL]
+        assert len(sells) == 1
+        assert result.trades[0].scaled_out is False
+        assert result.trades[0].scale_out_pnl == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

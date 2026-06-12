@@ -198,6 +198,8 @@ def build_p1_engine(initial_capital: Decimal = Decimal("1000000")) -> BacktestEn
             if cfg.enable_profit_protection else None
         ),
         catastrophic_stop_pct=Decimal(str(cfg.catastrophic_stop_pct)),
+        scale_out_trigger_pct=Decimal(str(cfg.scale_out_trigger_pct)),
+        scale_out_ratio=Decimal(str(cfg.scale_out_ratio)),
         market_regime_strong_rsi=cfg.market_regime_strong_rsi,
         strong_regime_signals=_parse_signal_list(cfg.strong_regime_signals),
         neutral_regime_signals=_parse_signal_list(cfg.neutral_regime_signals),

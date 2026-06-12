@@ -76,6 +76,8 @@ class BacktestRunner:
             position_sizing=Decimal(str(cfg.position_sizing)),
             atr_stop_multiplier=cfg.atr_stop_multiplier,
             min_holding_days=cfg.min_holding_days,
+            scale_out_trigger_pct=Decimal(str(cfg.scale_out_trigger_pct)),
+            scale_out_ratio=Decimal(str(cfg.scale_out_ratio)),
         )
         self.analyzer = PerformanceAnalyzer()
         self.reporter = BacktestReporter()
@@ -243,6 +245,9 @@ class BacktestRunner:
                 ),
                 # A2: catastrophic hard stop active inside the min_holding lockout window
                 catastrophic_stop_pct=Decimal(str(cfg.catastrophic_stop_pct)),
+                # Scale-out partial profit taking (0 trigger = disabled)
+                scale_out_trigger_pct=Decimal(str(cfg.scale_out_trigger_pct)),
+                scale_out_ratio=Decimal(str(cfg.scale_out_ratio)),
                 market_regime_strong_rsi=cfg.market_regime_strong_rsi,
                 strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
                 neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),

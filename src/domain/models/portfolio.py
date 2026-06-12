@@ -70,6 +70,12 @@ class Position:
     # After threshold: trailing stop ratchets up at profit_trailing_pct from peak.
     profit_threshold_pct: Optional[Decimal] = None   # e.g. Decimal('0.05') = 5%
     profit_trailing_pct: Optional[Decimal] = None    # e.g. Decimal('0.06') = 6% from peak
+    # Scale-out (分批出場): partial profit taking at scale_out_trigger_pct.
+    # scaled_out marks the partial sell has fired (or was skipped because the
+    # position is too small to split); scale_out_pnl accumulates the realised
+    # PnL of the partial sell and is folded into final pnl on close.
+    scaled_out: bool = False
+    scale_out_pnl: Decimal = Decimal('0')
 
 
 @dataclass
