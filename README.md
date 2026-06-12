@@ -1112,6 +1112,19 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.29.1 - 2026-06-12
+
+**週線 Donchian 週期預設 10 → 5（grid search + IS/OOS 驗證採納）**
+
+- grid search 週期 5/8/10/13/15 × IS/OOS：
+  w=5 在 IS 期全面提升（勝率 52.1% vs 50.9%、報酬 +31.58% vs +26.44%、Sharpe 0.86 vs 0.73），
+  OOS 期與 w=10 完全相同（無下檔風險）→ Pareto 改善，經用戶確認採納
+- Weekly Donchian Breakout 從不直接進場（全期 0 筆），參數透過多訊號確認計數間接影響
+- 回測與實盤 `signals_scanner` 共用 `weekly_donchian_period`，同步生效
+- 還原舊值：`BACKTEST_WEEKLY_DONCHIAN_PERIOD=10`
+- 附帶結論（#5 RSI Oversold 處置）：RSI Oversold 與 Volume Surge 全期 0 筆進場，
+  移除與否對績效零影響，維持現狀不動
+
 ### v5.29.0 - 2026-06-12
 
 **出場優化研究：分批出場功能 + ATR 停損 grid search（兩者皆不採納為預設）**

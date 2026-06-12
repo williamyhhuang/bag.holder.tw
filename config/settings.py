@@ -761,9 +761,11 @@ class BacktestSettings(BaseSettings):
         description="週線 Bollinger Bands 計算週期（週數，預設 20）",
     )
     weekly_donchian_period: int = Field(
-        default=10,
+        default=5,
         env="BACKTEST_WEEKLY_DONCHIAN_PERIOD",
-        description="週線 Donchian 突破計算週期（週數，預設 10 = 約 50 個交易日）",
+        description="週線 Donchian 突破計算週期（週數）。v5.29.1 grid search 5/8/10/13/15："
+                    "5 在 IS 期全面最佳（勝率52.1%/報酬+31.58%/Sharpe 0.86 vs 10 的 50.9%/+26.44%/0.73），"
+                    "OOS 期與 10 完全相同（無下檔風險）。還原舊值：BACKTEST_WEEKLY_DONCHIAN_PERIOD=10",
     )
 
     # ── 52 週高低點過濾（Minervini SEPA 條件）───────────────────────
