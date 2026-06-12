@@ -422,9 +422,14 @@ class BacktestSettings(BaseSettings):
     # P1 (2026-04-08): 恢復 Golden Cross + MACD Golden Cross
     # 診斷顯示停用它們讓報酬率 -5.90%
     disabled_signals: str = Field(
-        default="",
+        default="Donchian Breakout 2,BB Squeeze Break",
         env="BACKTEST_DISABLED_SIGNALS",
-        description="停用的訊號名稱，逗號分隔（空白 = 全部啟用；BB Squeeze Break 已加入 TREND_SIGNAL_NAMES 可正常觸發）",
+        description=(
+            "停用的訊號名稱，逗號分隔（空白 = 全部啟用）。"
+            "2026-06-12 LOO 歸因 + 樣本外驗證：DB2 期望值雖正但資金排擠 Donchian Breakout；"
+            "BBS 佔 46% 出手量但期望值 +0.10%/PF 0.97。"
+            "停用後 OOS 勝率 50.9%→55.2%、Sharpe 1.05→1.90、回撤 12.1%→5.4%、報酬持平"
+        ),
     )
     # Filter 2: 個股價格需在 MA60 上方（長期上升趨勢）
     require_ma60_uptrend: bool = Field(
