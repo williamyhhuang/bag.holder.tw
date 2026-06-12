@@ -1119,6 +1119,15 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.30.1 - 2026-06-13
+
+**修正 GCE VM 夜盤啟動失敗（COS noexec）**
+
+- COS 的 `/var/lib` 掛載 `noexec`，`launch.sh` 無法直接執行（systemd 203/EXEC Permission denied）
+- systemd unit `ExecStart` 改為 `/bin/bash /var/lib/mtx/launch.sh`
+- 另修正 COS `/root` 唯讀：docker 認證 HOME 改用 `/var/lib/mtx/home`
+- 注意：terraform 更新 startup-script metadata **不會**重啟 VM，需 `gcloud compute instances reset` 才會重跑
+
 ### v5.30.0 - 2026-06-13
 
 **MTX trader 遷移 GCE Spot VM（成本 ~NT$60/天 → ~NT$210/月，省 ~85%）**

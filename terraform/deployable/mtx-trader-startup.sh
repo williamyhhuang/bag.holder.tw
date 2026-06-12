@@ -49,7 +49,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStartPre=-/usr/bin/docker rm -f mtx-trader-${S}
-ExecStart=/var/lib/mtx/launch.sh ${S}
+# COS 的 /var/lib 掛載 noexec，不能直接執行 script，需經由 bash
+ExecStart=/bin/bash /var/lib/mtx/launch.sh ${S}
 Restart=on-failure
 RestartSec=60
 UNIT
