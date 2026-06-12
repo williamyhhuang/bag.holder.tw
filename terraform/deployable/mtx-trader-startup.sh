@@ -12,17 +12,17 @@ set -euo pipefail
 META="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
 IMAGE=$(curl -s -H "Metadata-Flavor: Google" "${META}/mtx-image")
 
-export HOME=/root
+# COS 的 /root 唯讀，docker 認證設定改放 /var/lib/mtx/home
+mkdir -p /var/lib/mtx/home
+export HOME=/var/lib/mtx/home
 docker-credential-gcr configure-docker --registries=asia-east1-docker.pkg.dev
-
-mkdir -p /var/lib/mtx
 
 # ── launcher：每次啟動前 pull 最新 image；APP_SECRETS 在 container 內用
 #    image 自帶的 gcloud（走 metadata server 取 VM SA token）抓取，不落地 host ──
 cat > /var/lib/mtx/launch.sh <<LAUNCH
 #!/bin/bash
 set -euo pipefail
-export HOME=/root
+export HOME=/var/lib/mtx/home
 SESSION="\$1"
 docker pull ${IMAGE}
 docker image prune -f >/dev/null 2>&1 || true
