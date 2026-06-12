@@ -1021,25 +1021,32 @@ MTX_SIGNAL_5M_MEMORY_BARS=0  # 5m KD 交叉後訊號保持有效 K 棒數（0 = 
 三層均滿足 → 送出 IOC 市價委託 1 口
 ```
 
-### GCP 雲端部署（自動排程）
+### GCP 雲端部署（GCE Spot VM 自動排程）
 
-使用 Cloud Run Job 執行，Cloud Scheduler 每個交易日自動觸發：
+MTX trader 跑在單一 **GCE e2-small Spot VM**（`bag-holder-mtx-trader`，Container-Optimized OS），
+VM 上的 systemd timer 每個交易日自動啟動 Docker container：
 
-| 任務名稱 | 觸發時間（台北） | 最長執行 |
-|---------|----------------|---------|
-| `bag-holder-mtx-trader-day` | 週一至五 08:44 | 5 小時 |
-| `bag-holder-mtx-trader-night` | 週一至五 14:59 | 14.3 小時 |
+| systemd unit | 觸發時間（台北） | 交易時段 |
+|--------------|----------------|---------|
+| `mtx-trader-day.service` | 週一至五 08:44 | 日盤 08:45–13:30 |
+| `mtx-trader-night.service` | 週一至五 14:59 | 夜盤 15:00–05:00(+1) |
 
-部署：
+架構重點（`terraform/deployable/gce.tf` + `mtx-trader-startup.sh`）：
 
-```bash
-cd terraform/deployable
-terraform apply -target=module.job_mtx_trader_day -target=module.job_mtx_trader_night \
-  -target=google_cloud_scheduler_job.mtx_trader_day \
-  -target=google_cloud_scheduler_job.mtx_trader_night
-```
+- **成本**：原本兩個 Cloud Run Jobs 每天常駐 ~19 小時（~NT$60/天）；Spot VM 約 NT$210/月，省 ~85%
+- **網路**：VM 無外部 IP，egress 走既有 Cloud NAT 固定 IP → **Fubon API 白名單不需變動**
+- **Image 更新**：每次 session 啟動前 `docker pull :latest`（CI push 後最晚下個盤生效）
+- **Spot 搶占自救**：Cloud Scheduler 每 10 分鐘冪等呼叫 `instances.start`（對已 RUNNING 的 VM 回 400 屬預期）；
+  開機 dispatcher 依當下時間補啟動正確 session，Python 端 `_already_ended` 防護避免收盤後誤啟動
+- **Watchdog 重啟**：程式 20 分鐘無心跳 `sys.exit(1)` → systemd `Restart=on-failure` 自動重啟
+- **週末關機**：週六 05:30 自動 stop，週一 08:00 由 keepalive 自動 start
+- **除錯**：`gcloud compute ssh bag-holder-mtx-trader --zone=asia-east1-b --tunnel-through-iap`，
+  `journalctl -u mtx-trader-day` / `docker logs mtx-trader-day`；container log 走 gcplogs 進 Cloud Logging（`resource.type="gce_instance"`）
 
-Cloud Run Job 使用固定出口 IP（Cloud NAT），需將此 IP 加入 Fubon API Key 白名單。
+**轉實盤**：`gce.tf` 把 `provisioning_model` 改 `"STANDARD"`、`preemptible = false`、
+`automatic_restart = true` 並移除 `instance_termination_action` 即可，其餘架構不變。
+
+> ⚠️ `mtx-trader-startup.sh` 變更會觸發 VM 重啟（`allow_stopping_for_update`），請挑非交易時段（台北 13:35–14:30 或週末 05:30 後）merge。
 
 ---
 
@@ -1111,6 +1118,22 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.30.0 - 2026-06-13
+
+**MTX trader 遷移 GCE Spot VM（成本 ~NT$60/天 → ~NT$210/月，省 ~85%）**
+
+- 刪除兩個 Cloud Run Jobs（`bag-holder-mtx-trader-day/-night`）與其 Cloud Scheduler triggers；
+  WebSocket 長連線每天常駐 ~19 小時，Cloud Run 按秒計費對常駐工作負載最不利
+- 新增 `terraform/deployable/gce.tf`：e2-small **Spot** VM（COS）+ keepalive/週末關機 schedulers + IAP SSH 防火牆
+- 新增 `terraform/deployable/mtx-trader-startup.sh`：開機寫入 systemd timers（day 08:44 / night 14:59 台北）、
+  launch script（pull `:latest` → docker run，APP_SECRETS 在 container 內向 Secret Manager 抓取）、
+  搶占恢復 catch-up dispatcher
+- VM 無外部 IP，egress 走既有 Cloud NAT 固定 IP → **Fubon 白名單不需變動**
+- `terraform/bootstrap`：啟用 compute API；runner SA 加 AR reader / log / metric writer / self actAs；
+  deployer SA 加 compute instanceAdmin / networkAdmin（已手動 apply）
+- 轉實盤：`gce.tf` 的 `provisioning_model` 改 `STANDARD` 即可（詳見「GCP 雲端部署」章節）
+- 純 infra 變更，無 Python 程式碼異動
 
 ### v5.29.2 - 2026-06-12
 

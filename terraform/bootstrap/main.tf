@@ -27,6 +27,7 @@ resource "google_project_service" "apis" {
     "iamcredentials.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
+    "compute.googleapis.com",
   ])
   service            = each.key
   disable_on_destroy = false
@@ -110,6 +111,33 @@ resource "google_project_iam_member" "runner_workflows_invoker" {
   member  = "serviceAccount:${google_service_account.runner.email}"
 }
 
+# GCE VM（MTX trader）需要拉 Artifact Registry image
+resource "google_project_iam_member" "runner_ar_reader" {
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.runner.email}"
+}
+
+# GCE VM 寫 Cloud Logging / Monitoring
+resource "google_project_iam_member" "runner_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.runner.email}"
+}
+
+resource "google_project_iam_member" "runner_metric_writer" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.runner.email}"
+}
+
+# Cloud Scheduler 以 runner SA 呼叫 instances.start（VM 掛載 runner SA，需 actAs 自己）
+resource "google_service_account_iam_member" "runner_self_act_as" {
+  service_account_id = google_service_account.runner.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.runner.email}"
+}
+
 resource "google_storage_bucket_iam_member" "runner_gcs_read" {
   bucket = google_storage_bucket.data.name
   role   = "roles/storage.objectViewer"
@@ -144,6 +172,20 @@ resource "google_project_iam_member" "deployer_workflows_admin" {
 resource "google_project_iam_member" "deployer_ar_writer" {
   project = var.project_id
   role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${var.github_actions_sa_email}"
+}
+
+# Deployer 需要管理 GCE VM（MTX trader）
+resource "google_project_iam_member" "deployer_compute_instance_admin" {
+  project = var.project_id
+  role    = "roles/compute.instanceAdmin.v1"
+  member  = "serviceAccount:${var.github_actions_sa_email}"
+}
+
+# Deployer 需要管理 VPC / 防火牆規則
+resource "google_project_iam_member" "deployer_compute_network_admin" {
+  project = var.project_id
+  role    = "roles/compute.networkAdmin"
   member  = "serviceAccount:${var.github_actions_sa_email}"
 }
 
