@@ -348,11 +348,35 @@ class BacktestRunner:
                     f"Step 5d: Building factor whitelist "
                     f"(top_n={cfg.factor_ranking_top_n})..."
                 )
+                # 真實 T86 法人歷史（需先以 scripts/backfill_t86.py 回填快取）
+                inst_series = None
+                if cfg.factor_use_inst_history:
+                    from src.infrastructure.market_data.institutional_history import (
+                        InstitutionalHistoryLoader,
+                    )
+                    inst_series = InstitutionalHistoryLoader().build_consecutive_series(
+                        start_date=start_date,
+                        end_date=end_date,
+                        warmup_days=cfg.factor_inst_history_days,
+                    )
+                    if inst_series:
+                        self.logger.info(
+                            f"Loaded T86 institutional history for "
+                            f"{len(inst_series)} trading dates"
+                        )
+                    else:
+                        inst_series = None
+                        self.logger.warning(
+                            "No T86 history cache found — institutional factor "
+                            "falls back to uniform 0.5. "
+                            "Run scripts/backfill_t86.py to enable."
+                        )
                 factor_whitelist = self.strategy.build_factor_whitelist(
                     stock_data_dict=stock_data,
                     top_n=cfg.factor_ranking_top_n,
                     start_date=start_date,
                     end_date=end_date,
+                    inst_consecutive_by_date=inst_series,
                 )
                 self.engine.set_factor_whitelist(factor_whitelist)
                 self.logger.info(

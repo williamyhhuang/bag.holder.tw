@@ -723,6 +723,14 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_FACTOR_INST_HISTORY_DAYS",
         description="計算法人連續買超所需的歷史天數（自然日；預設 30）",
     )
+    factor_use_inst_history: bool = Field(
+        default=True,
+        env="BACKTEST_FACTOR_USE_INST_HISTORY",
+        description=(
+            "因子排名使用真實 T86 法人歷史資料（需先執行 scripts/backfill_t86.py 回填；"
+            "無快取資料時自動退回 0.5 均等填充）"
+        ),
+    )
 
     # ── 週線訊號（方向 A：擴大信號來源）─────────────────────────────
     # 對週線 OHLCV 計算 BB Squeeze Break 與 Donchian Breakout，

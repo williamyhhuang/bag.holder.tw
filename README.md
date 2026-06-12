@@ -464,6 +464,49 @@ python scripts/optimize_winrate.py
 BACKTEST_TAKE_PROFIT_PCT=0.06 python main.py backtest --skip-download
 ```
 
+#### 逐訊號歸因分析（Signal Attribution）
+
+`scripts/analyze_signal_attribution.py` 拆解 P1 生產策略中每一種進場訊號的個別貢獻，
+策略/引擎參數完全鏡像生產 `BacktestRunner`（零策略漂移）：
+
+- **Phase 1**：對 baseline 回測的每筆交易按進場訊號分組，計算出手次數、勝率、
+  平均賺/賠、**期望值**、獲利因子、累計損益、平均持倉
+- **Phase 2 Leave-One-Out**：逐一停用每種訊號重跑完整回測，觀察總報酬/勝率/Sharpe 變化。
+  能捕捉「個別勝率低但對組合有正貢獻」的訊號（訊號間有多訊號確認互動效應，LOO 比分組統計更可信）
+
+```bash
+python scripts/analyze_signal_attribution.py            # Phase 1 + 2（LOO 需重跑 N 次回測，較慢）
+python scripts/analyze_signal_attribution.py --skip-loo # 只跑 Phase 1（快）
+```
+
+判讀：停用後報酬上升 >1% 且 Sharpe 不變差 → 該訊號為負貢獻（建議停用）；
+停用後報酬下降 >1% → 正貢獻（保留）；其餘為中性。
+
+#### T86 三大法人歷史資料（回測籌碼面整合）
+
+過去回測中因子排名的「法人連續買超」權重（30%）因無歷史資料而以 0.5 均等填充，
+等於沒有作用。現在可回填真實 T86 歷史資料，讓回測使用真實籌碼面：
+
+```bash
+# 1. 回填 T86 歷史資料（預設範圍 = 回測起日 −45 天 → 迄日，約 1 秒/交易日）
+python scripts/backfill_t86.py
+python scripts/backfill_t86.py --start 2024-07-01 --end 2026-06-12 --delay 2.0
+
+# 2. A/B 驗證籌碼面效果（A=baseline、B=因子排名0.5填充、C=因子排名真實T86、D=法人連買過濾）
+python scripts/backtest_t86_factor.py
+python scripts/backtest_t86_factor.py --inst-min-days 3   # 場景 D 連買門檻
+
+# 3. 生產回測啟用因子排名時自動使用真實 T86（有快取才生效，否則自動退回 0.5）
+BACKTEST_ENABLE_FACTOR_RANKING=true python main.py backtest --skip-download
+```
+
+說明：
+- 快取位置 `src/data/cache/institutional_history/YYYYMMDD.json`（永久保存，已抓過不重抓）
+- T86 僅涵蓋上市（TSE）股票，上櫃股票一律 fail-open（因子取中位數 0.5 / 過濾不剔除）
+- 連續買超計算無 lookahead：每日數值只依賴當日（含）以前的資料
+- 新增 `BacktestSettings.factor_use_inst_history`（預設 `True`，
+  env `BACKTEST_FACTOR_USE_INST_HISTORY`）可關閉退回舊行為
+
 ### 期貨分析 (futures)
 台指期貨技術分析與交易建議。
 
@@ -1000,6 +1043,25 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.27.0 - 2026-06-12
+
+**選股勝率/報酬提升研究：逐訊號歸因分析 + T86 法人歷史資料回測整合**
+
+- 新增 `scripts/analyze_signal_attribution.py`：P1 逐訊號歸因（Phase 1 分組統計 +
+  Phase 2 Leave-One-Out 停用單一訊號重跑回測），參數完全鏡像生產 `BacktestRunner`
+- 新增 `scripts/backfill_t86.py`：TWSE T86 三大法人歷史資料回填工具
+  （永久快取，跳過週末與已有快取日期）
+- `InstitutionalHistoryLoader` 新增 `load_cached_range()`（離線讀取，不打 API）與
+  `build_consecutive_series()`（一次掃描計算每日法人連買 streak，無 lookahead）
+- `build_factor_whitelist()` 支援 `inst_consecutive_by_date`：因子排名的法人權重（30%）
+  改用真實 T86 連買資料（原為 0.5 均等填充 = 無作用）；上櫃無資料股票維持 0.5
+- `backtest_main.py` 啟用因子排名時自動載入 T86 快取（無快取自動退回舊行為並警告）
+- 新增 `scripts/backtest_t86_factor.py`：A/B 驗證（baseline vs 因子排名 0.5填充 vs
+  真實 T86 vs 法人連買 ≥N 日過濾）
+- `BacktestSettings` 新增 `factor_use_inst_history`（預設 True）
+- 新增單元測試 27 案：訊號統計/LOO 判定/P1 參數鏡像、T86 快取讀取/連買序列/
+  無 lookahead/fail-open/回填跳過邏輯
 
 ### v5.26.0 - 2026-06-12
 

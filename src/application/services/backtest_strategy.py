@@ -1396,6 +1396,7 @@ class TechnicalStrategy:
         top_n: int = 15,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        inst_consecutive_by_date: Optional[Dict[date, Dict[str, dict]]] = None,
     ) -> Dict[date, Set[str]]:
         """Build a daily top-N factor whitelist from historical OHLCV data.
 
@@ -1403,17 +1404,23 @@ class TechnicalStrategy:
           - RPS 3m (63 交易日報酬百分位): 25%
           - RPS 6m (126 交易日報酬百分位): 25%
           - 量能比率 (今日量/20日均量百分位): 20%
-          - 法人連續買超: 30%（回測中無歷史 T86，以 0.5 均等填充）
+          - 法人連續買超: 30%
 
-        Note: Institutional data is skipped during backtesting (no historical T86
-        cache). All stocks receive the same institutional contribution (0.15),
-        so ranking is effectively determined by RPS + volume ratio.
+        Institutional data: when `inst_consecutive_by_date` is provided (built
+        from the T86 historical cache via
+        InstitutionalHistoryLoader.build_consecutive_series), the 30%
+        institutional weight uses real consecutive-buy streaks
+        (foreign*0.6 + trust*0.4, percentile-ranked cross-sectionally).
+        Otherwise all stocks receive a uniform 0.5 (legacy behaviour), so
+        ranking is effectively determined by RPS + volume ratio only.
 
         Args:
             stock_data_dict: Symbol → list of StockData (sorted by date ascending).
             top_n:           Number of top-ranked symbols to allow per day.
             start_date:      First date to include.
             end_date:        Last date to include.
+            inst_consecutive_by_date: {date: {symbol: {"foreign_consecutive": int,
+                             "trust_consecutive": int}}} from T86 history cache.
 
         Returns:
             Dict mapping each trading date to a set of top-N symbol strings.
@@ -1444,6 +1451,16 @@ class TechnicalStrategy:
             all_dates = {d for d in all_dates if d <= end_date}
 
         whitelist: Dict[date, Set[str]] = {}
+        inst_by_date = inst_consecutive_by_date or {}
+        # T86 是「逐日快照」資料；非交易日/缺漏日沿用最近一個可用日
+        inst_dates_sorted = sorted(inst_by_date.keys())
+
+        def _inst_for_date(target: date) -> Dict[str, dict]:
+            if not inst_dates_sorted:
+                return {}
+            # 找 <= target 的最近一日（無 lookahead）
+            candidates = [d for d in inst_dates_sorted if d <= target]
+            return inst_by_date[candidates[-1]] if candidates else {}
 
         for target_date in sorted(all_dates):
             # Compute raw scores for all symbols
@@ -1456,20 +1473,31 @@ class TechnicalStrategy:
             rps_6m_pct = _percentile_rank(rps_6m_raw)
             vol_ratio_pct = _percentile_rank(vol_ratio_raw)
 
-            # Composite score (institutional = 0.5 uniform for all)
+            # Institutional score: real T86 streaks when available, else 0.5
+            inst_day = _inst_for_date(target_date)
+            inst_raw: Dict[str, float] = {
+                sym: vals.get("foreign_consecutive", 0) * 0.6
+                + vals.get("trust_consecutive", 0) * 0.4
+                for sym, vals in inst_day.items()
+            }
+            inst_pct = _percentile_rank(inst_raw) if inst_raw else {}
+
             composite: Dict[str, float] = {}
             all_syms = set(rps_3m_pct) | set(rps_6m_pct) | set(vol_ratio_pct)
             for sym in all_syms:
                 r3 = rps_3m_pct.get(sym, 0.5)
                 r6 = rps_6m_pct.get(sym, 0.5)
                 v = vol_ratio_pct.get(sym, 0.5)
-                composite[sym] = r3 * 0.25 + r6 * 0.25 + v * 0.20 + 0.5 * 0.30
+                # 上櫃股無 T86 資料 → 中位數 0.5（與生產 FactorEngine 一致）
+                i = inst_pct.get(sym, 0.5)
+                composite[sym] = r3 * 0.25 + r6 * 0.25 + v * 0.20 + i * 0.30
 
             # Top-N
             ranked = sorted(composite, key=lambda s: composite[s], reverse=True)
             whitelist[target_date] = set(ranked[:top_n])
 
         self.logger.info(
-            f"Built factor whitelist for {len(whitelist)} dates (top_n={top_n})"
+            f"Built factor whitelist for {len(whitelist)} dates "
+            f"(top_n={top_n}, inst_data={'real T86' if inst_by_date else 'uniform 0.5'})"
         )
         return whitelist

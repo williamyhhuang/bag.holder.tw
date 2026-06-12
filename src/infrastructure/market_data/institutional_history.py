@@ -175,6 +175,81 @@ class InstitutionalHistoryLoader:
 
         return sorted(results, key=lambda x: x["date"])
 
+    def load_cached_range(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> List[Dict]:
+        """
+        只從本地快取載入日期區間內的法人資料（不打 API，供回測使用）。
+
+        Returns:
+            [{"date": date, "data": {symbol: {...}}}] 依日期升序，只含有快取的交易日
+        """
+        results = []
+        current = start_date
+        while current <= end_date:
+            cached = self._load_from_cache(current)
+            if cached:
+                results.append({"date": current, "data": cached})
+            current += timedelta(days=1)
+        return results
+
+    def build_consecutive_series(
+        self,
+        start_date: date,
+        end_date: date,
+        warmup_days: int = 30,
+    ) -> Dict[date, Dict[str, dict]]:
+        """
+        一次掃描快取，計算區間內「每個交易日」每支股票的法人連續買超天數。
+        供回測使用（無 lookahead：每日數值只依賴當日(含)以前的資料）。
+
+        Args:
+            start_date: 輸出區間起日
+            end_date: 輸出區間迄日
+            warmup_days: 起日前額外讀取的自然日數（讓首日 streak 正確）
+
+        Returns:
+            {date: {symbol: {"foreign_consecutive": int, "trust_consecutive": int}}}
+            只包含 [start_date, end_date] 內有快取資料的交易日
+        """
+        history = self.load_cached_range(
+            start_date - timedelta(days=warmup_days), end_date
+        )
+        if not history:
+            return {}
+
+        series: Dict[date, Dict[str, dict]] = {}
+        # 滾動 streak 狀態
+        f_streaks: Dict[str, int] = {}
+        t_streaks: Dict[str, int] = {}
+
+        for day in history:
+            day_data = day["data"]
+            # 當日無資料的股票 streak 重置
+            for sym in list(f_streaks.keys()):
+                if sym not in day_data:
+                    f_streaks[sym] = 0
+                    t_streaks[sym] = 0
+
+            for sym, vals in day_data.items():
+                f_net = vals.get("foreign_net", 0)
+                t_net = vals.get("trust_net", 0)
+                f_streaks[sym] = f_streaks.get(sym, 0) + 1 if f_net > 0 else 0
+                t_streaks[sym] = t_streaks.get(sym, 0) + 1 if t_net > 0 else 0
+
+            if day["date"] >= start_date:
+                series[day["date"]] = {
+                    sym: {
+                        "foreign_consecutive": f_streaks.get(sym, 0),
+                        "trust_consecutive": t_streaks.get(sym, 0),
+                    }
+                    for sym in day_data
+                }
+
+        return series
+
     def build_consecutive_days(
         self,
         end_date: date,
