@@ -58,6 +58,11 @@ class BacktestEngine:
         # Decimal('0') trigger = disabled.
         scale_out_trigger_pct: Decimal = Decimal('0'),
         scale_out_ratio: Decimal = Decimal('0.5'),
+        # Resonance sizing (多訊號共振加碼): when >= resonance_min_signals BUY signals
+        # fire for the same (symbol, date), boost position size by resonance_size_multiplier.
+        # 0 = disabled.
+        resonance_min_signals: int = 0,
+        resonance_size_multiplier: float = 1.5,
     ):
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -78,6 +83,9 @@ class BacktestEngine:
         # Scale-out partial profit taking
         self.scale_out_trigger_pct: Decimal = scale_out_trigger_pct
         self.scale_out_ratio: Decimal = scale_out_ratio
+        # Resonance sizing
+        self.resonance_min_signals: int = resonance_min_signals
+        self.resonance_size_multiplier: float = resonance_size_multiplier
         self.benchmark_bullish: Dict[date, bool] = {}  # date -> True if all market regime checks pass
         self.benchmark_rsi: Dict[date, Decimal] = {}   # date -> TAIEX RSI(14) value
         self.momentum_whitelist: Dict[date, Set[str]] = {}  # date -> set of allowed symbols
@@ -735,6 +743,14 @@ class BacktestEngine:
         factor_allowed = self._get_factor_allowed(self.current_date)
         regime = self.get_market_regime(self.current_date) if market_bullish else "WEAK"
 
+        # Resonance sizing: count same-day BUY signals per symbol (multiple indicators
+        # firing together = stronger conviction → larger position)
+        buy_counts: Dict[str, int] = {}
+        if self.resonance_min_signals > 0:
+            for s in signals:
+                if s.signal_type == SignalType.BUY and s.date == self.current_date:
+                    buy_counts[s.symbol] = buy_counts.get(s.symbol, 0) + 1
+
         for signal in signals:
             if signal.date != self.current_date:
                 continue
@@ -784,6 +800,14 @@ class BacktestEngine:
                     and self.strong_trend_multiplier != 1.0
                 ):
                     sizing_override = self.position_sizing * Decimal(str(self.strong_trend_multiplier))
+                # Resonance sizing: boost when enough same-day signals agree
+                if (
+                    self.resonance_min_signals > 0
+                    and buy_counts.get(signal.symbol, 0) >= self.resonance_min_signals
+                    and self.resonance_size_multiplier != 1.0
+                ):
+                    base_sizing = sizing_override if sizing_override is not None else self.position_sizing
+                    sizing_override = base_sizing * Decimal(str(self.resonance_size_multiplier))
                 # Queue for next-day open execution (avoid same-bar look-ahead bias)
                 self.pending_signals.append((signal, sizing_override))
             elif signal.signal_type == SignalType.SELL and signal.symbol in self.positions:

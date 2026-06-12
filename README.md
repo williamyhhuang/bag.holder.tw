@@ -1112,6 +1112,21 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.29.2 - 2026-06-12
+
+**多訊號共振加碼研究（不採納為預設，功能保留）**
+
+- 新增共振加碼 engine 功能：同一股票同日 BUY 訊號數 ≥ `resonance_min_signals` 時
+  部位加碼 `resonance_size_multiplier` 倍（與 P5 STRONG regime 加碼可疊加）
+- 新增 `BacktestSettings.resonance_min_signals`（預設 0 = 停用）與
+  `resonance_size_multiplier`（預設 1.5）
+- IS/OOS 驗證（門檻 3/4 × 倍數 1.5/2.0）：加碼倍數越大兩期績效越差
+  （OOS ≥3×2.0：勝率 52.5% vs 55.2%、Sharpe 1.76 vs 1.90）；
+  ≥4 門檻從未觸發（無單日 4 訊號共振）→ 不採納
+- 結論：共振數多的訊號勝率並沒有更高，加碼只放大隨機性並排擠其他進場
+- 啟用方式：`BACKTEST_RESONANCE_MIN_SIGNALS=3 python main.py backtest --skip-download`
+- 新增 TestResonanceSizing 單元測試 3 案：加碼觸發/低於門檻/預設停用
+
 ### v5.29.1 - 2026-06-12
 
 **週線 Donchian 週期預設 10 → 5（grid search + IS/OOS 驗證採納）**

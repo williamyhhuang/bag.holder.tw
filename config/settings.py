@@ -388,6 +388,16 @@ class BacktestSettings(BaseSettings):
         env="BACKTEST_SCALE_OUT_RATIO",
         description="分批出場賣出比例（0.5 = 賣一半，捨入到整張）；觸發後剩餘部位取消固定停利、改由追蹤停損讓利潤奔跑",
     )
+    resonance_min_signals: int = Field(
+        default=0,
+        env="BACKTEST_RESONANCE_MIN_SIGNALS",
+        description="多訊號共振加碼門檻：同一股票同日 BUY 訊號數 ≥ 此值時部位加碼，0 = 停用",
+    )
+    resonance_size_multiplier: float = Field(
+        default=1.5,
+        env="BACKTEST_RESONANCE_SIZE_MULTIPLIER",
+        description="多訊號共振加碼倍數（部位 = position_sizing × 此值）",
+    )
     # 最小持倉天數 — trailing stop 啟動的最低門檻（日曆天）
     # 進場後前 N 天不啟動 trailing stop ratcheting，避免跳空上漲後當天回落立即出場
     # 固定停損（stop_loss_pct）仍然全程有效（保護大跌）

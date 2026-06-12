@@ -3592,5 +3592,68 @@ class TestScaleOut:
         assert result.trades[0].scale_out_pnl == 0
 
 
+class TestResonanceSizing:
+    """多訊號共振加碼: boost position size when >= N same-day BUY signals agree."""
+
+    def _make_stock_data(self, symbol, prices):
+        from datetime import timedelta as _td
+        result = []
+        for i, p in enumerate(prices):
+            d = date(2025, 9, 1) + _td(days=i)
+            result.append(StockData(
+                symbol=symbol, date=d,
+                open_price=Decimal(str(p)), high_price=Decimal(str(p)),
+                low_price=Decimal(str(p)), close_price=Decimal(str(p)),
+                volume=100000
+            ))
+        return result
+
+    def _sig(self, name="Sig A"):
+        base = date(2025, 9, 1)
+        return TradingSignal(
+            symbol="TEST", date=base,
+            signal_type=SignalType.BUY, signal_name=name,
+            price=Decimal('10'), description="", strength="MEDIUM",
+            indicators=TechnicalIndicators(date=base)
+        )
+
+    def _engine(self, **overrides):
+        kwargs = dict(
+            initial_capital=Decimal('1000000'),
+            stop_loss_pct=Decimal('0.10'),
+            take_profit_pct=Decimal('0.50'),
+            trailing_stop_pct=Decimal('0'),
+            max_holding_days=3,
+            atr_stop_multiplier=0,
+            min_holding_days=0,
+            resonance_min_signals=2,
+            resonance_size_multiplier=1.5,
+        )
+        kwargs.update(overrides)
+        return BacktestEngine(**kwargs)
+
+    def _run(self, engine, n_signals):
+        from datetime import timedelta
+        engine.add_price_data("TEST", self._make_stock_data("TEST", [10, 10, 10, 10, 10]))
+        base = date(2025, 9, 1)
+        sigs = [self._sig(name=f"Sig {i}") for i in range(n_signals)]
+        engine.run_backtest(sigs, base, base + timedelta(days=4))
+        buys = [o for o in engine.orders if o.signal_type == SignalType.BUY]
+        assert len(buys) == 1, "duplicate same-day signals must not double-buy"
+        return buys[0].quantity
+
+    def test_resonance_boosts_size(self):
+        """2 same-day signals with threshold 2 → 1.5x position (15,000 vs 10,000 shares)."""
+        assert self._run(self._engine(), n_signals=2) == 15000
+
+    def test_below_threshold_uses_base_size(self):
+        """1 signal below threshold 2 → base 10% sizing = 10,000 shares."""
+        assert self._run(self._engine(), n_signals=1) == 10000
+
+    def test_disabled_by_default(self):
+        """resonance_min_signals=0 (production default) → no boost even with 3 signals."""
+        assert self._run(self._engine(resonance_min_signals=0), n_signals=3) == 10000
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

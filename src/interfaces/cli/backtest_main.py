@@ -248,6 +248,9 @@ class BacktestRunner:
                 # Scale-out partial profit taking (0 trigger = disabled)
                 scale_out_trigger_pct=Decimal(str(cfg.scale_out_trigger_pct)),
                 scale_out_ratio=Decimal(str(cfg.scale_out_ratio)),
+                # Resonance sizing (0 = disabled)
+                resonance_min_signals=cfg.resonance_min_signals,
+                resonance_size_multiplier=cfg.resonance_size_multiplier,
                 market_regime_strong_rsi=cfg.market_regime_strong_rsi,
                 strong_regime_signals=_parse_signals(cfg.strong_regime_signals),
                 neutral_regime_signals=_parse_signals(cfg.neutral_regime_signals),
