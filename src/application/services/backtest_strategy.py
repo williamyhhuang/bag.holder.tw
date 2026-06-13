@@ -273,6 +273,10 @@ class TechnicalStrategy:
     # (they fire when RSI is LOW by definition, so requiring RSI >= 50 paradoxically blocks all of them)
     MEAN_REVERSION_SIGNALS: List[str] = [
         "RSI Oversold",
+        "BB Lower Touch",
+        "Volume Climax",
+        "RSI Bullish Divergence",
+        "Support Bounce",
     ]
 
     def __init__(
@@ -316,6 +320,11 @@ class TechnicalStrategy:
         weekly_donchian_period: int = 10,
         donchian_period_2: int = 0,
         rsi_oversold_require_uptrend: bool = True,
+        enable_left_side_signals: bool = False,
+        left_side_min_price: float = 20.0,
+        left_side_max_drawdown_10d_pct: float = 0.20,
+        left_side_min_confirming_signals: int = 1,
+        left_side_disabled_signals: Optional[List[str]] = None,
     ):
         self.ma_periods = ma_periods
         self.rsi_period = rsi_period
@@ -375,6 +384,14 @@ class TechnicalStrategy:
         # weekly MA5 > MA20) regardless of the global require_ma60_uptrend / require_weekly_trend
         # toggles — only buy oversold dips inside an established uptrend.
         self.rsi_oversold_require_uptrend = rsi_oversold_require_uptrend
+        # Left-side (mean-reversion) strategy parameters
+        self.enable_left_side_signals = enable_left_side_signals
+        self.left_side_min_price = Decimal(str(left_side_min_price))
+        self.left_side_max_drawdown_10d_pct = Decimal(str(left_side_max_drawdown_10d_pct))
+        self.left_side_min_confirming_signals = left_side_min_confirming_signals
+        self.left_side_disabled_signals: List[str] = (
+            left_side_disabled_signals if left_side_disabled_signals is not None else []
+        )
 
         self.indicator_calculator = IndicatorCalculator()
         self.signal_detector = SignalDetector()
@@ -813,6 +830,99 @@ class TechnicalStrategy:
                             'price': current_price_data.close_price,
                         })
 
+                # ── Left-side (mean-reversion) signals ──────────────────────
+                if self.enable_left_side_signals:
+                    close = current_price_data.close_price
+
+                    # Pre-check: not in free-fall (10-day drawdown < threshold)
+                    _in_free_fall = False
+                    if i >= 10:
+                        lookback_10d = sorted_dates[i - 10: i]
+                        close_10d_ago = price_lookup.get(lookback_10d[0])
+                        if close_10d_ago is not None and close_10d_ago.close_price > 0:
+                            drawdown_10d = (close_10d_ago.close_price - close) / close_10d_ago.close_price
+                            if drawdown_10d >= self.left_side_max_drawdown_10d_pct:
+                                _in_free_fall = True
+
+                    if not _in_free_fall:
+                        # Volume Climax: volume > 3x MA20 AND daily drop > 3%
+                        if i >= 1:
+                            prev_close_data = price_lookup.get(sorted_dates[i - 1])
+                            if prev_close_data is not None and prev_close_data.close_price > 0:
+                                daily_return = (close - prev_close_data.close_price) / prev_close_data.close_price
+                                vol_ma20 = current_indicators.volume_ma20
+                                if (daily_return < Decimal('-0.03')
+                                        and vol_ma20 is not None and vol_ma20 > 0
+                                        and current_price_data.volume > int(vol_ma20) * 3):
+                                    detected_signals.append({
+                                        'type': 'BUY',
+                                        'name': 'Volume Climax',
+                                        'description': (
+                                            f'爆量急跌（量 {current_price_data.volume:,} > 3× MA20 {int(vol_ma20):,}，'
+                                            f'跌幅 {float(daily_return):.1%}），投降性賣壓'
+                                        ),
+                                        'strength': 'STRONG',
+                                        'price': close,
+                                    })
+
+                        # RSI Bullish Divergence: price makes new 20-day low but RSI is higher
+                        # than at the previous swing low (bullish divergence)
+                        _DIVERGENCE_LOOKBACK = 20
+                        if i >= _DIVERGENCE_LOOKBACK:
+                            lookback_dates = sorted_dates[i - _DIVERGENCE_LOOKBACK: i]
+                            lookback_lows = [
+                                (d, price_lookup[d].low_price)
+                                for d in lookback_dates if d in price_lookup
+                            ]
+                            if lookback_lows:
+                                min_low_date, min_low_price = min(lookback_lows, key=lambda x: x[1])
+                                curr_low = current_price_data.low_price
+                                curr_rsi = current_indicators.rsi14
+                                # Current price at or below the lookback minimum
+                                if (curr_low <= min_low_price
+                                        and curr_rsi is not None
+                                        and min_low_date in indicators_data):
+                                    prev_low_rsi = indicators_data[min_low_date].rsi14
+                                    # RSI higher (bullish divergence) — price lower but RSI higher
+                                    if prev_low_rsi is not None and curr_rsi > prev_low_rsi:
+                                        detected_signals.append({
+                                            'type': 'BUY',
+                                            'name': 'RSI Bullish Divergence',
+                                            'description': (
+                                                f'RSI 多頭背離（價格新低 {float(curr_low):.1f} ≤ {float(min_low_price):.1f}，'
+                                                f'RSI {float(curr_rsi):.1f} > {float(prev_low_rsi):.1f}）'
+                                            ),
+                                            'strength': 'STRONG',
+                                            'price': close,
+                                        })
+
+                        # Support Bounce: price touches within 2% of a 40-day swing low,
+                        # then closes above it
+                        _SUPPORT_LOOKBACK = 40
+                        if i >= _SUPPORT_LOOKBACK:
+                            support_dates = sorted_dates[i - _SUPPORT_LOOKBACK: i]
+                            support_lows = [
+                                price_lookup[d].low_price
+                                for d in support_dates if d in price_lookup
+                            ]
+                            if support_lows:
+                                swing_low = min(support_lows)
+                                curr_low = current_price_data.low_price
+                                # Touched within 2% of swing low, then closed above it
+                                if (swing_low > 0
+                                        and curr_low <= swing_low * Decimal('1.02')
+                                        and close > swing_low):
+                                    detected_signals.append({
+                                        'type': 'BUY',
+                                        'name': 'Support Bounce',
+                                        'description': (
+                                            f'支撐反彈（日低 {float(curr_low):.1f} 觸及 {_SUPPORT_LOOKBACK} 日'
+                                            f'支撐 {float(swing_low):.1f}，收盤站回 {float(close):.1f}）'
+                                        ),
+                                        'strength': 'MEDIUM',
+                                        'price': close,
+                                    })
+
                 # Convert to TradingSignal objects, applying buy-quality filters
                 for signal_data in detected_signals:
                     signal_type = self.map_signal_type(signal_data['type'])
@@ -888,17 +998,33 @@ class TechnicalStrategy:
             # Downgrade BUY to WATCH if fewer than min_confirming_signals BUY signals
             # agree on the same (symbol, date).  Requires 2+ independent indicators
             # to fire simultaneously, reducing false positives.
-            if self.min_confirming_signals > 1:
+            # Left-side signals use their own threshold (left_side_min_confirming_signals).
+            if self.min_confirming_signals > 1 or self.left_side_min_confirming_signals > 1:
                 from collections import Counter
-                buy_count: dict = Counter(
-                    s.date for s in signals if s.signal_type == SignalType.BUY
+                # Count right-side and left-side BUY signals separately
+                right_buy_count: dict = Counter(
+                    s.date for s in signals
+                    if s.signal_type == SignalType.BUY and s.signal_name not in self.MEAN_REVERSION_SIGNALS
+                )
+                left_buy_count: dict = Counter(
+                    s.date for s in signals
+                    if s.signal_type == SignalType.BUY and s.signal_name in self.MEAN_REVERSION_SIGNALS
                 )
                 for s in signals:
-                    if s.signal_type == SignalType.BUY and buy_count[s.date] < self.min_confirming_signals:
+                    if s.signal_type != SignalType.BUY:
+                        continue
+                    is_left = s.signal_name in self.MEAN_REVERSION_SIGNALS
+                    if is_left:
+                        threshold = self.left_side_min_confirming_signals
+                        count = left_buy_count[s.date]
+                    else:
+                        threshold = self.min_confirming_signals
+                        count = right_buy_count[s.date]
+                    if count < threshold:
                         s.signal_type = SignalType.WATCH
                         self.logger.debug(
                             f"Signal '{s.signal_name}' on {s.date} downgraded: "
-                            f"only {buy_count[s.date]}/{self.min_confirming_signals} confirming signals → WATCH"
+                            f"only {count}/{threshold} confirming signals → WATCH"
                         )
 
             self.logger.info(f"Generated {len(signals)} signals for {symbol}")
@@ -939,6 +1065,15 @@ class TechnicalStrategy:
         7. Signal cooldown        — handled in generate_signals
         8. Weekly trend           — weekly MA5 > MA20 (medium-term uptrend confirmation)
         """
+        # Route left-side (mean-reversion) signals to their own filter pipeline
+        if signal_name in self.MEAN_REVERSION_SIGNALS and signal_name != "RSI Oversold":
+            return self._apply_mean_reversion_filters(
+                signal_name=signal_name,
+                price=price,
+                volume=volume,
+                indicators=indicators,
+            )
+
         # Filter 1: disabled signals (poor historical win rate)
         if signal_name in self.disabled_signals:
             self.logger.debug(f"Signal '{signal_name}' is disabled → WATCH")
@@ -1092,6 +1227,54 @@ class TechnicalStrategy:
                     f"< {self.revenue_yoy_min_pct:.1f}% → WATCH"
                 )
                 return SignalType.WATCH
+
+        return SignalType.BUY
+
+    def _apply_mean_reversion_filters(
+        self,
+        signal_name: str,
+        price: Decimal,
+        volume: int,
+        indicators: TechnicalIndicators,
+    ) -> SignalType:
+        """Apply quality filters specific to left-side (mean-reversion) BUY signals.
+
+        Left-side signals (BB Lower Touch, Volume Climax, RSI Bullish Divergence,
+        Support Bounce) buy when stocks are oversold, so they intentionally skip
+        right-side filters like MA alignment, RSI momentum, 52-week, weekly trend,
+        and revenue growth.
+
+        Filters applied:
+        1. Disabled signals check
+        2. Not in free-fall (10-day drawdown < threshold)
+        3. Minimum volume lots (liquidity)
+        4. Not a penny stock (price >= left_side_min_price)
+        """
+        # Filter 1: disabled signals
+        if signal_name in self.left_side_disabled_signals:
+            self.logger.debug(f"Left-side signal '{signal_name}' is disabled → WATCH")
+            return SignalType.WATCH
+
+        # Filter 2: not a penny stock
+        if price < self.left_side_min_price:
+            self.logger.debug(
+                f"Left-side signal '{signal_name}' blocked: price {price} "
+                f"< min {self.left_side_min_price} → WATCH"
+            )
+            return SignalType.WATCH
+
+        # Filter 3: minimum daily volume (liquidity, same as right-side)
+        if self.min_volume_lots > 0:
+            min_shares = self.min_volume_lots * 1000
+            if volume < min_shares:
+                self.logger.debug(
+                    f"Left-side signal '{signal_name}' blocked: volume {volume} < "
+                    f"min {min_shares} ({self.min_volume_lots} lots) → WATCH"
+                )
+                return SignalType.WATCH
+
+        # Filter 4: not in free-fall is checked in generate_signals() where
+        # we have access to historical price data (10-day lookback)
 
         return SignalType.BUY
 

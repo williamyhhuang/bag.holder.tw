@@ -67,6 +67,13 @@ class BacktestRunner:
             weekly_donchian_period=cfg.weekly_donchian_period,
             donchian_period_2=cfg.donchian_period_2,
             rsi_oversold_require_uptrend=cfg.rsi_oversold_require_uptrend,
+            enable_left_side_signals=cfg.enable_left_side_signals,
+            left_side_min_price=cfg.left_side_min_price,
+            left_side_max_drawdown_10d_pct=cfg.left_side_max_drawdown_10d_pct,
+            left_side_min_confirming_signals=cfg.left_side_min_confirming_signals,
+            left_side_disabled_signals=[
+                s.strip() for s in cfg.left_side_disabled_signals.split(",") if s.strip()
+            ],
         )
         self.engine = BacktestEngine(
             stop_loss_pct=Decimal(str(cfg.stop_loss_pct)),
@@ -289,6 +296,30 @@ class BacktestRunner:
                     f"Trend exit config set for: {trend_names} "
                     f"(stop={cfg.trend_stop_loss_pct}, mode={mode}, "
                     f"holding={cfg.trend_max_holding_days}d)"
+                )
+
+            # Left-side (mean-reversion) signal exit parameters
+            if cfg.enable_left_side_signals:
+                mr_names = TechnicalStrategy.MEAN_REVERSION_SIGNALS
+                mr_exit = {
+                    name: {
+                        "stop_loss_pct": Decimal(str(cfg.left_side_stop_loss_pct)),
+                        "trailing_stop_pct": Decimal(str(cfg.left_side_trailing_stop_pct)),
+                        "take_profit_pct": Decimal(str(cfg.left_side_take_profit_pct)),
+                        "max_holding_days": cfg.left_side_max_holding_days,
+                        "exit_on_signals": None,
+                        "profit_threshold_pct": None,
+                        "profit_trailing_pct": None,
+                    }
+                    for name in mr_names
+                }
+                existing = self.engine.signal_exit_config or {}
+                existing.update(mr_exit)
+                self.engine.set_signal_exit_config(existing)
+                self.logger.info(
+                    f"Left-side exit config set for: {mr_names} "
+                    f"(stop={cfg.left_side_stop_loss_pct}, tp={cfg.left_side_take_profit_pct}, "
+                    f"holding={cfg.left_side_max_holding_days}d)"
                 )
 
             # Add price data to engine

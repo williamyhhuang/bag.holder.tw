@@ -193,6 +193,13 @@ class SignalsScanner:
             weekly_donchian_period=cfg.weekly_donchian_period,
             donchian_period_2=cfg.donchian_period_2,
             rsi_oversold_require_uptrend=cfg.rsi_oversold_require_uptrend,
+            enable_left_side_signals=cfg.enable_left_side_signals,
+            left_side_min_price=cfg.left_side_min_price,
+            left_side_max_drawdown_10d_pct=cfg.left_side_max_drawdown_10d_pct,
+            left_side_min_confirming_signals=cfg.left_side_min_confirming_signals,
+            left_side_disabled_signals=[
+                s.strip() for s in cfg.left_side_disabled_signals.split(",") if s.strip()
+            ],
             # weekly_close_only intentionally omitted: not applicable to live scanning
         )
         self.cfg = cfg
@@ -420,10 +427,15 @@ class SignalsScanner:
             rsi = float(sig.indicators.rsi14) if sig.indicators.rsi14 else None
             price = float(sig.price)
 
+            # 左側信號加上前綴以便區分
+            display_signal_name = sig.signal_name
+            if sig.signal_name in TechnicalStrategy.MEAN_REVERSION_SIGNALS:
+                display_signal_name = f"[左側] {sig.signal_name}"
+
             entry = {
                 "symbol": symbol_display,
                 "name": name,
-                "signal": sig.signal_name,
+                "signal": display_signal_name,
                 "price": price,
                 "rsi": rsi,
             }
@@ -511,17 +523,20 @@ class SignalsScanner:
                             entry["reason"] = f"EPS YoY {eps_yoy:.1f}% < {self.cfg.min_eps_yoy_pct:.0f}%"
                     # 無 EPS 資料時 fail-open（不過濾）
 
-                if not in_top30:
+                # 左側信號跳過動能/族群/營收/法人/EPS 過濾（這些是右側趨勢條件）
+                is_left_side = sig.signal_name in TechnicalStrategy.MEAN_REVERSION_SIGNALS
+
+                if not is_left_side and not in_top30:
                     entry["reason"] = "動能排名不在前30"
                     watch_list.append(entry)
-                elif not in_strong_sector:
+                elif not is_left_side and not in_strong_sector:
                     entry["reason"] = f"族群偏弱（{stock_sector}）"
                     watch_list.append(entry)
-                elif not revenue_ok:
+                elif not is_left_side and not revenue_ok:
                     watch_list.append(entry)
-                elif not inst_ok:
+                elif not is_left_side and not inst_ok:
                     watch_list.append(entry)
-                elif not eps_ok:
+                elif not is_left_side and not eps_ok:
                     watch_list.append(entry)
                 else:
                     # 通過所有過濾：加入月營收 YoY 顯示（若有）

@@ -14,6 +14,13 @@ from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Mean-reversion signal names (mirrors TechnicalStrategy.MEAN_REVERSION_SIGNALS
+# to avoid circular import). These signals bypass momentum/sector/factor filters.
+_MEAN_REVERSION_SIGNALS = frozenset([
+    "RSI Oversold", "BB Lower Touch", "Volume Climax",
+    "RSI Bullish Divergence", "Support Bounce",
+])
+
 
 class BacktestEngine:
     """Backtesting engine for strategy evaluation"""
@@ -776,21 +783,24 @@ class BacktestEngine:
                             f"not in NEUTRAL regime signals"
                         )
                         continue
-                if momentum_allowed is not None and signal.symbol not in momentum_allowed:
-                    self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: not in top-N momentum"
-                    )
-                    continue
-                if sector_allowed is not None and signal.symbol not in sector_allowed:
-                    self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: sector not strong enough"
-                    )
-                    continue
-                if factor_allowed is not None and signal.symbol not in factor_allowed:
-                    self.logger.debug(
-                        f"Skipping BUY {signal.symbol}: not in top-N factor ranking"
-                    )
-                    continue
+                # Left-side (mean-reversion) signals bypass momentum/sector/factor filters
+                _is_mean_reversion = signal.signal_name in _MEAN_REVERSION_SIGNALS
+                if not _is_mean_reversion:
+                    if momentum_allowed is not None and signal.symbol not in momentum_allowed:
+                        self.logger.debug(
+                            f"Skipping BUY {signal.symbol}: not in top-N momentum"
+                        )
+                        continue
+                    if sector_allowed is not None and signal.symbol not in sector_allowed:
+                        self.logger.debug(
+                            f"Skipping BUY {signal.symbol}: sector not strong enough"
+                        )
+                        continue
+                    if factor_allowed is not None and signal.symbol not in factor_allowed:
+                        self.logger.debug(
+                            f"Skipping BUY {signal.symbol}: not in top-N factor ranking"
+                        )
+                        continue
                 # P5: apply trend signal multiplier in STRONG regime
                 sizing_override = None
                 if (

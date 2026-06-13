@@ -231,6 +231,39 @@ python main.py signals --ai-filter --send-telegram
 
 > **注意**：買入過濾器只影響「建議買入」和「觀察清單」，不影響賣出警示。
 
+**左側（均值回歸）策略（選用，預設停用）：**
+
+除了上述右側趨勢跟隨策略，系統另支援左側交易策略，在股價超跌時低接，等待均值回歸獲利。
+透過 `BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=true` 啟用。
+
+左側訊號類型：
+| 訊號 | 邏輯 |
+|------|------|
+| BB Lower Touch | 收盤價觸及布林下軌（±1%），超跌反彈訊號 |
+| Volume Climax | 量爆 3 倍 MA20 + 跌幅 > 3%，投降性賣壓見底訊號 |
+| RSI Bullish Divergence | 價格創 20 日新低但 RSI 高於前低點（多頭背離） |
+| Support Bounce | 價格觸及 40 日波段低點後收在其上方 |
+
+左側信號的過濾條件與右側不同，**跳過** MA 排列、動能排名、52 週、營收成長等趨勢條件，改為：
+1. 非自由落體（10 日跌幅 < 20%）
+2. 非雞蛋水餃股（股價 ≥ 20 元）
+3. 流動性足夠（成交量 ≥ min_volume_lots）
+
+左側信號的出場參數也獨立設定（較緊停損 5%、較短持倉 15 天、較小部位 3%），在顯示時以 `[左側]` 前綴區分。
+
+相關環境變數：
+```bash
+BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=true          # 啟用左側策略
+BACKTEST_LEFT_SIDE_STOP_LOSS_PCT=0.05           # 停損 5%
+BACKTEST_LEFT_SIDE_TAKE_PROFIT_PCT=0.08         # 停利 8%
+BACKTEST_LEFT_SIDE_MAX_HOLDING_DAYS=15          # 最長持倉 15 天
+BACKTEST_LEFT_SIDE_POSITION_SIZING=0.03         # 部位 3%
+BACKTEST_LEFT_SIDE_MIN_PRICE=20.0               # 最低股價
+BACKTEST_LEFT_SIDE_MAX_DRAWDOWN_10D_PCT=0.20    # 10 日最大跌幅
+BACKTEST_LEFT_SIDE_MIN_CONFIRMING_SIGNALS=1     # 最少確認訊號
+BACKTEST_LEFT_SIDE_DISABLED_SIGNALS=""           # 停用訊號清單
+```
+
 **AI 二次過濾（`--ai-filter`）：**
 
 在 P1 技術指標篩選後，可選擇加入 AI 做進一步的綜合判斷，將股票重新分為四個等級：
@@ -1118,6 +1151,18 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.31.0 - 2026-06-14
+
+**新增左側（均值回歸）選股策略**
+
+- 新增 4 個左側交易信號：BB Lower Touch、Volume Climax、RSI Bullish Divergence、Support Bounce
+- 左側信號使用獨立 filter pipeline，跳過 MA 排列/動能排名/52 週等趨勢條件
+- 左側信號的出場參數獨立設定（停損 5%、持倉 15 天、部位 3%）
+- 預設停用（`BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=false`），不影響現有右側策略
+- SignalsScanner 顯示左側信號時加 `[左側]` 前綴
+- BacktestEngine 左側信號跳過動能/族群/因子排名過濾
+- 新增 22 個左側策略單元測試
 
 ### v5.30.1 - 2026-06-13
 

@@ -119,6 +119,16 @@ class SignalDetector:
                     'price': current_price
                 })
 
+            # BB Lower Touch (left-side mean-reversion signal)
+            if self._check_bb_lower_touch(current_indicators, current_price):
+                signals.append({
+                    'type': 'BUY',
+                    'name': 'BB Lower Touch',
+                    'description': '收盤價觸及布林下軌，超跌均值回歸訊號',
+                    'strength': 'MEDIUM',
+                    'price': current_price,
+                })
+
             return signals
 
         except Exception as e:
@@ -219,3 +229,16 @@ class SignalDetector:
         if volume_ma20 is not None:
             return volume > volume_ma20 * Decimal('2')  # 2x average volume
         return False
+
+    def _check_bb_lower_touch(self, current: Dict[str, Decimal], price: Decimal) -> bool:
+        """Check if price touches or falls below the lower Bollinger Band (within 1%).
+
+        Left-side mean-reversion signal: price at the lower band suggests oversold
+        condition and potential bounce back toward the mean (BB middle).
+        """
+        bb_lower = current.get('bb_lower')
+        if bb_lower is None or bb_lower <= 0:
+            return False
+        # Price within 1% above or below the lower band
+        return price <= bb_lower * Decimal('1.01')
+

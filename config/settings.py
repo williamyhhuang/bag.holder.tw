@@ -861,6 +861,59 @@ class BacktestSettings(BaseSettings):
         description="最近季 EPS 最低年增率門檻（%；25 = CANSLIM C 標準）",
     )
 
+    # ── 左側（均值回歸）策略設定 ─────────────────────────────────────
+    # 左側交易在股價超跌時低接，等待均值回歸獲利。預設關閉，不影響現有右側策略行為。
+    enable_left_side_signals: bool = Field(
+        default=False,
+        env="BACKTEST_ENABLE_LEFT_SIDE_SIGNALS",
+        description="啟用左側（均值回歸）策略訊號（BB Lower Touch、Volume Climax、RSI Bullish Divergence、Support Bounce）",
+    )
+    left_side_stop_loss_pct: float = Field(
+        default=0.05,
+        env="BACKTEST_LEFT_SIDE_STOP_LOSS_PCT",
+        description="左側策略停損百分比（0.05 = 5%，較右側緊因接刀風險高）",
+    )
+    left_side_trailing_stop_pct: float = Field(
+        default=0.05,
+        env="BACKTEST_LEFT_SIDE_TRAILING_STOP_PCT",
+        description="左側策略追蹤停損百分比（0.05 = 5%）",
+    )
+    left_side_take_profit_pct: float = Field(
+        default=0.08,
+        env="BACKTEST_LEFT_SIDE_TAKE_PROFIT_PCT",
+        description="左側策略停利百分比（0.08 = 8%，目標回歸均線）",
+    )
+    left_side_max_holding_days: int = Field(
+        default=15,
+        env="BACKTEST_LEFT_SIDE_MAX_HOLDING_DAYS",
+        description="左側策略最長持倉天數（較右側短，均值回歸應快速獲利）",
+    )
+    left_side_position_sizing: float = Field(
+        default=0.03,
+        env="BACKTEST_LEFT_SIDE_POSITION_SIZING",
+        description="左側策略部位大小（0.03 = 3%，較右側小因接刀風險高）",
+    )
+    left_side_min_price: float = Field(
+        default=20.0,
+        env="BACKTEST_LEFT_SIDE_MIN_PRICE",
+        description="左側策略最低股價門檻（排除雞蛋水餃股）",
+    )
+    left_side_max_drawdown_10d_pct: float = Field(
+        default=0.20,
+        env="BACKTEST_LEFT_SIDE_MAX_DRAWDOWN_10D_PCT",
+        description="左側策略 10 日最大跌幅限制（0.20 = 20%，超過視為自由落體不進場）",
+    )
+    left_side_min_confirming_signals: int = Field(
+        default=1,
+        env="BACKTEST_LEFT_SIDE_MIN_CONFIRMING_SIGNALS",
+        description="左側策略最少確認訊號數（預設 1，允許單一信號進場）",
+    )
+    left_side_disabled_signals: str = Field(
+        default="",
+        env="BACKTEST_LEFT_SIDE_DISABLED_SIGNALS",
+        description="左側策略停用訊號清單（逗號分隔）",
+    )
+
     # ── VCP（波動收縮型態）訊號 ──────────────────────────────────────
     # 偵測 Volatility Contraction Pattern：
     #   1. 近 vcp_lookback 日內出現至少 2 次逐次縮小的回調
