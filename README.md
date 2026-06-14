@@ -234,7 +234,7 @@ python main.py signals --ai-filter --send-telegram
 **左側（均值回歸）策略（選用，預設停用）：**
 
 除了上述右側趨勢跟隨策略，系統另支援左側交易策略，在股價超跌時低接，等待均值回歸獲利。
-透過 `BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=true` 啟用。
+預設啟用（`BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=true`），需雙重確認訊號 + 股價 ≥ 50 元。
 
 左側訊號類型：
 | 訊號 | 邏輯 |
@@ -253,14 +253,14 @@ python main.py signals --ai-filter --send-telegram
 
 相關環境變數：
 ```bash
-BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=true          # 啟用左側策略
+BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=true          # 啟用左側策略（預設 true）
 BACKTEST_LEFT_SIDE_STOP_LOSS_PCT=0.05           # 停損 5%
 BACKTEST_LEFT_SIDE_TAKE_PROFIT_PCT=0.08         # 停利 8%
 BACKTEST_LEFT_SIDE_MAX_HOLDING_DAYS=15          # 最長持倉 15 天
 BACKTEST_LEFT_SIDE_POSITION_SIZING=0.03         # 部位 3%
-BACKTEST_LEFT_SIDE_MIN_PRICE=20.0               # 最低股價
+BACKTEST_LEFT_SIDE_MIN_PRICE=50.0               # 最低股價（預設 50 元）
 BACKTEST_LEFT_SIDE_MAX_DRAWDOWN_10D_PCT=0.20    # 10 日最大跌幅
-BACKTEST_LEFT_SIDE_MIN_CONFIRMING_SIGNALS=1     # 最少確認訊號
+BACKTEST_LEFT_SIDE_MIN_CONFIRMING_SIGNALS=2     # 最少確認訊號（預設 2）
 BACKTEST_LEFT_SIDE_DISABLED_SIGNALS=""           # 停用訊號清單
 ```
 
@@ -1159,7 +1159,7 @@ docker compose up -d
 - 新增 4 個左側交易信號：BB Lower Touch、Volume Climax、RSI Bullish Divergence、Support Bounce
 - 左側信號使用獨立 filter pipeline，跳過 MA 排列/動能排名/52 週等趨勢條件
 - 左側信號的出場參數獨立設定（停損 5%、持倉 15 天、部位 3%）
-- 預設停用（`BACKTEST_ENABLE_LEFT_SIDE_SIGNALS=false`），不影響現有右側策略
+- 預設啟用，回測最佳參數：`min_confirming_signals=2` + `min_price=50`（Sharpe 1.13、勝率 54%）
 - SignalsScanner 顯示左側信號時加 `[左側]` 前綴
 - BacktestEngine 左側信號跳過動能/族群/因子排名過濾
 - 新增 22 個左側策略單元測試

@@ -406,11 +406,11 @@ class TestLeftSideConfirmation:
 class TestLeftSideSettings:
     """Test left-side settings in BacktestSettings."""
 
-    def test_default_disabled(self):
-        """Left-side signals should be disabled by default."""
+    def test_default_enabled(self):
+        """Left-side signals should be enabled by default."""
         from config.settings import BacktestSettings
         cfg = BacktestSettings()
-        assert cfg.enable_left_side_signals is False
+        assert cfg.enable_left_side_signals is True
 
     def test_default_params(self):
         """Check default parameter values."""
@@ -421,7 +421,7 @@ class TestLeftSideSettings:
         assert cfg.left_side_take_profit_pct == 0.08
         assert cfg.left_side_max_holding_days == 15
         assert cfg.left_side_position_sizing == 0.03
-        assert cfg.left_side_min_price == 20.0
+        assert cfg.left_side_min_price == 50.0
         assert cfg.left_side_max_drawdown_10d_pct == 0.20
-        assert cfg.left_side_min_confirming_signals == 1
+        assert cfg.left_side_min_confirming_signals == 2
         assert cfg.left_side_disabled_signals == ""

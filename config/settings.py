@@ -864,7 +864,7 @@ class BacktestSettings(BaseSettings):
     # ── 左側（均值回歸）策略設定 ─────────────────────────────────────
     # 左側交易在股價超跌時低接，等待均值回歸獲利。預設關閉，不影響現有右側策略行為。
     enable_left_side_signals: bool = Field(
-        default=False,
+        default=True,
         env="BACKTEST_ENABLE_LEFT_SIDE_SIGNALS",
         description="啟用左側（均值回歸）策略訊號（BB Lower Touch、Volume Climax、RSI Bullish Divergence、Support Bounce）",
     )
@@ -894,9 +894,9 @@ class BacktestSettings(BaseSettings):
         description="左側策略部位大小（0.03 = 3%，較右側小因接刀風險高）",
     )
     left_side_min_price: float = Field(
-        default=20.0,
+        default=50.0,
         env="BACKTEST_LEFT_SIDE_MIN_PRICE",
-        description="左側策略最低股價門檻（排除雞蛋水餃股）",
+        description="左側策略最低股價門檻（回測顯示 50 元以上品質較佳）",
     )
     left_side_max_drawdown_10d_pct: float = Field(
         default=0.20,
@@ -904,9 +904,9 @@ class BacktestSettings(BaseSettings):
         description="左側策略 10 日最大跌幅限制（0.20 = 20%，超過視為自由落體不進場）",
     )
     left_side_min_confirming_signals: int = Field(
-        default=1,
+        default=2,
         env="BACKTEST_LEFT_SIDE_MIN_CONFIRMING_SIGNALS",
-        description="左側策略最少確認訊號數（預設 1，允許單一信號進場）",
+        description="左側策略最少確認訊號數（回測顯示 2 可大幅提升勝率與獲利因子）",
     )
     left_side_disabled_signals: str = Field(
         default="",

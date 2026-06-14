@@ -1065,8 +1065,13 @@ class TechnicalStrategy:
         7. Signal cooldown        — handled in generate_signals
         8. Weekly trend           — weekly MA5 > MA20 (medium-term uptrend confirmation)
         """
-        # Route left-side (mean-reversion) signals to their own filter pipeline
+        # Route left-side (mean-reversion) signals to their own filter pipeline.
+        # RSI Oversold uses the original right-side filter with uptrend guard.
+        # New left-side signals (BB Lower Touch, Volume Climax, etc.) are blocked
+        # entirely when enable_left_side_signals is False.
         if signal_name in self.MEAN_REVERSION_SIGNALS and signal_name != "RSI Oversold":
+            if not self.enable_left_side_signals:
+                return SignalType.WATCH
             return self._apply_mean_reversion_filters(
                 signal_name=signal_name,
                 price=price,
