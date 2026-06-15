@@ -90,6 +90,7 @@ TPE_HM=$((10#$(TZ=Asia/Taipei date +%H%M)))
 if [ "${TPE_DOW}" -le 5 ] && [ "${TPE_HM}" -ge 844 ] && [ "${TPE_HM}" -lt 1331 ]; then
   systemctl start mtx-trader-day.service
 elif { [ "${TPE_DOW}" -le 5 ] && [ "${TPE_HM}" -ge 1459 ]; } ||
-     { [ "${TPE_DOW}" -ge 2 ] && [ "${TPE_DOW}" -le 6 ] && [ "${TPE_HM}" -lt 501 ]; }; then
+     { [ "${TPE_DOW}" -ge 1 ] && [ "${TPE_DOW}" -le 6 ] && [ "${TPE_HM}" -lt 501 ]; }; then
+  # 週一~週六 00:00–05:00 屬於前一天夜盤的延續（週日夜盤 15:00 → 週一 05:00）
   systemctl start mtx-trader-night.service
 fi

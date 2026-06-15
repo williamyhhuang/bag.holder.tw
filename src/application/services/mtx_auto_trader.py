@@ -267,6 +267,17 @@ class MTXAutoTrader:
         if session is None:
             session = get_session()
 
+        # Safety: if forced session disagrees with actual clock, trust the clock.
+        # This prevents running a day session at midnight when the VM resumes
+        # from preemption and systemd triggers the wrong service.
+        actual = get_session()
+        if session != actual and actual != SessionType.CLOSED:
+            logger.warning(
+                f"Forced session={session.value} but clock says {actual.value} "
+                f"— overriding to {actual.value}"
+            )
+            session = actual
+
         if session == SessionType.CLOSED:
             logger.info("Market currently closed — waiting for next session…")
             await self._wait_for_open()
