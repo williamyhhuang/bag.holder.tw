@@ -87,10 +87,13 @@ systemctl enable --now mtx-trader-day.timer mtx-trader-night.timer
 TPE_DOW=$(TZ=Asia/Taipei date +%u)   # 1=Mon .. 7=Sun
 TPE_HM=$((10#$(TZ=Asia/Taipei date +%H%M)))
 
+# 台期所交易時段（台北時間）：
+#   日盤  Mon(1)–Fri(5)  08:45–13:30
+#   夜盤  Mon(1)–Fri(5) 15:00 → 翌日 05:00（跨日段 Tue(2)–Sat(6) 00:00–05:00）
+#   週日(7)整天 & 週六(6) 05:00 後 = CLOSED；週一凌晨也是 CLOSED（無週日夜盤）
 if [ "${TPE_DOW}" -le 5 ] && [ "${TPE_HM}" -ge 844 ] && [ "${TPE_HM}" -lt 1331 ]; then
   systemctl start mtx-trader-day.service
 elif { [ "${TPE_DOW}" -le 5 ] && [ "${TPE_HM}" -ge 1459 ]; } ||
-     { [ "${TPE_DOW}" -ge 1 ] && [ "${TPE_DOW}" -le 6 ] && [ "${TPE_HM}" -lt 501 ]; }; then
-  # 週一~週六 00:00–05:00 屬於前一天夜盤的延續（週日夜盤 15:00 → 週一 05:00）
+     { [ "${TPE_DOW}" -ge 2 ] && [ "${TPE_DOW}" -le 6 ] && [ "${TPE_HM}" -lt 501 ]; }; then
   systemctl start mtx-trader-night.service
 fi

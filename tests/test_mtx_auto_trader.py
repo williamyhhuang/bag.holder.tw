@@ -95,6 +95,37 @@ class TestGetSession:
     def test_closed_after_night(self):
         assert get_session(_dt(5, 1)) == SessionType.CLOSED
 
+    # Weekend / day-of-week boundary tests
+    def test_sunday_night_is_closed(self):
+        """Sunday 22:00 TPE — no Sunday night session."""
+        sun = datetime(2026, 6, 14, 22, 0, 0)  # Sunday
+        assert get_session(sun) == SessionType.CLOSED
+
+    def test_monday_early_morning_is_closed(self):
+        """Monday 00:09 TPE — no Sunday night session to continue."""
+        mon_early = datetime(2026, 6, 15, 0, 9, 0)  # Monday
+        assert get_session(mon_early) == SessionType.CLOSED
+
+    def test_saturday_early_morning_is_night(self):
+        """Saturday 03:00 TPE — Friday night session continues until 05:00."""
+        sat_early = datetime(2026, 6, 13, 3, 0, 0)  # Saturday
+        assert get_session(sat_early) == SessionType.NIGHT
+
+    def test_saturday_after_night_is_closed(self):
+        """Saturday 06:00 TPE — after Friday night session ends."""
+        sat_after = datetime(2026, 6, 13, 6, 0, 0)  # Saturday
+        assert get_session(sat_after) == SessionType.CLOSED
+
+    def test_sunday_daytime_is_closed(self):
+        """Sunday 10:00 TPE — entirely closed."""
+        sun_day = datetime(2026, 6, 14, 10, 0, 0)  # Sunday
+        assert get_session(sun_day) == SessionType.CLOSED
+
+    def test_tuesday_early_morning_is_night(self):
+        """Tuesday 02:00 TPE — Monday night session continues."""
+        tue_early = datetime(2026, 6, 16, 2, 0, 0)  # Tuesday
+        assert get_session(tue_early) == SessionType.NIGHT
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # _floor_to_tf

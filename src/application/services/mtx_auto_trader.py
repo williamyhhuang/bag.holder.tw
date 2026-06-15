@@ -51,12 +51,29 @@ class SessionType(Enum):
 
 
 def get_session(now: Optional[datetime] = None) -> SessionType:
-    """Determine the current Taiwan-time trading session."""
-    t = (now or _now()).time()
-    if time(8, 45) <= t < time(13, 31):
+    """Determine the current Taiwan-time trading session.
+
+    台期所交易時段（台北時間）：
+      日盤  Mon–Fri  08:45–13:30
+      夜盤  Mon 15:00 → Tue 05:00  …  Fri 15:00 → Sat 05:00
+      週日整天與週六 05:00 後皆為 CLOSED
+    """
+    dt = now or _now()
+    t = dt.time()
+    dow = dt.isoweekday()  # 1=Mon .. 7=Sun
+
+    # 日盤：Mon–Fri 08:45–13:30
+    if 1 <= dow <= 5 and time(8, 45) <= t < time(13, 31):
         return SessionType.DAY
-    if t >= time(15, 0) or t < time(5, 1):
+
+    # 夜盤 — 分兩段：
+    #   開盤段：Mon–Fri 15:00–23:59
+    #   跨日段：Tue–Sat 00:00–05:00（前一天夜盤的延續，週日無夜盤所以週一凌晨不算）
+    if 1 <= dow <= 5 and t >= time(15, 0):
         return SessionType.NIGHT
+    if 2 <= dow <= 6 and t < time(5, 1):
+        return SessionType.NIGHT
+
     return SessionType.CLOSED
 
 
