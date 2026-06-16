@@ -1152,6 +1152,14 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.31.1 - 2026-06-16
+
+**修正 MTX 夜盤在 CLOSED 時段提前啟動**
+
+- 修正 `run()` safety check：forced session 與時鐘不符時一律信任時鐘（含 CLOSED 時段）
+- 原 bug：14:02（介於日盤結束 13:31 與夜盤開始 15:00 之間）強制 NIGHT 不被覆寫，夜盤提前啟動
+- 新增 safety check 單元測試驗證 forced NIGHT 在 CLOSED 時段會進入等待迴圈
+
 ### v5.31.0 - 2026-06-14
 
 **新增左側（均值回歸）選股策略**

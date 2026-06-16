@@ -127,6 +127,41 @@ class TestGetSession:
         assert get_session(tue_early) == SessionType.NIGHT
 
 
+class TestRunSessionSafety:
+    """run() safety check: forced session must agree with clock."""
+
+    def test_forced_night_during_closed_waits(self):
+        """Forced NIGHT at 14:02 (CLOSED) should override to CLOSED and wait."""
+        client = _mock_client()
+        notifier = MagicMock()
+        notifier.send_message = AsyncMock()
+        trader = MTXAutoTrader(client, dry_run=True, notifier=notifier)
+
+        with patch(
+            "src.application.services.mtx_auto_trader.get_session",
+            return_value=SessionType.CLOSED,
+        ):
+            # run() with forced NIGHT should see CLOSED and enter wait loop.
+            # We stop the wait loop by setting running=False after first check.
+            async def _fake_sleep(secs):
+                trader.running = False  # break out of _wait_for_open loop
+
+            with patch("asyncio.sleep", side_effect=_fake_sleep):
+                asyncio.run(trader.run(session=SessionType.NIGHT))
+
+        # Should NOT have sent "啟動 — 夜盤" notification (session was CLOSED)
+        notify_calls = [
+            str(c) for c in notifier.send_message.call_args_list
+        ]
+        for call_str in notify_calls:
+            assert "啟動" not in call_str
+
+    def test_forced_night_at_1402_is_closed(self):
+        """14:02 on Monday is CLOSED — not DAY, not NIGHT."""
+        mon_1402 = datetime(2026, 6, 15, 14, 2, 0)
+        assert get_session(mon_1402) == SessionType.CLOSED
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # _floor_to_tf
 # ──────────────────────────────────────────────────────────────────────────────

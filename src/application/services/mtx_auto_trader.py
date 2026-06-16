@@ -285,10 +285,10 @@ class MTXAutoTrader:
             session = get_session()
 
         # Safety: if forced session disagrees with actual clock, trust the clock.
-        # This prevents running a day session at midnight when the VM resumes
-        # from preemption and systemd triggers the wrong service.
+        # This prevents running a night session during CLOSED hours (e.g. 14:02)
+        # or a day session at midnight when the VM resumes from preemption.
         actual = get_session()
-        if session != actual and actual != SessionType.CLOSED:
+        if session != actual:
             logger.warning(
                 f"Forced session={session.value} but clock says {actual.value} "
                 f"— overriding to {actual.value}"
