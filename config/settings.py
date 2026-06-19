@@ -1077,6 +1077,22 @@ class AIAnalyzerSettings(BaseSettings):
         env="AI_MAX_STOCKS_PER_BATCH",
         description="每批最多傳給 AI 分析的股票數",
     )
+    # ── 決定性參數（降低 OpenRouter 每次建議跳動，盡力而為非保證）──────────────
+    seed: int = Field(
+        default=42,
+        env="AI_SEED",
+        description="固定 seed，OpenRouter 對支援的後端會盡力套用，降低取樣變異",
+    )
+    provider_order: str = Field(
+        default="Anthropic",
+        env="AI_PROVIDER_ORDER",
+        description="鎖定 OpenRouter 後端供應商順序（逗號分隔），避免路由到不同家造成變異",
+    )
+    provider_allow_fallbacks: bool = Field(
+        default=False,
+        env="AI_PROVIDER_ALLOW_FALLBACKS",
+        description="是否允許 OpenRouter 在指定供應商不可用時改用其他家（預設 False 以維持一致性）",
+    )
 
     def get_api_key(self) -> str:
         """根據 provider 回傳對應的 API key"""

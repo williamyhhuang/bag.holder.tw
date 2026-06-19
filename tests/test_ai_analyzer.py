@@ -231,6 +231,81 @@ class TestFactory:
         assert isinstance(analyzer, ClaudeAnalyzer)
 
 
+# ── OpenRouter 決定性參數（seed + 鎖定後端供應商）──────────────────────────────
+
+class TestOpenRouterDeterminism:
+    """驗證 OpenRouter 呼叫帶入 seed 與 provider 路由鎖定，降低每次建議跳動"""
+
+    def _make_analyzer(self, **kwargs):
+        import sys
+        sys.modules["openai"] = MagicMock()
+        from src.infrastructure.ai.providers.openrouter import OpenRouterAnalyzer
+        analyzer = OpenRouterAnalyzer(api_key="k", model="anthropic/claude-opus-4.8", **kwargs)
+        # 攔截底層 OpenAI client 呼叫
+        analyzer._client = MagicMock()
+        tool_call = MagicMock()
+        tool_call.function.arguments = json.dumps(
+            {"strong_buy": [], "buy": [], "watch": [], "avoid": []}
+        )
+        analyzer._client.chat.completions.create.return_value.choices = [
+            MagicMock(message=MagicMock(tool_calls=[tool_call]))
+        ]
+        return analyzer
+
+    def _stock(self):
+        return [{"symbol": "7788.TW", "name": "中保科", "signal": "Golden Cross",
+                 "price": 100.0, "rsi": 60.0, "sector": "電子業",
+                 "revenue_yoy_pct": 5.0, "note": ""}]
+
+    def test_seed_and_provider_sent(self):
+        analyzer = self._make_analyzer(
+            seed=42, provider_order="Anthropic", provider_allow_fallbacks=False
+        )
+        analyzer._analyze_batch(self._stock())
+        _, kwargs = analyzer._client.chat.completions.create.call_args
+        assert kwargs["seed"] == 42
+        assert kwargs["temperature"] == 0  # 維持 temperature=0
+        assert kwargs["extra_body"]["provider"]["order"] == ["Anthropic"]
+        assert kwargs["extra_body"]["provider"]["allow_fallbacks"] is False
+
+    def test_holdings_batch_also_sends_params(self):
+        analyzer = self._make_analyzer(seed=7, provider_order="Anthropic")
+        tool_call = MagicMock()
+        tool_call.function.arguments = json.dumps({"sell": [], "watch": [], "hold": []})
+        analyzer._client.chat.completions.create.return_value.choices = [
+            MagicMock(message=MagicMock(tool_calls=[tool_call]))
+        ]
+        analyzer._analyze_holdings_batch([{"symbol": "7788.TW", "name": "中保科",
+                                           "signal": "Death Cross", "price": 100.0, "rsi": 40.0}])
+        _, kwargs = analyzer._client.chat.completions.create.call_args
+        assert kwargs["seed"] == 7
+        assert kwargs["extra_body"]["provider"]["order"] == ["Anthropic"]
+
+    def test_multiple_providers_parsed(self):
+        analyzer = self._make_analyzer(provider_order="Anthropic, Google")
+        assert analyzer._provider_order == ["Anthropic", "Google"]
+
+    def test_no_params_omits_determinism_kwargs(self):
+        """未設定 seed/provider 時不應送出對應參數（向後相容）"""
+        analyzer = self._make_analyzer()  # seed=None, provider_order=None
+        analyzer._analyze_batch(self._stock())
+        _, kwargs = analyzer._client.chat.completions.create.call_args
+        assert "seed" not in kwargs
+        assert "extra_body" not in kwargs
+
+    def test_factory_forwards_params(self):
+        from src.infrastructure.ai.factory import create_analyzer
+        import sys
+        sys.modules["openai"] = MagicMock()
+        analyzer = create_analyzer(
+            provider="openrouter", api_key="k", model="anthropic/claude-opus-4.8",
+            seed=99, provider_order="Anthropic", provider_allow_fallbacks=True,
+        )
+        assert analyzer._seed == 99
+        assert analyzer._provider_order == ["Anthropic"]
+        assert analyzer._provider_allow_fallbacks is True
+
+
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 class TestHelpers:

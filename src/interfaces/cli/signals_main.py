@@ -230,7 +230,14 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> bool:
 
     print(f"\n🤖 正在呼叫 {provider} 進行二次過濾分析...")
     try:
-        analyzer = create_analyzer(provider=provider, api_key=api_key, model=cfg.model)
+        analyzer = create_analyzer(
+            provider=provider,
+            api_key=api_key,
+            model=cfg.model,
+            seed=cfg.seed,
+            provider_order=cfg.provider_order,
+            provider_allow_fallbacks=cfg.provider_allow_fallbacks,
+        )
         ai_result = analyzer.analyze_signals(
             result, max_stocks_per_batch=cfg.max_stocks_per_batch
         )

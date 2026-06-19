@@ -302,6 +302,24 @@ python main.py signals --ai-filter
 
 Telegram 訊息採用手機友善格式，每支股票附上一行中文理由。
 
+**降低每次 AI 建議跳動（OpenRouter 決定性參數）：**
+
+LLM 本質為非決定性，即使 `temperature=0` 也不保證每次逐字相同。透過 OpenRouter
+呼叫時，同一請求還可能被路由到不同後端供應商造成額外變異（最大變異來源），
+導致同一天（如休市日用前一日資料）每次 `/scan` 的分級略有不同
+（例如某股這次「買入」、下次「觀察」）。可用以下設定盡力降低變異：
+
+```bash
+# .env（皆有預設值，未設定也會套用下列預設）
+AI_SEED=42                       # 固定 seed，OpenRouter 對支援的後端盡力套用
+AI_PROVIDER_ORDER=Anthropic      # 鎖定後端供應商順序（逗號分隔可多家），消除路由變異
+AI_PROVIDER_ALLOW_FALLBACKS=False # 指定供應商不可用時是否允許改用其他家
+```
+
+> ⚠️ 此為「盡力降低變異」，**非保證**逐字一致：`anthropic/claude-opus-4.8`
+> 後端無 `seed` 支援，分級邊界附近的個股仍可能偶爾跳動。若要「保證」相同輸入→
+> 相同輸出，唯一可靠做法是結果快取（以交易日 + 輸入雜湊為 key），目前未實作。
+
 **訊號歷史記錄：**
 每次執行 `python main.py signals` 會自動將結果存為 JSON 至 `data/signals_log/signals_YYYYMMDD_HHMMSS.json`，可供後續查閱與比較。
 
@@ -1151,6 +1169,21 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.32.0 - 2026-06-20
+
+**降低每次 AI 二次過濾建議跳動（OpenRouter 決定性參數）**
+
+- 問題：休市日 `/scan` 仍以前一日資料分析，但每次 AI 建議分級略有不同
+  （例如 7788 這次「買入」、下次「觀察」）。根因為 LLM 非決定性 +
+  OpenRouter 將同一請求路由到不同後端供應商造成額外變異
+- 新增設定 `AI_SEED`（預設 42）、`AI_PROVIDER_ORDER`（預設 `Anthropic`）、
+  `AI_PROVIDER_ALLOW_FALLBACKS`（預設 False）至 `AIAnalyzerSettings`
+- `OpenRouterAnalyzer` 兩個 API 呼叫帶入 `seed` 與 `extra_body.provider`
+  路由鎖定（維持 `temperature=0`）；其他 provider 不受影響
+- 注意：此為盡力降低變異、非保證逐字一致（`anthropic/claude-opus-4.8`
+  後端無 `seed`，臨界股仍可能偶爾跳動）；如需保證需改用結果快取
+- 新增單元測試驗證送出的 payload 含 seed 與 provider 路由設定
 
 ### v5.31.1 - 2026-06-16
 

@@ -32,7 +32,14 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 class OpenRouterAnalyzer(BaseAIAnalyzer):
     DEFAULT_MODEL = "google/gemini-2.5-flash-preview"
 
-    def __init__(self, api_key: str, model: str = ""):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "",
+        seed: int | None = None,
+        provider_order: str | None = None,
+        provider_allow_fallbacks: bool = False,
+    ):
         try:
             from openai import OpenAI
         except ImportError:
@@ -42,6 +49,31 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
             base_url=_OPENROUTER_BASE_URL,
         )
         self._model = model or self.DEFAULT_MODEL
+        self._seed = seed
+        self._provider_order = (
+            [p.strip() for p in provider_order.split(",") if p.strip()]
+            if provider_order
+            else None
+        )
+        self._provider_allow_fallbacks = provider_allow_fallbacks
+
+    def _determinism_kwargs(self) -> dict:
+        """組裝降低變異用的請求參數：固定 seed + 鎖定後端供應商。
+
+        seed 讓支援的後端盡力產生一致輸出；provider 路由鎖定可消除
+        OpenRouter 將同一請求送到不同後端造成的變異（最大變異來源）。
+        """
+        kwargs: dict = {}
+        if self._seed is not None:
+            kwargs["seed"] = self._seed
+        if self._provider_order:
+            kwargs["extra_body"] = {
+                "provider": {
+                    "order": self._provider_order,
+                    "allow_fallbacks": self._provider_allow_fallbacks,
+                }
+            }
+        return kwargs
 
     def _analyze_batch(self, stocks: list[dict]) -> dict:
         try:
@@ -54,6 +86,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
                 ],
                 tools=[_TOOL],
                 tool_choice={"type": "function", "function": {"name": "classify_stocks"}},
+                **self._determinism_kwargs(),
             )
             tool_call = response.choices[0].message.tool_calls
             if tool_call:
@@ -75,6 +108,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
                 ],
                 tools=[_SELL_TOOL],
                 tool_choice={"type": "function", "function": {"name": "classify_holdings_sell_decision"}},
+                **self._determinism_kwargs(),
             )
             tool_call = response.choices[0].message.tool_calls
             if tool_call:

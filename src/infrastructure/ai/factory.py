@@ -8,6 +8,10 @@ def create_analyzer(
     provider: str,
     api_key: str,
     model: str = "",
+    *,
+    seed: int | None = None,
+    provider_order: str | None = None,
+    provider_allow_fallbacks: bool = False,
 ) -> BaseAIAnalyzer:
     """建立 AI 分析器實例
 
@@ -15,6 +19,9 @@ def create_analyzer(
         provider: "claude" | "openai" | "gemini" | "openrouter"
         api_key:  對應 provider 的 API key
         model:    指定模型名稱；空字串則使用各 provider 的預設值
+        seed:     固定 seed（僅 OpenRouter 使用，降低取樣變異）
+        provider_order: 鎖定 OpenRouter 後端供應商順序（逗號分隔）
+        provider_allow_fallbacks: 指定供應商不可用時是否允許改用其他家
 
     Returns:
         BaseAIAnalyzer 的子類別實例
@@ -39,7 +46,13 @@ def create_analyzer(
 
     if provider == "openrouter":
         from .providers.openrouter import OpenRouterAnalyzer
-        return OpenRouterAnalyzer(api_key=api_key, model=model)
+        return OpenRouterAnalyzer(
+            api_key=api_key,
+            model=model,
+            seed=seed,
+            provider_order=provider_order,
+            provider_allow_fallbacks=provider_allow_fallbacks,
+        )
 
     raise ValueError(
         f"不支援的 AI provider：'{provider}'，"

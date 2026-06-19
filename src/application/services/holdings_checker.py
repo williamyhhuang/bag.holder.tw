@@ -143,7 +143,12 @@ class HoldingsChecker:
             if api_key:
                 from ...infrastructure.ai.factory import create_analyzer
                 analyzer = create_analyzer(
-                    provider=cfg.provider, api_key=api_key, model=cfg.model
+                    provider=cfg.provider,
+                    api_key=api_key,
+                    model=cfg.model,
+                    seed=cfg.seed,
+                    provider_order=cfg.provider_order,
+                    provider_allow_fallbacks=cfg.provider_allow_fallbacks,
                 )
                 ai_result = analyzer.analyze_holdings(sell_alerts)
                 self.logger.info(
