@@ -130,8 +130,8 @@ class TestGetSession:
 class TestRunSessionSafety:
     """run() safety check: forced session must agree with clock."""
 
-    def test_forced_night_during_closed_waits(self):
-        """Forced NIGHT at 14:02 (CLOSED) should override to CLOSED and wait."""
+    def test_forced_day_during_night_exits_without_trading(self):
+        """Forced DAY at 01:23 (NIGHT active) should exit — night service owns it."""
         client = _mock_client()
         notifier = MagicMock()
         notifier.send_message = AsyncMock()
@@ -139,22 +139,78 @@ class TestRunSessionSafety:
 
         with patch(
             "src.application.services.mtx_auto_trader.get_session",
-            return_value=SessionType.CLOSED,
+            return_value=SessionType.NIGHT,
         ):
-            # run() with forced NIGHT should see CLOSED and enter wait loop.
-            # We stop the wait loop by setting running=False after first check.
-            async def _fake_sleep(secs):
-                trader.running = False  # break out of _wait_for_open loop
+            asyncio.run(trader.run(session=SessionType.DAY))
 
-            with patch("asyncio.sleep", side_effect=_fake_sleep):
-                asyncio.run(trader.run(session=SessionType.NIGHT))
-
-        # Should NOT have sent "啟動 — 夜盤" notification (session was CLOSED)
+        # Should NOT have sent any "啟動" notification — exited immediately
         notify_calls = [
             str(c) for c in notifier.send_message.call_args_list
         ]
         for call_str in notify_calls:
             assert "啟動" not in call_str
+
+    def test_forced_night_during_closed_waits_then_proceeds(self):
+        """Forced NIGHT at 14:59 (CLOSED) should wait, then proceed when NIGHT opens."""
+        client = _mock_client()
+        notifier = MagicMock()
+        notifier.send_message = AsyncMock()
+        trader = MTXAutoTrader(client, dry_run=True, notifier=notifier)
+        trader._run_session = AsyncMock()  # prevent WS setup
+
+        call_count = [0]
+
+        def _get_session_seq(*a, **kw):
+            call_count[0] += 1
+            # call 1: initial check in run() → CLOSED
+            # call 2: _wait_for_open loop check → CLOSED → sleep
+            # call 3: _wait_for_open loop check → NIGHT → return
+            # call 4: after wait, verify match → NIGHT
+            if call_count[0] <= 2:
+                return SessionType.CLOSED
+            return SessionType.NIGHT
+
+        with patch(
+            "src.application.services.mtx_auto_trader.get_session",
+            side_effect=_get_session_seq,
+        ):
+            async def _fake_sleep(secs):
+                pass
+
+            with patch("asyncio.sleep", side_effect=_fake_sleep):
+                asyncio.run(trader.run(session=SessionType.NIGHT))
+
+        # _run_session should have been called (session matched after wait)
+        trader._run_session.assert_called_once_with(True)  # is_night=True
+
+    def test_forced_night_closed_then_opens_as_day_exits(self):
+        """Forced NIGHT, CLOSED → opens as DAY (hypothetical) → exit."""
+        client = _mock_client()
+        notifier = MagicMock()
+        notifier.send_message = AsyncMock()
+        trader = MTXAutoTrader(client, dry_run=True, notifier=notifier)
+        trader._run_session = AsyncMock()
+
+        call_count = [0]
+
+        def _get_session_seq(*a, **kw):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                return SessionType.CLOSED
+            return SessionType.DAY  # opened as DAY, not NIGHT
+
+        with patch(
+            "src.application.services.mtx_auto_trader.get_session",
+            side_effect=_get_session_seq,
+        ):
+            async def _fake_sleep(secs):
+                pass
+
+            with patch("asyncio.sleep", side_effect=_fake_sleep):
+                asyncio.run(trader.run(session=SessionType.NIGHT))
+
+        # _run_session should NOT have been called
+        trader._run_session.assert_not_called()
 
     def test_forced_night_at_1402_is_closed(self):
         """14:02 on Monday is CLOSED — not DAY, not NIGHT."""

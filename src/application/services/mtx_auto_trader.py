@@ -284,16 +284,35 @@ class MTXAutoTrader:
         if session is None:
             session = get_session()
 
-        # Safety: if forced session disagrees with actual clock, trust the clock.
-        # This prevents running a night session during CLOSED hours (e.g. 14:02)
-        # or a day session at midnight when the VM resumes from preemption.
+        # Safety: if forced session disagrees with actual clock, handle gracefully.
+        #  - actual is a DIFFERENT active session → exit (the other service owns it)
+        #  - actual is CLOSED → wait for open, then verify it matches forced session
+        # This prevents duplicate containers (e.g. day service restarting at 01:23
+        # and overriding to NIGHT while night service is already running).
         actual = get_session()
         if session != actual:
-            logger.warning(
-                f"Forced session={session.value} but clock says {actual.value} "
-                f"— overriding to {actual.value}"
-            )
-            session = actual
+            if actual == SessionType.CLOSED:
+                # Timer may fire ~1 min early (14:59 for 15:00 open) — wait
+                logger.info(
+                    f"Forced session={session.value} but market CLOSED "
+                    f"— waiting for open…"
+                )
+                await self._wait_for_open()
+                actual = get_session()
+                if actual != session:
+                    logger.warning(
+                        f"Market opened as {actual.value}, "
+                        f"not {session.value} — exiting"
+                    )
+                    return
+            else:
+                # Another active session — wrong service, exit cleanly (exit 0)
+                # so Restart=on-failure won't restart us.
+                logger.warning(
+                    f"Forced session={session.value} but clock says "
+                    f"{actual.value} — exiting (other service handles it)"
+                )
+                return
 
         if session == SessionType.CLOSED:
             logger.info("Market currently closed — waiting for next session…")
