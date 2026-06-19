@@ -288,6 +288,7 @@ def simulate_session(
     min_profit_kd: float = MIN_PROFIT_KD_EXIT,
     signal_memory: int = 3,   # 策略C: 5m 訊號保持 N 根有效
     max_lots: int = 3,        # 最大持倉口數（加碼上限）
+    long_only: bool = False,  # 只做多，忽略所有做空訊號
 ) -> List[Trade]:
     """在單一 session 的分鐘 K 棒序列上模擬交易（支援加碼至 max_lots 口）"""
     trades: List[Trade] = []
@@ -370,7 +371,7 @@ def simulate_session(
             s5m = 1 if db >= 0 else -1
 
         want_long = (db >= 0 and s5m == 1 and s1m == 1)
-        want_short = (db <= 0 and s5m == -1 and s1m == -1)
+        want_short = (db <= 0 and s5m == -1 and s1m == -1) and not long_only
 
         # 方向反轉 → 先平倉
         if position == "LONG" and want_short:
@@ -540,7 +541,8 @@ def run_backtest(
     daily_bars_all = build_daily_bars(session_ticks)
     print(f"  → {len(daily_bars_all)} 日 K bars")
 
-    results: Dict[str, List[Trade]] = {v: [] for v in variants}
+    all_keys = variants + [f"{v}_多" for v in variants]
+    results: Dict[str, List[Trade]] = {k: [] for k in all_keys}
 
     sorted_sessions = sorted(session_ticks.keys())
 
@@ -567,20 +569,17 @@ def run_backtest(
         for v in variants:
             trades = simulate_session(bars_1m, bars_5m, daily_before, variant=v)
             results[v].extend(trades)
+            trades_lo = simulate_session(bars_1m, bars_5m, daily_before, variant=v, long_only=True)
+            results[f"{v}_多"].extend(trades_lo)
 
-    # 統計
-    rows = []
-    for v in variants:
-        ts = results[v]
+    LABELS = {"A": "嚴格(現況)", "B": "放寬5m區間", "C": "5m信號記憶", "D": "無5m確認"}
+
+    def _stats_row(key: str, label: str, ts: List[Trade]) -> dict:
         total = len(ts)
         if total == 0:
-            rows.append({
-                "策略": v, "交易次數": 0, "勝率": "-",
-                "平均獲利": "-", "平均虧損": "-",
-                "獲利因子": "-", "總損益(pts)": 0,
-            })
-            continue
-
+            return {"策略": key, "說明": label, "交易次數": 0, "勝率 %": "-",
+                    "平均獲利 pts": "-", "平均虧損 pts": "-",
+                    "獲利因子": "-", "總損益 pts": 0, "淨損益 NTD": 0}
         wins = [t for t in ts if t.won]
         losses = [t for t in ts if not t.won]
         win_rate = len(wins) / total * 100
@@ -591,12 +590,10 @@ def run_backtest(
         pf = gross_profit / gross_loss if gross_loss > 0 else float("inf")
         total_pnl = sum(t.pnl for t in ts)
         total_lots_exited = sum(t.lots for t in ts)
-        fee = total_lots_exited * 50          # 50元/口，出場時收
-        net_ntd = int(total_pnl * 10 - fee)  # 微台每點10元
-
-        rows.append({
-            "策略": v,
-            "說明": {"A": "嚴格(現況)", "B": "放寬5m區間", "C": "5m信號記憶", "D": "無5m確認"}[v],
+        fee = total_lots_exited * 50
+        net_ntd = int(total_pnl * 10 - fee)
+        return {
+            "策略": key, "說明": label,
             "交易次數": total,
             "勝率 %": f"{win_rate:.1f}",
             "平均獲利 pts": f"{avg_win:.1f}",
@@ -606,7 +603,13 @@ def run_backtest(
             "總損益 NTD": f"{int(total_pnl * 10):,}",
             "手續費 NTD": f"-{fee:,}",
             "淨損益 NTD": f"{net_ntd:,}",
-        })
+        }
+
+    # 統計
+    rows = []
+    for v in variants:
+        rows.append(_stats_row(v, LABELS[v], results[v]))
+        rows.append(_stats_row(f"{v}_多", f"{LABELS[v]}(只做多)", results[f"{v}_多"]))
 
     df = pd.DataFrame(rows)
 

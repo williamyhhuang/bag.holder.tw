@@ -188,17 +188,37 @@ def print_report(results: List[Result]):
     print("=" * 104 + "\n")
 
 
+def _build_tp_sweep(values: List[float]) -> List[Scenario]:
+    """從一組 take_profit_pct 值建立掃描場景（其餘維持 baseline，三新槓桿關）。"""
+    scs = []
+    for v in values:
+        scs.append(Scenario(f"tp_{int(round(v*100)):02d}", f"停利 TP={v*100:.0f}%",
+                            {**BASELINE_OVERRIDES, "take_profit_pct": v}))
+    return scs
+
+
 async def main():
     cfg = settings.backtest
     start_date = cfg.start_date or date(2024, 9, 1)
     end_date = cfg.end_date or date.today()
-    print(f"\n🔬 Win-Rate 優化回測  {start_date} → {end_date}  |  {len(SCENARIOS)} 場景\n")
+
+    # 支援 `--tp-sweep 0.05,0.07,...` 對 take_profit_pct 做細掃描
+    scenarios = SCENARIOS
+    for arg in sys.argv[1:]:
+        if arg.startswith("--tp-sweep="):
+            vals = [float(x) for x in arg.split("=", 1)[1].split(",") if x.strip()]
+            scenarios = _build_tp_sweep(vals)
+        elif arg == "--tp-sweep" and len(sys.argv) > sys.argv.index(arg) + 1:
+            vals = [float(x) for x in sys.argv[sys.argv.index(arg) + 1].split(",") if x.strip()]
+            scenarios = _build_tp_sweep(vals)
+
+    print(f"\n🔬 Win-Rate 優化回測  {start_date} → {end_date}  |  {len(scenarios)} 場景\n")
 
     _DataCache.load(start_date, end_date)
 
     results: List[Result] = []
-    for i, sc in enumerate(SCENARIOS):
-        print(f"[{i+1}/{len(SCENARIOS)}] {sc.name}: {sc.description}")
+    for i, sc in enumerate(scenarios):
+        print(f"[{i+1}/{len(scenarios)}] {sc.name}: {sc.description}")
         r = await run_scenario(sc, start_date, end_date)
         print(f"   → 交易 {r.total_trades}, 勝率 {r.win_rate:.1f}%, "
               f"報酬 {r.total_return_pct:+.2f}%, 獲利因子 {r.profit_factor:.2f}, "
