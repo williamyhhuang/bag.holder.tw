@@ -300,10 +300,38 @@ class TestOpenRouterDeterminism:
         analyzer = create_analyzer(
             provider="openrouter", api_key="k", model="anthropic/claude-opus-4.8",
             seed=99, provider_order="Anthropic", provider_allow_fallbacks=True,
+            max_tokens=8192,
         )
         assert analyzer._seed == 99
         assert analyzer._provider_order == ["Anthropic"]
         assert analyzer._provider_allow_fallbacks is True
+        assert analyzer._max_tokens == 8192
+
+    def test_max_tokens_sent(self):
+        """設定 max_tokens 時應帶入請求，避免 OpenRouter 依模型上限預扣額度（402）"""
+        analyzer = self._make_analyzer(max_tokens=8192)
+        analyzer._analyze_batch(self._stock())
+        _, kwargs = analyzer._client.chat.completions.create.call_args
+        assert kwargs["max_tokens"] == 8192
+
+    def test_max_tokens_sent_on_holdings(self):
+        analyzer = self._make_analyzer(max_tokens=4096)
+        tool_call = MagicMock()
+        tool_call.function.arguments = json.dumps({"sell": [], "watch": [], "hold": []})
+        analyzer._client.chat.completions.create.return_value.choices = [
+            MagicMock(message=MagicMock(tool_calls=[tool_call]))
+        ]
+        analyzer._analyze_holdings_batch([{"symbol": "7788.TW", "name": "中保科",
+                                           "signal": "Death Cross", "price": 100.0, "rsi": 40.0}])
+        _, kwargs = analyzer._client.chat.completions.create.call_args
+        assert kwargs["max_tokens"] == 4096
+
+    def test_no_max_tokens_omits_param(self):
+        """未設定 max_tokens 時不應送出（向後相容，套用 provider 預設）"""
+        analyzer = self._make_analyzer()  # max_tokens=None
+        analyzer._analyze_batch(self._stock())
+        _, kwargs = analyzer._client.chat.completions.create.call_args
+        assert "max_tokens" not in kwargs
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────

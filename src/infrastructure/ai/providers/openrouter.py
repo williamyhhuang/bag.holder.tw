@@ -39,6 +39,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
         seed: int | None = None,
         provider_order: str | None = None,
         provider_allow_fallbacks: bool = False,
+        max_tokens: int | None = None,
     ):
         try:
             from openai import OpenAI
@@ -56,6 +57,18 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
             else None
         )
         self._provider_allow_fallbacks = provider_allow_fallbacks
+        self._max_tokens = max_tokens
+
+    def _request_kwargs(self) -> dict:
+        """非決定性的共用請求參數（目前為 max_tokens）。
+
+        明確設定 max_tokens 可避免 OpenRouter 依模型輸出上限（如 65536）
+        預扣額度，導致餘額足夠實際用量卻仍回傳 402（額度不足）的問題。
+        """
+        kwargs: dict = {}
+        if self._max_tokens is not None:
+            kwargs["max_tokens"] = self._max_tokens
+        return kwargs
 
     def _determinism_kwargs(self) -> dict:
         """組裝降低變異用的請求參數：固定 seed + 鎖定後端供應商。
@@ -86,6 +99,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
                 ],
                 tools=[_TOOL],
                 tool_choice={"type": "function", "function": {"name": "classify_stocks"}},
+                **self._request_kwargs(),
                 **self._determinism_kwargs(),
             )
             tool_call = response.choices[0].message.tool_calls
@@ -108,6 +122,7 @@ class OpenRouterAnalyzer(BaseAIAnalyzer):
                 ],
                 tools=[_SELL_TOOL],
                 tool_choice={"type": "function", "function": {"name": "classify_holdings_sell_decision"}},
+                **self._request_kwargs(),
                 **self._determinism_kwargs(),
             )
             tool_call = response.choices[0].message.tool_calls

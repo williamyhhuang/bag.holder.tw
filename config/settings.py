@@ -1093,6 +1093,15 @@ class AIAnalyzerSettings(BaseSettings):
         env="AI_PROVIDER_ALLOW_FALLBACKS",
         description="是否允許 OpenRouter 在指定供應商不可用時改用其他家（預設 False 以維持一致性）",
     )
+    max_tokens: int = Field(
+        default=8192,
+        env="AI_MAX_TOKENS",
+        description=(
+            "AI 回應最大輸出 tokens。二次過濾僅回傳分類 JSON（tool call），"
+            "8192 已綽綽有餘。需明確設定以避免 OpenRouter 依模型上限（如 65536）"
+            "預扣額度而觸發 402（額度不足）"
+        ),
+    )
 
     def get_api_key(self) -> str:
         """根據 provider 回傳對應的 API key"""

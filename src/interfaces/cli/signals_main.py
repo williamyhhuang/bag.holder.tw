@@ -237,6 +237,7 @@ def run_ai_analysis(result: dict, send_telegram: bool = False) -> bool:
             seed=cfg.seed,
             provider_order=cfg.provider_order,
             provider_allow_fallbacks=cfg.provider_allow_fallbacks,
+            max_tokens=cfg.max_tokens,
         )
         ai_result = analyzer.analyze_signals(
             result, max_stocks_per_batch=cfg.max_stocks_per_batch
@@ -332,7 +333,19 @@ def run_signals(args):
         if ai_filter:
             ok = run_ai_analysis(result, send_telegram=send_telegram)
             if not ok and send_telegram:
-                sys.exit(1)
+                # AI 二次過濾為「加分」功能，其失敗（如 OpenRouter 額度不足、
+                # 逾時）不應讓整個訊號 job/workflow 失敗，否則當日訊號完全漏發。
+                # 退回發送原始 P1 訊號，確保核心交付不中斷。
+                print("⚠️ AI 二次過濾失敗，改發送原始 P1 訊號")
+                notifier = TelegramNotifier()
+                chunks = format_for_telegram(result)
+                ok_fallback = all(notifier.send_message(chunk) for chunk in chunks)
+                if ok_fallback:
+                    sent = f"（共 {len(chunks)} 則）" if len(chunks) > 1 else ""
+                    print(f"原始 P1 訊號 Telegram 發送成功{sent}（AI 過濾已略過）")
+                else:
+                    print("原始 P1 訊號 Telegram 發送失敗")
+                    sys.exit(1)
 
     except Exception as e:
         logger.error(f"訊號掃描失敗: {e}")

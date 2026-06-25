@@ -12,6 +12,7 @@ def create_analyzer(
     seed: int | None = None,
     provider_order: str | None = None,
     provider_allow_fallbacks: bool = False,
+    max_tokens: int | None = None,
 ) -> BaseAIAnalyzer:
     """建立 AI 分析器實例
 
@@ -22,6 +23,7 @@ def create_analyzer(
         seed:     固定 seed（僅 OpenRouter 使用，降低取樣變異）
         provider_order: 鎖定 OpenRouter 後端供應商順序（逗號分隔）
         provider_allow_fallbacks: 指定供應商不可用時是否允許改用其他家
+        max_tokens: 回應最大輸出 tokens（僅 OpenRouter 使用，None = 套用 provider 預設）
 
     Returns:
         BaseAIAnalyzer 的子類別實例
@@ -52,6 +54,7 @@ def create_analyzer(
             seed=seed,
             provider_order=provider_order,
             provider_allow_fallbacks=provider_allow_fallbacks,
+            max_tokens=max_tokens,
         )
 
     raise ValueError(
