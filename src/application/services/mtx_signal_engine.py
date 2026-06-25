@@ -289,11 +289,21 @@ class MTXSignalEngine:
         take_profit_pts: float = 50.0,
         min_profit_before_kd_exit_pts: float = 8.0,
         signal_5m_memory_bars: int = 0,
+        enable_kd_exit: bool = False,
+        breakeven_trigger_pts: float = 20.0,
+        breakeven_buffer_pts: float = 0.0,
+        trail_activate_pts: float = 25.0,
+        trail_distance_pts: float = 18.0,
     ) -> None:
         self.stop_loss_pts = stop_loss_pts
         self.take_profit_pts = take_profit_pts
         self.min_profit_before_kd_exit_pts = min_profit_before_kd_exit_pts
         self.signal_5m_memory_bars = signal_5m_memory_bars
+        self.enable_kd_exit = enable_kd_exit
+        self.breakeven_trigger_pts = breakeven_trigger_pts
+        self.breakeven_buffer_pts = breakeven_buffer_pts
+        self.trail_activate_pts = trail_activate_pts
+        self.trail_distance_pts = trail_distance_pts
 
         self.bar_1m = BarManager(1)
         self.bar_5m = BarManager(5)
@@ -304,6 +314,12 @@ class MTXSignalEngine:
         # 5-min signal memory state (Strategy C)
         self._last_5m_signal: int = 0
         self._last_5m_signal_age: int = 0
+
+        # Per-position trailing/breakeven state — keyed on entry_price so a new
+        # position (or an averaged-up entry) re-anchors the peak/breakeven tracking.
+        self._pos_entry_ref: Optional[float] = None
+        self._peak_pnl: float = 0.0
+        self._be_armed: bool = False
 
     # ------------------------------------------------------------------
     # Seeding
@@ -392,50 +408,58 @@ class MTXSignalEngine:
             else entry_price - current_price
         )
 
+        close_dir = (
+            SignalDirection.CLOSE_LONG
+            if position == "LONG"
+            else SignalDirection.CLOSE_SHORT
+        )
+
+        # Re-anchor trailing/breakeven state when a new (or averaged-up) position
+        # is observed, then track the running peak PnL.
+        if entry_price != self._pos_entry_ref:
+            self._pos_entry_ref = entry_price
+            self._peak_pnl = pnl
+            self._be_armed = False
+        self._peak_pnl = max(self._peak_pnl, pnl)
+
         if pnl <= -self.stop_loss_pts:
-            direction = (
-                SignalDirection.CLOSE_LONG
-                if position == "LONG"
-                else SignalDirection.CLOSE_SHORT
-            )
-            return TradeSignal(
-                direction, current_price, now,
-                f"停損 {pnl:.0f}pts", 1.0,
-            )
+            return TradeSignal(close_dir, current_price, now, f"停損 {pnl:.0f}pts", 1.0)
 
         if pnl >= self.take_profit_pts:
-            direction = (
-                SignalDirection.CLOSE_LONG
-                if position == "LONG"
-                else SignalDirection.CLOSE_SHORT
-            )
-            return TradeSignal(
-                direction, current_price, now,
-                f"獲利 {pnl:.0f}pts", 1.0,
-            )
+            return TradeSignal(close_dir, current_price, now, f"獲利 {pnl:.0f}pts", 1.0)
 
-        # 1-min KD reverse cross — only exit if PnL exceeds minimum profit guard
-        _, h, l, c, _ = self.bar_1m.get_arrays()
-        if len(c) >= 15:
-            k_arr, d_arr = compute_stoch(h, l, c)
-            if (
-                position == "LONG"
-                and death_cross(k_arr, d_arr)
-                and pnl >= self.min_profit_before_kd_exit_pts
-            ):
-                return TradeSignal(
-                    SignalDirection.CLOSE_LONG, current_price, now,
-                    "1mK死叉出場", 0.8,
-                )
-            if (
-                position == "SHORT"
-                and golden_cross(k_arr, d_arr)
-                and pnl >= self.min_profit_before_kd_exit_pts
-            ):
-                return TradeSignal(
-                    SignalDirection.CLOSE_SHORT, current_price, now,
-                    "1mK黃金交叉出場", 0.8,
-                )
+        # Breakeven stop — once profit reaches the trigger, exit if it falls back
+        # to (entry + buffer). Protects winners from round-tripping to a full stop.
+        if self.breakeven_trigger_pts > 0:
+            if pnl >= self.breakeven_trigger_pts:
+                self._be_armed = True
+            if self._be_armed and pnl <= self.breakeven_buffer_pts:
+                return TradeSignal(close_dir, current_price, now, f"保本 {pnl:.0f}pts", 1.0)
+
+        # Trailing take-profit — after peak reaches activation, exit on a pullback
+        # of trail_distance from the peak. Lets winners run while capping give-back.
+        if (
+            self.trail_activate_pts > 0
+            and self._peak_pnl >= self.trail_activate_pts
+            and (self._peak_pnl - pnl) >= self.trail_distance_pts
+        ):
+            return TradeSignal(close_dir, current_price, now, f"移動停利 {pnl:.0f}pts", 0.9)
+
+        # 1-min KD reverse cross — legacy exit, opt-in via enable_kd_exit.
+        if self.enable_kd_exit:
+            _, h, l, c, _ = self.bar_1m.get_arrays()
+            if len(c) >= 15 and pnl >= self.min_profit_before_kd_exit_pts:
+                k_arr, d_arr = compute_stoch(h, l, c)
+                if position == "LONG" and death_cross(k_arr, d_arr):
+                    return TradeSignal(
+                        SignalDirection.CLOSE_LONG, current_price, now,
+                        "1mK死叉出場", 0.8,
+                    )
+                if position == "SHORT" and golden_cross(k_arr, d_arr):
+                    return TradeSignal(
+                        SignalDirection.CLOSE_SHORT, current_price, now,
+                        "1mK黃金交叉出場", 0.8,
+                    )
 
         return None
 

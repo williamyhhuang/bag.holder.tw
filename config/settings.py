@@ -1139,14 +1139,14 @@ class MTXTraderSettings(BaseSettings):
         validation_alias=AliasChoices("MTX_SIM_WORKSHEET"),
         description="模擬交易記錄寫入的工作表名稱",
     )
-    # 停損點數
+    # 停損點數（日盤；2026-06 一個月模擬+回測最佳化後由 50 → 30，收緊以改善報酬:風險）
     stop_loss_pts: float = Field(
-        default=50.0,
+        default=30.0,
         validation_alias=AliasChoices("MTX_STOP_LOSS_PTS"),
     )
-    # 獲利目標點數
+    # 獲利目標點數（由 150 → 200；改用移動停利出場，極少觸發此硬上限）
     take_profit_pts: float = Field(
-        default=150.0,
+        default=200.0,
         validation_alias=AliasChoices("MTX_TAKE_PROFIT_PTS"),
     )
     # 最大持倉口數
@@ -1160,6 +1160,41 @@ class MTXTraderSettings(BaseSettings):
         default=8.0,
         validation_alias=AliasChoices("MTX_MIN_PROFIT_BEFORE_KD_EXIT"),
         description="KD 叉出場最小獲利門檻（pts）；低於此值繼續持倉等待停損或停利",
+    )
+    # 是否啟用 1mKD 反交叉出場（最佳化後預設關閉，改用保本+移動停利）
+    # 一個月模擬顯示 KD 閘門讓贏單於 +8~10 被砍，輸單跑到滿停損 → 報酬:風險嚴重不對稱
+    enable_kd_exit: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MTX_ENABLE_KD_EXIT"),
+        description="True = 沿用舊版 1mKD 反交叉出場；False = 關閉，改用移動停利（預設）",
+    )
+    # 保本停損：浮盈達此點數後將停損移至進場價（0 = 停用）
+    breakeven_trigger_pts: float = Field(
+        default=20.0,
+        validation_alias=AliasChoices("MTX_BREAKEVEN_TRIGGER_PTS"),
+        description="浮盈達此值後鎖保本，回落到 breakeven_buffer_pts 即出場（0 = 停用）",
+    )
+    breakeven_buffer_pts: float = Field(
+        default=0.0,
+        validation_alias=AliasChoices("MTX_BREAKEVEN_BUFFER_PTS"),
+        description="保本觸發後，浮盈回落到此值出場（通常 0 = 進場價）",
+    )
+    # 移動停利：浮盈峰值達 activate 後啟動，自峰值回落 distance 即出場（0 = 停用）
+    trail_activate_pts: float = Field(
+        default=25.0,
+        validation_alias=AliasChoices("MTX_TRAIL_ACTIVATE_PTS"),
+        description="浮盈峰值達此值才啟動移動停利（0 = 停用）",
+    )
+    trail_distance_pts: float = Field(
+        default=18.0,
+        validation_alias=AliasChoices("MTX_TRAIL_DISTANCE_PTS"),
+        description="自浮盈峰值回落此點數即出場",
+    )
+    # 日盤是否只做多（最佳化後預設 True；walk-forward 每個 fold 都選只做多）
+    long_only: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MTX_LONG_ONLY"),
+        description="日盤只做多，忽略做空訊號（回測顯示放空淨拖累，只做多 PF/勝率更佳）",
     )
     # 尾盤禁止開新倉分鐘數（距收盤 N 分鐘內不開新倉）
     late_session_no_entry_minutes: int = Field(
@@ -1175,9 +1210,9 @@ class MTXTraderSettings(BaseSettings):
     )
     # 夜盤專屬停損點數（None = 沿用 stop_loss_pts）
     night_stop_loss_pts: Optional[float] = Field(
-        default=80.0,
+        default=90.0,
         validation_alias=AliasChoices("MTX_NIGHT_STOP_LOSS_PTS"),
-        description="夜盤停損點數（夜盤波動較大，預設 80pts）",
+        description="夜盤停損點數（夜盤波動較大，最佳化後 80 → 90pts）",
     )
     # 夜盤只做多（True = 忽略所有做空訊號）
     night_long_only: bool = Field(

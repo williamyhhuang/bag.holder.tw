@@ -758,9 +758,12 @@ class TestMinProfitKDExitGuard:
     """KD exit only fires when PnL >= min_profit_before_kd_exit_pts."""
 
     def _engine_with_history(self, min_profit=8.0):
+        # KD 反交叉出場為可選功能；明確開啟並關閉保本/移動停利以隔離測試。
         eng = MTXSignalEngine(
             stop_loss_pts=15, take_profit_pts=50,
             min_profit_before_kd_exit_pts=min_profit,
+            enable_kd_exit=True,
+            breakeven_trigger_pts=0, trail_activate_pts=0,
         )
         eng.seed_1m(_make_bars(50))
         eng.seed_5m(_make_bars(50))
@@ -817,6 +820,90 @@ class TestMinProfitKDExitGuard:
              patch("src.application.services.mtx_signal_engine.golden_cross", return_value=False):
             sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
         assert sig.direction == SignalDirection.CLOSE_LONG
+
+
+class TestBreakevenTrailingExit:
+    """保本停損 + 移動停利 出場機制（2026-06 最佳化新增，取代 KD 閘門）。"""
+
+    def _engine(self, **kw):
+        defaults = dict(
+            stop_loss_pts=50, take_profit_pts=200,
+            enable_kd_exit=False,
+            breakeven_trigger_pts=20, breakeven_buffer_pts=0,
+            trail_activate_pts=25, trail_distance_pts=18,
+        )
+        defaults.update(kw)
+        return MTXSignalEngine(**defaults)
+
+    def test_breakeven_exit_after_arm(self):
+        """浮盈達 trigger 鎖保本後，回落到進場價即出場。"""
+        eng = self._engine(trail_activate_pts=0)  # 隔離保本
+        eng.last_price = 20025.0  # +25 → arm breakeven (trigger 20)
+        assert eng.evaluate(current_position="LONG", entry_price=20000.0).direction != SignalDirection.CLOSE_LONG
+        eng.last_price = 20000.0  # 回落到進場價 → 保本出場
+        sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_LONG
+        assert "保本" in sig.reason
+
+    def test_breakeven_not_armed_below_trigger(self):
+        """浮盈未達 trigger 不鎖保本，小幅回落不出場。"""
+        eng = self._engine(trail_activate_pts=0)
+        eng.last_price = 20015.0  # +15 < trigger 20
+        eng.evaluate(current_position="LONG", entry_price=20000.0)
+        eng.last_price = 20000.0  # 回到平盤
+        sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction != SignalDirection.CLOSE_LONG
+
+    def test_trailing_exit_on_pullback(self):
+        """峰值達 activate 後，自峰值回落 distance 即移動停利。"""
+        eng = self._engine(breakeven_trigger_pts=0)  # 隔離移動停利
+        eng.last_price = 20030.0  # peak +30 (>= activate 25)
+        eng.evaluate(current_position="LONG", entry_price=20000.0)
+        eng.last_price = 20012.0  # 30 - 12 = 18 >= distance 18 → 出場
+        sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_LONG
+        assert "移動停利" in sig.reason
+
+    def test_trailing_not_active_below_activate(self):
+        """峰值未達 activate，回落不觸發移動停利。"""
+        eng = self._engine(breakeven_trigger_pts=0)
+        eng.last_price = 20020.0  # peak +20 < activate 25
+        eng.evaluate(current_position="LONG", entry_price=20000.0)
+        eng.last_price = 20000.0
+        sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction != SignalDirection.CLOSE_LONG
+
+    def test_stop_loss_takes_priority_over_breakeven(self):
+        """停損優先於保本：先 arm 保本，後爆量虧損仍走停損。"""
+        eng = self._engine(stop_loss_pts=15)
+        eng.last_price = 20025.0  # arm breakeven
+        eng.evaluate(current_position="LONG", entry_price=20000.0)
+        eng.last_price = 19980.0  # -20 <= -15 → 停損
+        sig = eng.evaluate(current_position="LONG", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_LONG
+        assert "停損" in sig.reason
+
+    def test_state_reanchors_on_new_entry(self):
+        """新進場價會重置峰值/保本狀態（不殘留前一筆）。"""
+        eng = self._engine(breakeven_trigger_pts=0)
+        eng.last_price = 20030.0  # 第一筆 peak +30
+        eng.evaluate(current_position="LONG", entry_price=20000.0)
+        # 新倉（不同進場價）→ 峰值重置；+10 不應觸發移動停利
+        eng.last_price = 20100.0
+        eng.evaluate(current_position="LONG", entry_price=20090.0)
+        eng.last_price = 20091.0  # 相對新倉 +1，peak 應為 10（非殘留 30）
+        sig = eng.evaluate(current_position="LONG", entry_price=20090.0)
+        assert sig.direction != SignalDirection.CLOSE_LONG
+
+    def test_trailing_exit_short_side(self):
+        """空單對稱：峰值達 activate 後回落 distance 出場。"""
+        eng = self._engine(breakeven_trigger_pts=0)
+        eng.last_price = 19970.0  # short peak +30
+        eng.evaluate(current_position="SHORT", entry_price=20000.0)
+        eng.last_price = 19988.0  # 30 - 12 = 18 >= 18
+        sig = eng.evaluate(current_position="SHORT", entry_price=20000.0)
+        assert sig.direction == SignalDirection.CLOSE_SHORT
+        assert "移動停利" in sig.reason
 
 
 class TestLateSessionFilter:

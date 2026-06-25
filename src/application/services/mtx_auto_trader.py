@@ -149,6 +149,11 @@ class MTXAutoTrader:
         late_session_no_entry_minutes: int = 30,
         signal_5m_memory_bars: int = 0,
         long_only: bool = False,
+        enable_kd_exit: bool = False,
+        breakeven_trigger_pts: float = 20.0,
+        breakeven_buffer_pts: float = 0.0,
+        trail_activate_pts: float = 25.0,
+        trail_distance_pts: float = 18.0,
     ) -> None:
         self.client = fubon_client
         self.notifier = notifier
@@ -175,6 +180,11 @@ class MTXAutoTrader:
             take_profit_pts=take_profit_pts,
             min_profit_before_kd_exit_pts=min_profit_before_kd_exit_pts,
             signal_5m_memory_bars=signal_5m_memory_bars,
+            enable_kd_exit=enable_kd_exit,
+            breakeven_trigger_pts=breakeven_trigger_pts,
+            breakeven_buffer_pts=breakeven_buffer_pts,
+            trail_activate_pts=trail_activate_pts,
+            trail_distance_pts=trail_distance_pts,
         )
         self.position: Optional[Position] = None
         self.trades: List[TradeRecord] = []

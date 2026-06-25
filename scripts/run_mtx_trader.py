@@ -54,7 +54,8 @@ async def main(session_arg: str, dry_run: bool) -> None:
     async with client:
         mtx_cfg = settings.mtx_trader
 
-        # 夜盤使用專屬參數（停損較寬、只做多）
+        # 夜盤使用專屬停損（較寬）。只做多：日盤由 mtx_cfg.long_only 控制，
+        # 夜盤取 long_only 或 night_long_only 任一為 True 即只做多。
         is_night_session = session_arg == "night" or (
             session_arg == "auto" and get_session().value == "night"
         )
@@ -63,11 +64,18 @@ async def main(session_arg: str, dry_run: bool) -> None:
             if is_night_session and mtx_cfg.night_stop_loss_pts is not None
             else mtx_cfg.stop_loss_pts
         )
-        long_only = mtx_cfg.night_long_only if is_night_session else False
+        long_only = (
+            (mtx_cfg.long_only or mtx_cfg.night_long_only)
+            if is_night_session
+            else mtx_cfg.long_only
+        )
 
         logger.info(
             f"Session={'night' if is_night_session else 'day'}  "
-            f"stop_loss={stop_loss}pts  long_only={long_only}"
+            f"stop_loss={stop_loss}pts  take_profit={mtx_cfg.take_profit_pts}pts  "
+            f"long_only={long_only}  enable_kd_exit={mtx_cfg.enable_kd_exit}  "
+            f"breakeven={mtx_cfg.breakeven_trigger_pts}pts  "
+            f"trail={mtx_cfg.trail_activate_pts}/{mtx_cfg.trail_distance_pts}pts"
         )
 
         trader = MTXAutoTrader(
@@ -81,6 +89,11 @@ async def main(session_arg: str, dry_run: bool) -> None:
             late_session_no_entry_minutes=mtx_cfg.late_session_no_entry_minutes,
             signal_5m_memory_bars=mtx_cfg.signal_5m_memory_bars,
             long_only=long_only,
+            enable_kd_exit=mtx_cfg.enable_kd_exit,
+            breakeven_trigger_pts=mtx_cfg.breakeven_trigger_pts,
+            breakeven_buffer_pts=mtx_cfg.breakeven_buffer_pts,
+            trail_activate_pts=mtx_cfg.trail_activate_pts,
+            trail_distance_pts=mtx_cfg.trail_distance_pts,
         )
         await trader.initialize()
 

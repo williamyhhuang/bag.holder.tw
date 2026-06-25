@@ -33,9 +33,9 @@ import pandas as pd
 DATA_DIR = Path(__file__).parent.parent / "data" / "taifex_tick"
 MTX_PRODUCT = "MTX"
 
-# 停損/獲利 (points)
-STOP_LOSS_PTS = 50
-TAKE_PROFIT_PTS = 150
+# 停損/獲利 (points) — 與生產 MTXTraderSettings 預設一致（2026-06 最佳化後）
+STOP_LOSS_PTS = 30
+TAKE_PROFIT_PTS = 200
 MIN_PROFIT_KD_EXIT = 8
 
 # 盤別時間 (TWN local time)
@@ -289,13 +289,24 @@ def simulate_session(
     signal_memory: int = 3,   # 策略C: 5m 訊號保持 N 根有效
     max_lots: int = 3,        # 最大持倉口數（加碼上限）
     long_only: bool = False,  # 只做多，忽略所有做空訊號
+    enable_kd_exit: bool = False,      # 1mKD 反交叉出場（預設關閉，與生產一致）
+    breakeven_trigger: float = 20.0,   # 浮盈達此值後鎖保本（0 = 停用）
+    breakeven_buffer: float = 0.0,     # 保本觸發後回落到此 pnl 出場
+    trail_activate: float = 25.0,      # 浮盈峰值達此值啟動移動停利（0 = 停用）
+    trail_distance: float = 18.0,      # 自峰值回落此值出場
 ) -> List[Trade]:
-    """在單一 session 的分鐘 K 棒序列上模擬交易（支援加碼至 max_lots 口）"""
+    """在單一 session 的分鐘 K 棒序列上模擬交易（支援加碼至 max_lots 口）
+
+    出場優先序與生產引擎 MTXSignalEngine._check_exit 一致：
+      停損 → 停利 → 保本停損 → 移動停利 → (可選) 1mKD 反交叉。
+    """
     trades: List[Trade] = []
     position: Optional[str] = None
     avg_entry: Optional[float] = None   # 加權平均進場價
     entry_ts: Optional[datetime] = None
     lots: int = 0                        # 當前持倉口數
+    peak_pnl: float = 0.0                # 持倉期間每口浮盈峰值
+    be_armed: bool = False               # 保本是否已觸發
 
     # 策略C: 記憶 5m 訊號
     last_5m_signal: int = 0
@@ -316,9 +327,10 @@ def simulate_session(
         if position is not None and avg_entry is not None:
             pnl_per_lot = (price - avg_entry) if position == "LONG" else (avg_entry - price)
             pnl_total = pnl_per_lot * lots
+            peak_pnl = max(peak_pnl, pnl_per_lot)
 
             def _close(reason: str) -> None:
-                nonlocal position, avg_entry, entry_ts, lots
+                nonlocal position, avg_entry, entry_ts, lots, peak_pnl, be_armed
                 trades.append(Trade(
                     entry_ts=entry_ts, entry_price=avg_entry,
                     direction=position, lots=lots,
@@ -328,6 +340,8 @@ def simulate_session(
                 position = None
                 avg_entry = None
                 lots = 0
+                peak_pnl = 0.0
+                be_armed = False
 
             # 停損（以每口計算）
             if pnl_per_lot <= -stop_loss:
@@ -335,12 +349,26 @@ def simulate_session(
                 continue
 
             # 獲利了結（以每口計算）
-            if pnl_per_lot >= take_profit:
+            if take_profit > 0 and pnl_per_lot >= take_profit:
                 _close("獲利")
                 continue
 
-            # KD 反轉出場（需達最低獲利保護，以每口計算）
-            if len(bars_1m_now) >= 15:
+            # 保本停損：浮盈達 trigger 後，回落到 buffer 即出場
+            if breakeven_trigger > 0:
+                if pnl_per_lot >= breakeven_trigger:
+                    be_armed = True
+                if be_armed and pnl_per_lot <= breakeven_buffer:
+                    _close("保本")
+                    continue
+
+            # 移動停利：峰值達 activate 後，自峰值回落 distance 出場
+            if (trail_activate > 0 and peak_pnl >= trail_activate
+                    and (peak_pnl - pnl_per_lot) >= trail_distance):
+                _close("移動停利")
+                continue
+
+            # KD 反轉出場（可選，需達最低獲利保護）
+            if enable_kd_exit and len(bars_1m_now) >= 15:
                 k1m, d1m = compute_stoch(bars_1m_now)
                 if pnl_per_lot >= min_profit_kd:
                     if position == "LONG" and death_cross(k1m, d1m):
@@ -404,6 +432,8 @@ def simulate_session(
                 avg_entry = price
                 entry_ts = ts
                 lots = 1
+                peak_pnl = 0.0
+                be_armed = False
             else:
                 # 加碼：更新加權平均進場價
                 avg_entry = (avg_entry * lots + price) / (lots + 1)
@@ -415,6 +445,8 @@ def simulate_session(
                 avg_entry = price
                 entry_ts = ts
                 lots = 1
+                peak_pnl = 0.0
+                be_armed = False
             else:
                 avg_entry = (avg_entry * lots + price) / (lots + 1)
                 lots += 1
@@ -530,6 +562,9 @@ def run_backtest(
     data_dir: Path = DATA_DIR,
     session_filter: str = "all",  # "all" / "day" / "night"
     variants: List[str] = None,
+    stop_loss: float = STOP_LOSS_PTS,
+    take_profit: float = TAKE_PROFIT_PTS,
+    enable_kd_exit: bool = False,
 ) -> pd.DataFrame:
     if variants is None:
         variants = ["A", "B", "C", "D"]
@@ -567,9 +602,15 @@ def run_backtest(
             continue
 
         for v in variants:
-            trades = simulate_session(bars_1m, bars_5m, daily_before, variant=v)
+            trades = simulate_session(
+                bars_1m, bars_5m, daily_before, variant=v,
+                stop_loss=stop_loss, take_profit=take_profit, enable_kd_exit=enable_kd_exit,
+            )
             results[v].extend(trades)
-            trades_lo = simulate_session(bars_1m, bars_5m, daily_before, variant=v, long_only=True)
+            trades_lo = simulate_session(
+                bars_1m, bars_5m, daily_before, variant=v, long_only=True,
+                stop_loss=stop_loss, take_profit=take_profit, enable_kd_exit=enable_kd_exit,
+            )
             results[f"{v}_多"].extend(trades_lo)
 
     LABELS = {"A": "嚴格(現況)", "B": "放寬5m區間", "C": "5m信號記憶", "D": "無5m確認"}
@@ -644,9 +685,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--stop-loss", type=float, default=STOP_LOSS_PTS)
     parser.add_argument("--take-profit", type=float, default=TAKE_PROFIT_PTS)
+    parser.add_argument("--enable-kd-exit", action="store_true",
+                        help="啟用舊版 1mKD 反交叉出場（預設關閉，改用保本+移動停利）")
     args = parser.parse_args()
 
     run_backtest(
         data_dir=Path(args.data_dir),
         session_filter=args.session,
+        stop_loss=args.stop_loss,
+        take_profit=args.take_profit,
+        enable_kd_exit=args.enable_kd_exit,
     )

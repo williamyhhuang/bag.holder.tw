@@ -1061,12 +1061,48 @@ FUBON_IS_SIMULATION=False   # False = 實單；True = 測試環境
 # MTX Feature Toggle（非敏感，可直接設在 Cloud Run 環境變數）
 MTX_LIVE_ORDER=false         # false = 模擬（寫 Google Sheets）；true = 實際下單
 MTX_SIM_WORKSHEET=微台交易紀錄  # 模擬模式寫入的 Google Sheets 頁籤名稱
-MTX_STOP_LOSS_PTS=50         # 停損點數（預設 50pt）
-MTX_TAKE_PROFIT_PTS=150      # 停利點數（預設 150pt）
+MTX_STOP_LOSS_PTS=30         # 日盤停損點數（2026-06 最佳化後 50 → 30）
+MTX_TAKE_PROFIT_PTS=200      # 停利硬上限（50 → 200；多數出場由移動停利處理）
+MTX_NIGHT_STOP_LOSS_PTS=90   # 夜盤停損點數（80 → 90，夜盤波動較大）
 MTX_MAX_LOTS=3               # 最大持倉口數
-MTX_MIN_PROFIT_BEFORE_KD_EXIT=8  # KD 叉出場前需達到的最小獲利點數（0 = 停用門檻）
+MTX_LONG_ONLY=true           # 日盤只做多（最佳化後預設 true；放空淨拖累）
+MTX_ENABLE_KD_EXIT=false     # 1mKD 反交叉出場（預設 false，改用保本+移動停利）
+MTX_BREAKEVEN_TRIGGER_PTS=20 # 浮盈達此值鎖保本（0 = 停用）
+MTX_BREAKEVEN_BUFFER_PTS=0   # 保本觸發後回落到此 pnl 出場
+MTX_TRAIL_ACTIVATE_PTS=25    # 浮盈峰值達此值啟動移動停利（0 = 停用）
+MTX_TRAIL_DISTANCE_PTS=18    # 自峰值回落此點數出場
+MTX_MIN_PROFIT_BEFORE_KD_EXIT=8  # 僅 enable_kd_exit=true 時生效
 MTX_LATE_SESSION_NO_ENTRY_MINUTES=30  # 距收盤 N 分鐘內禁止開新倉（0 = 停用）
 MTX_SIGNAL_5M_MEMORY_BARS=0  # 5m KD 交叉後訊號保持有效 K 棒數（0 = 嚴格模式策略 A；3 = 策略 C）
+```
+
+### MTX 出場策略（2026-06 一個月模擬最佳化）
+
+一個月模擬 + 一個月 tick walk-forward 回測顯示，原策略淨虧損的結構性主因是
+**贏單被 1mKD 閘門於 +8~10pt 砍掉、輸單跑到 −50/−80 滿停損**（報酬:風險嚴重不對稱），
+加上日盤放空淨拖累、以及生產端日K趨勢濾網因近月合約日K歷史不足而失效（兩邊都在盤整進場）。
+
+最佳化後（walk-forward leave-one-day-out OOS 每個 fold 都選中「只做多 + 保本/移動停利」）：
+
+| 出場優先序 | 說明 |
+|---|---|
+| 1. 停損 | 日 30pt / 夜 90pt |
+| 2. 停利 | 硬上限 200pt（極少觸發） |
+| 3. 保本停損 | 浮盈達 +20pt 後鎖保本，回落到進場價即出場 |
+| 4. 移動停利 | 浮盈峰值達 +25pt 後，自峰值回落 18pt 出場 |
+| 5. (可選) 1mKD 反交叉 | 預設關閉 |
+
+並改為**只做多**（`MTX_LONG_ONLY=true`，日夜皆然）— 此舉同時讓策略對「日K濾網失效」免疫
+（只做多只需 `daily_bias ≥ 0`，中性 0 仍允許做多）。
+
+回測腳本與生產引擎採**相同出場框架**（`回測=實盤一致`），可用以下指令重現/掃描：
+
+```bash
+# 變體比較（A 嚴格 / 只做多 = 生產設定）
+python scripts/backtest_mtx_strategies.py --data-dir data/taifex_tick
+
+# 全面參數掃描 + walk-forward LOO/OOS 驗證
+python scripts/optimize_mtx.py --data-dir data/taifex_tick --metric pf
 ```
 
 ### 策略邏輯（SKILL.md）
@@ -1181,6 +1217,35 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.33.0 - 2026-06-26
+
+**MTX 微台策略最佳化：只做多 + 保本/移動停利，修正報酬:風險不對稱（一個月模擬 + tick walk-forward）**
+
+- 背景：微台模擬模式跑滿一個月，分析模擬交易紀錄發現**淨虧損且為結構性問題**
+  （勝率 ~46%、平均獲利 +30pt vs 平均虧損 −51pt、PF ~0.51、每筆期望值 ≈ −14pt）。
+  以 GCS 一個月 tick 量化後確認三大根因：
+  1. **報酬:風險不對稱** — `min_profit_before_kd_exit_pts=8` 讓贏單於 +8~10pt 被 1mKD 砍掉，
+     輸單跑到 −50/−80 滿停損；整月 take_profit(150) 僅觸發 2 次
+  2. **日K趨勢濾網失效** — 生產端日K seed 用近月合約（`historical.daily(TMFF6)`，歷史不足 12 根），
+     `_daily_bias()` 恆回傳 0，兩個方向都在盤整進場（控制實驗：濾網 DEAD 淨 −5,149 vs ACTIVE +1,760）
+  3. **盤整過度交易** — 日盤放空淨拖累，walk-forward 每個 fold 都選「只做多」
+- 驗證方法：新增 `scripts/optimize_mtx.py`，對停損/停利/出場機制/濾網/冷卻做網格掃描，
+  以 **walk-forward leave-one-day-out OOS** 驗證避免單月過擬合（用戶偏好勝率/Sharpe/回撤 > 絕對報酬）。
+  OOS（54 folds 中 48 折一致）選中：**只做多 · 日停損30/夜90 · TP200 · 保本+20 · 移動停利25/18**，
+  OOS PF 1.38、平均虧損由 −76 收斂到 −52
+- 變更（生產引擎 `MTXSignalEngine` 與回測 `backtest_mtx_strategies.simulate_session` 逐行對齊）：
+  - **新增保本停損**：浮盈達 `MTX_BREAKEVEN_TRIGGER_PTS`(20) 後鎖保本，回落到進場價即出場
+  - **新增移動停利**：浮盈峰值達 `MTX_TRAIL_ACTIVATE_PTS`(25) 後，自峰值回落 `MTX_TRAIL_DISTANCE_PTS`(18) 出場
+  - **1mKD 反交叉出場改為可選**：`MTX_ENABLE_KD_EXIT` 預設 `false`
+  - **日盤改只做多**：`MTX_LONG_ONLY` 預設 `true`（此舉同時讓策略對「日K濾網失效」免疫）
+  - 預設值調整：`MTX_STOP_LOSS_PTS` 50→30、`MTX_TAKE_PROFIT_PTS` 150→200、`MTX_NIGHT_STOP_LOSS_PTS` 80→90
+  - 修正回測 `--stop-loss/--take-profit` CLI 參數先前未生效（dead args）的問題
+- 回測結果（同一個月 tick，in-sample）：變體 A 平均虧損 −56.6→−31.5、PF 1.35→1.55；
+  生產設定（只做多）PF **1.83**、勝率 59.5%、淨 **+15,990 NTD**
+- 新增/更新單元測試：`test_mtx_auto_trader.py::TestBreakevenTrailingExit`（保本/移動停利/停損優先序/狀態重置/空單對稱）、
+  `test_mtx_backtest_exits.py`（回測層出場框架一致性、KD 預設關閉）；既有 KD 閘門測試改為明確開啟 `enable_kd_exit`
+- 後續可選：生產端日K seed 改用長歷史來源讓趨勢濾網復活（目前因只做多已不依賴此濾網）
 
 ### v5.32.1 - 2026-06-26
 
