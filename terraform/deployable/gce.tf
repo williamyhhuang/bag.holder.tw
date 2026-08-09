@@ -82,6 +82,7 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_day" {
   schedule         = "*/10 8-23 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
+  paused           = false
 
   http_target {
     http_method = "POST"
@@ -103,6 +104,7 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_overnight" {
   schedule         = "*/10 0-5 * * 2-6"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
+  paused           = false
 
   http_target {
     http_method = "POST"
@@ -124,6 +126,7 @@ resource "google_cloud_scheduler_job" "mtx_vm_weekend_stop" {
   schedule         = "30 5 * * 6"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
+  paused           = false
 
   http_target {
     http_method = "POST"
