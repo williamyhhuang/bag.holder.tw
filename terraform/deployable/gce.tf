@@ -1,9 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# GCE Spot VM: MTX 自動交易（日盤 + 夜盤）
+# GCE Spot VM: MTX 60K Telegram 通知（日盤 + 夜盤）
 #
-# 取代原本兩個 Cloud Run Jobs（bag-holder-mtx-trader-day / -night）。
-# Cloud Run 按秒計費，WebSocket 長連線每天常駐 ~19 小時 → 每天 ~NT$60；
-# 改用 e2-small Spot VM 約 NT$210/月（省 ~85%）。
+# 沿用原 MTX trader VM，但模擬下單服務已停用；僅執行短時間的 60K 通知任務。
 #
 # 網路：VM 放在現有 subnet、無外部 IP，egress 走現有 Cloud NAT
 #       → 富邦 API IP 白名單（bag-holder-nat-ip）完全不變。
@@ -74,14 +72,14 @@ resource "google_compute_instance_iam_member" "runner_manage_vm" {
 }
 
 # ── Keepalive: 定期 instances.start（冪等；已 RUNNING 時回 400 屬預期）────────
-# Spot VM 被搶占後 ≤10 分鐘內自動拉回；開機後 startup-script 的 dispatcher
-# 會依當下時間補啟動正確的 session。
-# 台北 08:00–23:59 週一至週五（涵蓋日盤 + 夜盤前半）
+# Spot VM 被搶占後 ≤10 分鐘內自動拉回；Persistent systemd timer 會補跑
+# 尚未執行的最新一次 60K 檢查。
+# 台北 09:00–23:59 週一至週五（涵蓋日盤第一個通知前與夜盤前半）
 resource "google_cloud_scheduler_job" "mtx_vm_keepalive_day" {
   name             = "bag-holder-mtx-vm-keepalive-day"
   region           = var.region
   project          = var.project_id
-  schedule         = "*/10 8-23 * * 1-5"
+  schedule         = "*/10 9-23 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
 
@@ -97,12 +95,12 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_day" {
   depends_on = [google_compute_instance.mtx_trader]
 }
 
-# 台北 00:00–05:59 週二至週六（夜盤跨日段，週五夜盤延伸到週六凌晨）
+# 台北 00:00–05:09 週二至週六（最後 05:01 通知；Persistent timer 可在重啟後補跑）
 resource "google_cloud_scheduler_job" "mtx_vm_keepalive_overnight" {
   name             = "bag-holder-mtx-vm-keepalive-overnight"
   region           = var.region
   project          = var.project_id
-  schedule         = "*/10 0-4 * * 2-6"
+  schedule         = "*/10 0-5 * * 2-6"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
 
@@ -118,7 +116,7 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_overnight" {
   depends_on = [google_compute_instance.mtx_trader]
 }
 
-# ── 週末關機：週六 05:30（夜盤 05:00 已收）→ 週一 08:00 由 keepalive 拉起 ──
+# ── 週末關機：週六 05:30（最後通知 05:01）→ 週一 09:00 由 keepalive 拉起 ──
 resource "google_cloud_scheduler_job" "mtx_vm_weekend_stop" {
   name             = "bag-holder-mtx-vm-weekend-stop"
   region           = var.region

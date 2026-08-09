@@ -212,6 +212,7 @@ resource "google_cloud_scheduler_job" "run_jobs" {
   schedule         = "40 14 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "320s"
+  paused           = true # 停止舊版 signals Telegram 排程，只保留 MTX 60K 通知
 
   http_target {
     http_method = "POST"
@@ -234,6 +235,7 @@ resource "google_cloud_scheduler_job" "run_jobs_mid_hour" {
   schedule         = "0 10-12 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "320s"
+  paused           = true # 停止舊版 signals / holdings Telegram 排程
 
   http_target {
     http_method = "POST"
@@ -256,6 +258,7 @@ resource "google_cloud_scheduler_job" "run_jobs_half_hour" {
   schedule         = "30 9-12 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "320s"
+  paused           = true # 停止舊版 signals / holdings Telegram 排程
 
   http_target {
     http_method = "POST"
