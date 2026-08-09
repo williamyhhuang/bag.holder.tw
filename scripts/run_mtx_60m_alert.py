@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -107,4 +108,11 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
     )
-    raise SystemExit(main())
+    exit_code = main()
+    # Fubon native SDK may segfault during CPython interpreter finalization even
+    # after a successful disconnect. Flush all output, then bypass native object
+    # destructors so systemd receives the real application exit code.
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exit_code)
