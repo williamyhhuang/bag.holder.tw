@@ -1139,7 +1139,8 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
   最近 200 根已完成 K 棒保存在 VM 持久磁碟 `/var/lib/mtx/state/60m-bars.json`
 - **Spot 搶占自救**：Cloud Scheduler 每 10 分鐘冪等呼叫 `instances.start`（對已 RUNNING 的 VM 回 400 屬預期）；
   Persistent systemd timer 會在重開機後補跑尚未執行的最新一次檢查
-- **週末關機**：週六 05:30 自動 stop，週一 09:00 由 keepalive 自動 start
+- **開盤前啟動**：Cloud Scheduler 以 `Asia/Taipei` 時區從交易日 08:00 啟動 VM，早於日盤 08:45 開盤
+- **週末關機**：週六 05:30 自動 stop，週一 08:00 由 keepalive 自動 start
 - **除錯**：`gcloud compute ssh bag-holder-mtx-trader --zone=asia-east1-b --tunnel-through-iap`，
   `journalctl -u 'mtx-60m-alert@day.service'`；container log 走 gcplogs 進 Cloud Logging（`resource.type="gce_instance"`）
 

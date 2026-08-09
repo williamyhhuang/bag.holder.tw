@@ -74,12 +74,12 @@ resource "google_compute_instance_iam_member" "runner_manage_vm" {
 # ── Keepalive: 定期 instances.start（冪等；已 RUNNING 時回 400 屬預期）────────
 # Spot VM 被搶占後 ≤10 分鐘內自動拉回；Persistent systemd timer 會補跑
 # 尚未執行的最新一次 60K 檢查。
-# 台北 09:00–23:59 週一至週五（涵蓋日盤第一個通知前與夜盤前半）
+# 台北 08:00–23:59 週一至週五（確保 08:45 日盤開盤前 VM 已就緒）
 resource "google_cloud_scheduler_job" "mtx_vm_keepalive_day" {
   name             = "bag-holder-mtx-vm-keepalive-day"
   region           = var.region
   project          = var.project_id
-  schedule         = "*/10 9-23 * * 1-5"
+  schedule         = "*/10 8-23 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
 
@@ -116,7 +116,7 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_overnight" {
   depends_on = [google_compute_instance.mtx_trader]
 }
 
-# ── 週末關機：週六 05:30（最後通知 05:01）→ 週一 09:00 由 keepalive 拉起 ──
+# ── 週末關機：週六 05:30（最後通知 05:01）→ 週一 08:00 由 keepalive 拉起 ──
 resource "google_cloud_scheduler_job" "mtx_vm_weekend_stop" {
   name             = "bag-holder-mtx-vm-weekend-stop"
   region           = var.region
