@@ -302,11 +302,15 @@ class FubonClient:
                 query['contractType'] = contract_type
             result = restfutopt.intraday.tickers(**query)
 
-            if not result or not hasattr(result, 'data') or not result.data:
+            raw_data = (
+                result.get('data')
+                if isinstance(result, dict)
+                else getattr(result, 'data', None)
+            )
+            if not isinstance(raw_data, list) or not raw_data:
                 return []
 
             tickers = []
-            raw_data = result.data if isinstance(result.data, list) else []
             for item in raw_data:
                 d = item if isinstance(item, dict) else vars(item)
                 tickers.append({
@@ -364,11 +368,15 @@ class FubonClient:
                     None, lambda: restfutopt.intraday.candles(**kwargs)
                 )
 
-            if not result or not hasattr(result, 'data') or not result.data:
+            raw_data = (
+                result.get('data')
+                if isinstance(result, dict)
+                else getattr(result, 'data', None)
+            )
+            if not isinstance(raw_data, list) or not raw_data:
                 return []
 
             candles = []
-            raw_data = result.data if isinstance(result.data, list) else []
             for item in raw_data:
                 d = item if isinstance(item, dict) else vars(item)
                 candles.append({

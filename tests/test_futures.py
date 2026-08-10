@@ -426,6 +426,49 @@ class TestFubonClientFuturesAPI:
         )
 
     @pytest.mark.asyncio
+    async def test_get_futures_tickers_accepts_dict_sdk_response(
+        self, client_with_mock_sdk
+    ):
+        client_with_mock_sdk.sdk.marketdata.rest_client.futopt.intraday.tickers.return_value = {
+            'data': [
+                {
+                    'symbol': 'TMFH6',
+                    'name': '微型臺指期貨086',
+                    'endDate': '2026-08-19',
+                }
+            ]
+        }
+
+        tickers = await client_with_mock_sdk.get_futures_tickers(product=None)
+
+        assert tickers[0]['symbol'] == 'TMFH6'
+        assert tickers[0]['end_date'] == '2026-08-19'
+
+    @pytest.mark.asyncio
+    async def test_get_futures_candles_accepts_dict_sdk_response(
+        self, client_with_mock_sdk
+    ):
+        client_with_mock_sdk.sdk.marketdata.rest_client.futopt.intraday.candles.return_value = {
+            'data': [
+                {
+                    'date': '2026-08-11T00:00:00.000+08:00',
+                    'open': 24000,
+                    'high': 24100,
+                    'low': 23900,
+                    'close': 24050,
+                    'volume': 100,
+                }
+            ]
+        }
+
+        candles = await client_with_mock_sdk.get_futures_candles(
+            'TMFH6', '60', 'afterhours'
+        )
+
+        assert len(candles) == 1
+        assert candles[0]['close'] == Decimal('24050')
+
+    @pytest.mark.asyncio
     async def test_get_futures_positions_empty(self, client_with_mock_sdk):
         positions = await client_with_mock_sdk.get_futures_positions()
         assert positions == []
