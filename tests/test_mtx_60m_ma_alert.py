@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from src.application.services.mtx_60m_ma_alert import (
@@ -8,6 +8,7 @@ from src.application.services.mtx_60m_ma_alert import (
     load_candle_state,
     mark_alert_sent,
     save_candle_state,
+    select_near_month_symbol,
     was_alert_sent,
 )
 
@@ -96,3 +97,37 @@ def test_alert_marker_prevents_duplicate_notification(tmp_path):
     mark_alert_sent(path, bar_time)
     assert was_alert_sent(path, bar_time) is True
     assert was_alert_sent(path, bar_time + timedelta(hours=1)) is False
+
+
+def test_selects_nearest_active_tmf_contract():
+    tickers = [
+        {"symbol": "TMFI6", "end_date": "2026-09-16"},
+        {"symbol": "TMFH6", "end_date": "2026-08-19"},
+        {"symbol": "TXFH6", "end_date": "2026-08-19"},
+    ]
+
+    assert select_near_month_symbol(
+        tickers, as_of=date(2026, 8, 11)
+    ) == "TMFH6"
+
+
+def test_ignores_expired_contract_and_accepts_compact_settlement_date():
+    tickers = [
+        {"symbol": "TMFG6", "end_date": "2026-07-15"},
+        {"symbol": "TMFH6", "settlement_date": "20260819"},
+    ]
+
+    assert select_near_month_symbol(
+        tickers, as_of=date(2026, 8, 11)
+    ) == "TMFH6"
+
+
+def test_returns_none_when_api_has_no_dated_active_tmf_contract():
+    tickers = [
+        {"symbol": "TXFH6", "end_date": "2026-08-19"},
+        {"symbol": "TMFH6", "end_date": ""},
+    ]
+
+    assert select_near_month_symbol(
+        tickers, as_of=date(2026, 8, 11)
+    ) is None

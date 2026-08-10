@@ -21,6 +21,7 @@ from src.application.services.mtx_60m_ma_alert import (
     load_candle_state,
     mark_alert_sent,
     save_candle_state,
+    select_near_month_symbol,
     was_alert_sent,
 )
 from src.infrastructure.market_data.fubon_client import FubonClient, get_near_month_symbol
@@ -44,10 +45,25 @@ def _build_client() -> FubonClient:
 
 
 async def run(session: str, state_file: Path) -> int:
-    symbol = get_near_month_symbol("MTX")
+    now = datetime.now(_TW)
     api_session = "afterhours" if session == "night" else None
+    ticker_session = "AFTERHOURS" if session == "night" else "REGULAR"
 
     async with _build_client() as client:
+        tickers = await client.get_futures_tickers(
+            product="TMF",
+            session=ticker_session,
+        )
+        symbol = select_near_month_symbol(
+            tickers,
+            product="TMF",
+            as_of=now.date(),
+        )
+        if symbol:
+            logger.info("富邦有效合約清單選出微台近月：%s", symbol)
+        else:
+            symbol = get_near_month_symbol("TMF", as_of=now.date())
+            logger.warning("有效合約清單無可用資料，改用日期推算微台近月：%s", symbol)
         candles = await client.get_futures_candles(symbol, "60", api_session)
 
     # 期貨 intraday API 只回傳當日資料；合併 VM 持久磁碟帶入的跨盤狀態，
@@ -55,7 +71,7 @@ async def run(session: str, state_file: Path) -> int:
     state = load_candle_state(state_file)
     rows = completed_candles(
         [*state, *candles],
-        now=datetime.now(_TW),
+        now=now,
         session=session,
     )
     save_candle_state(state_file, rows)

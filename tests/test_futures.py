@@ -50,6 +50,9 @@ class TestGetNearMonthSymbol:
         assert mxf.startswith('MXF')
         assert mtx.startswith('MTX')
 
+    def test_explicit_date_uses_next_month_on_expiry_day(self):
+        assert get_near_month_symbol('TMF', as_of=date(2026, 8, 19)) == 'TMFI6'
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FuturesContract 測試

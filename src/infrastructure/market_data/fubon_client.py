@@ -28,7 +28,7 @@ class FubonAPIError(Exception):
     pass
 
 
-def get_near_month_symbol(product: str) -> str:
+def get_near_month_symbol(product: str, as_of: Optional[date] = None) -> str:
     """
     Compute the current near-month futures symbol.
     Taiwan index futures expire on the 3rd Wednesday of each month.
@@ -40,7 +40,7 @@ def get_near_month_symbol(product: str) -> str:
     Returns:
         Near-month symbol, e.g. 'TXFF6', 'TMFF6'
     """
-    today = date.today()
+    today = as_of or date.today()
 
     def third_wednesday(year: int, month: int) -> date:
         first = date(year, month, 1)

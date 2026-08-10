@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
@@ -27,6 +27,50 @@ class MAAlertResult:
     ma10_slope: float
     ma20_slope: float
     matched: bool
+
+
+def _parse_contract_date(value: object) -> Optional[date]:
+    """解析富邦 tickers API 回傳的合約日期。"""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or not value:
+        return None
+
+    text = value.strip()
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        try:
+            return datetime.strptime(text[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+
+
+def select_near_month_symbol(
+    tickers: Iterable[Mapping[str, object]],
+    *,
+    product: str = "TMF",
+    as_of: Optional[date] = None,
+) -> Optional[str]:
+    """從有效合約清單選出最近到期的指定期貨商品。"""
+    current_date = as_of or datetime.now(_TW).date()
+    candidates: list[tuple[date, str]] = []
+    for ticker in tickers:
+        symbol = str(ticker.get("symbol") or "").upper()
+        if not symbol.startswith(product.upper()):
+            continue
+        expiry = _parse_contract_date(
+            ticker.get("end_date") or ticker.get("settlement_date")
+        )
+        if expiry is None or expiry < current_date:
+            continue
+        candidates.append((expiry, symbol))
+
+    if not candidates:
+        return None
+    return min(candidates)[1]
 
 
 def _parse_time(value: object) -> Optional[datetime]:
