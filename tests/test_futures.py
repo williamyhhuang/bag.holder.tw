@@ -408,6 +408,24 @@ class TestFubonClientFuturesAPI:
         assert tickers[0]['symbol'] == 'TXFE6'
 
     @pytest.mark.asyncio
+    async def test_get_futures_tickers_can_list_all_index_contracts(
+        self, client_with_mock_sdk
+    ):
+        await client_with_mock_sdk.get_futures_tickers(
+            product=None,
+            session='AFTERHOURS',
+            contract_type='I',
+        )
+
+        call = client_with_mock_sdk.sdk.marketdata.rest_client.futopt.intraday.tickers
+        call.assert_called_with(
+            type='FUTURE',
+            exchange='TAIFEX',
+            session='AFTERHOURS',
+            contractType='I',
+        )
+
+    @pytest.mark.asyncio
     async def test_get_futures_positions_empty(self, client_with_mock_sdk):
         positions = await client_with_mock_sdk.get_futures_positions()
         assert positions == []

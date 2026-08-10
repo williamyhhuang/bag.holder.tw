@@ -51,8 +51,9 @@ async def run(session: str, state_file: Path) -> int:
 
     async with _build_client() as client:
         tickers = await client.get_futures_tickers(
-            product="TMF",
+            product=None,
             session=ticker_session,
+            contract_type="I",
         )
         symbol = select_near_month_symbol(
             tickers,

@@ -268,17 +268,19 @@ class FubonClient:
 
     async def get_futures_tickers(
         self,
-        product: str = 'TXF',
+        product: Optional[str] = 'TXF',
         exchange: str = 'TAIFEX',
-        session: str = 'REGULAR'
+        session: str = 'REGULAR',
+        contract_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get list of active futures contracts.
 
         Args:
-            product: Product code e.g. 'TXF', 'MXF', 'MTX'
+            product: Exact contract code; omit to list contracts by other filters
             exchange: Exchange, default 'TAIFEX'
             session: 'REGULAR' or 'AFTERHOURS'
+            contract_type: 'I' for index futures, or another Fugle contract type
 
         Returns:
             List of ticker dicts
@@ -289,12 +291,16 @@ class FubonClient:
                 raise FubonAPIError("Not logged in")
 
             restfutopt = self.sdk.marketdata.rest_client.futopt
-            result = restfutopt.intraday.tickers(
+            query = dict(
                 type='FUTURE',
                 exchange=exchange,
                 session=session,
-                product=product
             )
+            if product:
+                query['product'] = product
+            if contract_type:
+                query['contractType'] = contract_type
+            result = restfutopt.intraday.tickers(**query)
 
             if not result or not hasattr(result, 'data') or not result.data:
                 return []
@@ -316,7 +322,7 @@ class FubonClient:
         except FubonAPIError:
             raise
         except Exception as e:
-            logger.error(f"Failed to get futures tickers for {product}: {e}")
+            logger.error(f"Failed to get futures tickers for {product or contract_type or 'all'}: {e}")
             return []
 
     async def get_futures_candles(
