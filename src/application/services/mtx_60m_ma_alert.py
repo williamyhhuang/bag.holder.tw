@@ -1,4 +1,4 @@
-"""60 分 K 均線多頭排列 Telegram 警示。"""
+"""60 分 K 均線條件 Telegram 警示。"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -134,7 +134,7 @@ def completed_candles(
 
 
 def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAAlertResult]:
-    """判斷 MA5/10/20 斜率皆正且 MA5 >= MA10 >= MA20。
+    """判斷 MA5/10/20 斜率皆正且 MA5 >= MA10 或 MA5 >= MA20。
 
     斜率定義為「本根 K 的 MA 減去前一根 K 的 MA」，因此至少需要
     21 根已完成 K 棒才能判斷 MA20 斜率。
@@ -157,7 +157,7 @@ def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAA
         slope5 > 0
         and slope10 > 0
         and slope20 > 0
-        and ma5 >= ma10 >= ma20
+        and (ma5 >= ma10 or ma5 >= ma20)
     )
     return MAAlertResult(
         bar_time=rows[-1][0],
@@ -217,11 +217,11 @@ def mark_alert_sent(path: Path, bar_time: datetime) -> None:
 def format_alert(symbol: str, session: str, result: MAAlertResult) -> str:
     session_label = "日盤" if session == "day" else "夜盤"
     return (
-        f"📈 微台 60K 多頭排列通知\n"
+        f"📈 微台 60K 均線條件通知\n"
         f"商品：{symbol}｜{session_label}\n"
         f"K棒：{result.bar_time.strftime('%Y-%m-%d %H:%M')}｜收盤：{result.close:.0f}\n"
         f"MA5：{result.ma5:.2f}（斜率 {result.ma5_slope:+.2f}）\n"
         f"MA10：{result.ma10:.2f}（斜率 {result.ma10_slope:+.2f}）\n"
         f"MA20：{result.ma20:.2f}（斜率 {result.ma20_slope:+.2f}）\n"
-        "條件：MA5 ≥ MA10 ≥ MA20，且三條均線斜率皆為正"
+        "條件：MA5 ≥ MA10 或 MA5 ≥ MA20，且三條均線斜率皆為正"
     )

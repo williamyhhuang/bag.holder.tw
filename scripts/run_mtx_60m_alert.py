@@ -108,7 +108,7 @@ async def run(session: str, state_file: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="微台 60K 均線多頭排列通知")
+    parser = argparse.ArgumentParser(description="微台 60K 均線條件通知")
     parser.add_argument("--session", choices=["day", "night"], required=True)
     parser.add_argument(
         "--state-file",

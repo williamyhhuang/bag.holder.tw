@@ -32,6 +32,34 @@ def test_matches_when_all_slopes_positive_and_mas_bullishly_aligned():
     assert result.ma20_slope > 0
 
 
+def test_matches_when_ma5_is_above_ma10_but_below_ma20():
+    closes = [
+        112, 100, 117, 95, 86, 84, 120, 107, 89, 119, 102,
+        100, 106, 80, 87, 84, 93, 98, 82, 86, 118,
+    ]
+
+    result = evaluate_ma_alert(_rows(closes))
+
+    assert result is not None
+    assert result.ma5 >= result.ma10
+    assert result.ma5 < result.ma20
+    assert result.matched is True
+
+
+def test_matches_when_ma5_is_above_ma20_but_below_ma10():
+    closes = [
+        84, 112, 108, 94, 102, 94, 112, 94, 85, 96, 84,
+        103, 105, 105, 119, 88, 113, 113, 83, 90, 120,
+    ]
+
+    result = evaluate_ma_alert(_rows(closes))
+
+    assert result is not None
+    assert result.ma5 < result.ma10
+    assert result.ma5 >= result.ma20
+    assert result.matched is True
+
+
 def test_does_not_match_when_short_ma_slope_is_not_positive():
     result = evaluate_ma_alert(_rows([100 + i for i in range(20)] + [100]))
 
@@ -69,7 +97,7 @@ def test_formats_telegram_message():
     message = format_alert("MTXQ6", "day", result)
 
     assert "微台 60K" in message
-    assert "MA5 ≥ MA10 ≥ MA20" in message
+    assert "MA5 ≥ MA10 或 MA5 ≥ MA20" in message
     assert "日盤" in message
 
 
