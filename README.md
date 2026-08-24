@@ -1135,7 +1135,8 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
 - **成本**：不使用常駐 Cloud Run Job；短任務共用 e2-small Spot VM
 - **網路**：VM 無外部 IP，egress 走既有 Cloud NAT 固定 IP → **Fubon API 白名單不需變動**
 - **Image 更新**：每次 60K 任務啟動前 `docker pull :latest`
-- **60K 通知**：每根 K 棒收完後檢查 MA5／MA10／MA20 斜率皆正，且 `MA5 ≥ MA10` 或 `MA5 ≥ MA20`；
+- **60K 多排通知**：MA5／MA10／MA20 斜率皆正，且 `MA5 ≥ MA10` 或 `MA5 ≥ MA20`；
+- **60K 空排通知**：MA5／MA10／MA20 斜率皆負，且 `MA5 ≤ MA10` 或 `MA5 ≤ MA20`；
   最近 200 根已完成 K 棒保存在 VM 持久磁碟 `/var/lib/mtx/state/60m-bars.json`
 - **Spot 搶占自救**：Cloud Scheduler 每 10 分鐘冪等呼叫 `instances.start`（對已 RUNNING 的 VM 回 400 屬預期）；
   Persistent systemd timer 會在重開機後補跑尚未執行的最新一次檢查

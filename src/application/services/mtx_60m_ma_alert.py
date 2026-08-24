@@ -26,6 +26,7 @@ class MAAlertResult:
     ma5_slope: float
     ma10_slope: float
     ma20_slope: float
+    signal: Optional[str]
     matched: bool
 
 
@@ -134,7 +135,10 @@ def completed_candles(
 
 
 def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAAlertResult]:
-    """判斷 MA5/10/20 斜率皆正且 MA5 >= MA10 或 MA5 >= MA20。
+    """判斷 60K 多排或其鏡像空排條件。
+
+    多排：三條均線斜率皆正，且 MA5 >= MA10 或 MA5 >= MA20。
+    空排：三條均線斜率皆負，且 MA5 <= MA10 或 MA5 <= MA20。
 
     斜率定義為「本根 K 的 MA 減去前一根 K 的 MA」，因此至少需要
     21 根已完成 K 棒才能判斷 MA20 斜率。
@@ -153,12 +157,19 @@ def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAA
     ma5, slope5 = latest_and_slope(5)
     ma10, slope10 = latest_and_slope(10)
     ma20, slope20 = latest_and_slope(20)
-    matched = (
+    long_matched = (
         slope5 > 0
         and slope10 > 0
         and slope20 > 0
         and (ma5 >= ma10 or ma5 >= ma20)
     )
+    short_matched = (
+        slope5 < 0
+        and slope10 < 0
+        and slope20 < 0
+        and (ma5 <= ma10 or ma5 <= ma20)
+    )
+    signal = "long" if long_matched else "short" if short_matched else None
     return MAAlertResult(
         bar_time=rows[-1][0],
         close=float(closes[-1]),
@@ -168,7 +179,8 @@ def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAA
         ma5_slope=slope5,
         ma10_slope=slope10,
         ma20_slope=slope20,
-        matched=matched,
+        signal=signal,
+        matched=signal is not None,
     )
 
 
@@ -216,12 +228,20 @@ def mark_alert_sent(path: Path, bar_time: datetime) -> None:
 
 def format_alert(symbol: str, session: str, result: MAAlertResult) -> str:
     session_label = "日盤" if session == "day" else "夜盤"
+    is_long = result.signal == "long"
+    signal_label = "多排" if is_long else "空排"
+    icon = "📈" if is_long else "📉"
+    condition = (
+        "MA5 ≥ MA10 或 MA5 ≥ MA20，且三條均線斜率皆為正"
+        if is_long
+        else "MA5 ≤ MA10 或 MA5 ≤ MA20，且三條均線斜率皆為負"
+    )
     return (
-        f"📈 微台 60K 均線條件通知\n"
+        f"{icon} 微台 60K {signal_label}通知\n"
         f"商品：{symbol}｜{session_label}\n"
         f"K棒：{result.bar_time.strftime('%Y-%m-%d %H:%M')}｜收盤：{result.close:.0f}\n"
         f"MA5：{result.ma5:.2f}（斜率 {result.ma5_slope:+.2f}）\n"
         f"MA10：{result.ma10:.2f}（斜率 {result.ma10_slope:+.2f}）\n"
         f"MA20：{result.ma20:.2f}（斜率 {result.ma20_slope:+.2f}）\n"
-        "條件：MA5 ≥ MA10 或 MA5 ≥ MA20，且三條均線斜率皆為正"
+        f"條件：{condition}"
     )

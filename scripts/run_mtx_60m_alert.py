@@ -93,6 +93,8 @@ async def run(session: str, state_file: Path) -> int:
         )
         return 0
 
+    logger.info("60K %s條件成立：%s", "多排" if result.signal == "long" else "空排", result.bar_time)
+
     alert_marker = state_file.with_suffix(state_file.suffix + ".last-alert")
     if was_alert_sent(alert_marker, result.bar_time):
         logger.info("此 60K 已通知，略過重複發送：%s", result.bar_time)

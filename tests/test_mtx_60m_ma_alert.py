@@ -26,6 +26,7 @@ def test_matches_when_all_slopes_positive_and_mas_bullishly_aligned():
 
     assert result is not None
     assert result.matched is True
+    assert result.signal == "long"
     assert result.ma5 >= result.ma10 >= result.ma20
     assert result.ma5_slope > 0
     assert result.ma10_slope > 0
@@ -66,6 +67,45 @@ def test_does_not_match_when_short_ma_slope_is_not_positive():
     assert result is not None
     assert result.ma5_slope < 0
     assert result.matched is False
+    assert result.signal is None
+
+
+def test_matches_short_when_all_slopes_negative_and_mas_bearishly_aligned():
+    result = evaluate_ma_alert(_rows(range(120, 99, -1)))
+
+    assert result is not None
+    assert result.matched is True
+    assert result.signal == "short"
+    assert result.ma5 <= result.ma10 <= result.ma20
+    assert result.ma5_slope < 0
+    assert result.ma10_slope < 0
+    assert result.ma20_slope < 0
+
+
+def test_matches_short_when_ma5_is_below_ma10_but_above_ma20():
+    long_closes = [
+        112, 100, 117, 95, 86, 84, 120, 107, 89, 119, 102,
+        100, 106, 80, 87, 84, 93, 98, 82, 86, 118,
+    ]
+    result = evaluate_ma_alert(_rows([200 - close for close in long_closes]))
+
+    assert result is not None
+    assert result.ma5 <= result.ma10
+    assert result.ma5 > result.ma20
+    assert result.signal == "short"
+
+
+def test_matches_short_when_ma5_is_below_ma20_but_above_ma10():
+    long_closes = [
+        84, 112, 108, 94, 102, 94, 112, 94, 85, 96, 84,
+        103, 105, 105, 119, 88, 113, 113, 83, 90, 120,
+    ]
+    result = evaluate_ma_alert(_rows([200 - close for close in long_closes]))
+
+    assert result is not None
+    assert result.ma5 > result.ma10
+    assert result.ma5 <= result.ma20
+    assert result.signal == "short"
 
 
 def test_requires_21_completed_bars_for_ma20_slope():
@@ -99,6 +139,17 @@ def test_formats_telegram_message():
     assert "微台 60K" in message
     assert "MA5 ≥ MA10 或 MA5 ≥ MA20" in message
     assert "日盤" in message
+
+
+def test_formats_short_telegram_message():
+    result = evaluate_ma_alert(_rows(range(120, 99, -1)))
+
+    message = format_alert("TMFI6", "night", result)
+
+    assert "📉 微台 60K 空排通知" in message
+    assert "MA5 ≤ MA10 或 MA5 ≤ MA20" in message
+    assert "三條均線斜率皆為負" in message
+    assert "夜盤" in message
 
 
 def test_candle_state_round_trip_and_retention(tmp_path):
