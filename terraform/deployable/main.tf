@@ -26,6 +26,7 @@ locals {
 
   common_env_vars = {
     APP_ENV          = "production"
+    LOG_LEVEL        = "WARNING"
     PYTHONUNBUFFERED = "1"
   }
 }
@@ -106,8 +107,9 @@ module "job_signals" {
   task_timeout_seconds  = 600
   max_retries           = 1
   secret_env_vars       = local.common_secret_env_vars
-  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
-  env_vars              = local.common_env_vars
+  # 不呼叫富邦 API，不需固定 NAT 出口。
+  vpc_subnet_id = null
+  env_vars      = local.common_env_vars
 }
 
 # ── Cloud Run Job: bag-holder-check-holdings ─────────────────────────────────
@@ -125,8 +127,9 @@ module "job_check_holdings" {
   task_timeout_seconds  = 600
   max_retries           = 1
   secret_env_vars       = local.common_secret_env_vars
-  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
-  env_vars              = local.common_env_vars
+  # 只讀資料並通知 Telegram，不需固定 NAT 出口。
+  vpc_subnet_id = null
+  env_vars      = local.common_env_vars
 }
 
 # ── Cloud Run Service: bag-holder-webhook ─────────────────────────────────────
@@ -147,8 +150,9 @@ module "service_webhook" {
   timeout_seconds       = 30
   allow_unauthenticated = true
   secret_env_vars       = local.common_secret_env_vars
-  vpc_subnet_id         = google_compute_subnetwork.cloudrun.id
-  env_vars              = local.common_env_vars
+  # Webhook 只使用 Telegram / Google API，不需固定 NAT 出口。
+  vpc_subnet_id = null
+  env_vars      = local.common_env_vars
 }
 
 # ── Cloud Run Job: bag-holder-sync-trades ────────────────────────────────────
@@ -281,6 +285,7 @@ resource "google_cloud_scheduler_job" "sync_trades" {
   schedule         = "35 14 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "320s"
+  paused           = true # 舊版 Cloud Run 工作維持停用，避免恢復高頻費用
 
   http_target {
     http_method = "POST"

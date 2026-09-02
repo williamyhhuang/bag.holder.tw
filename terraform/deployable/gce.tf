@@ -71,15 +71,23 @@ resource "google_compute_instance_iam_member" "runner_manage_vm" {
   member        = "serviceAccount:${local.runner_sa_email}"
 }
 
+# GCE Guest Agent 每分鐘產生重複 INFO；保留 WARNING 以上與應用程式日誌。
+resource "google_logging_project_exclusion" "mtx_guest_agent_info" {
+  name        = "bag-holder-mtx-guest-agent-info"
+  project     = var.project_id
+  description = "Drop repetitive low-value GCE guest agent INFO logs"
+  filter      = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.mtx_trader.instance_id}\" AND log_id(\"GCEGuestAgent\") AND severity<WARNING"
+}
+
 # ── Keepalive: 定期 instances.start（冪等；已 RUNNING 時回 400 屬預期）────────
 # Spot VM 被搶占後 ≤10 分鐘內自動拉回；Persistent systemd timer 會補跑
 # 尚未執行的最新一次 60K 檢查。
-# 台北 08:00–23:59 週一至週五（確保 08:45 日盤開盤前 VM 已就緒）
+# 台北 09:00–13:50 週一至週五；08:35–08:55 由 preopen job 負責。
 resource "google_cloud_scheduler_job" "mtx_vm_keepalive_day" {
   name             = "bag-holder-mtx-vm-keepalive-day"
   region           = var.region
   project          = var.project_id
-  schedule         = "*/10 8-23 * * 1-5"
+  schedule         = "*/10 9-13 * * 1-5"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
   paused           = false
@@ -96,12 +104,12 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_day" {
   depends_on = [google_compute_instance.mtx_trader]
 }
 
-# 台北 00:00–05:09 週二至週六（最後 05:01 通知；Persistent timer 可在重啟後補跑）
+# 台北 00:00–04:50 週二至週六；05:00 由 close keepalive 負責。
 resource "google_cloud_scheduler_job" "mtx_vm_keepalive_overnight" {
   name             = "bag-holder-mtx-vm-keepalive-overnight"
   region           = var.region
   project          = var.project_id
-  schedule         = "*/10 0-5 * * 2-6"
+  schedule         = "*/10 0-4 * * 2-6"
   time_zone        = "Asia/Taipei"
   attempt_deadline = "60s"
   paused           = false
@@ -113,6 +121,121 @@ resource "google_cloud_scheduler_job" "mtx_vm_keepalive_overnight" {
     oauth_token {
       service_account_email = local.runner_sa_email
     }
+  }
+
+  depends_on = [google_compute_instance.mtx_trader]
+}
+
+
+# 日盤 08:45 開盤；提前 10 分鐘啟動，並在 08:45/08:55 補拉 Spot VM。
+resource "google_cloud_scheduler_job" "mtx_vm_preopen_day" {
+  name             = "bag-holder-mtx-vm-preopen-day"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "35,45,55 8 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "60s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://compute.googleapis.com/compute/v1/projects/${var.project_id}/zones/${local.mtx_vm_zone}/instances/${local.mtx_vm_name}/start"
+    oauth_token { service_account_email = local.runner_sa_email }
+  }
+
+  depends_on = [google_compute_instance.mtx_trader]
+}
+
+# 夜盤 15:00 開盤；提前 10 分鐘啟動。
+resource "google_cloud_scheduler_job" "mtx_vm_preopen_night" {
+  name             = "bag-holder-mtx-vm-preopen-night"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "50 14 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "60s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://compute.googleapis.com/compute/v1/projects/${var.project_id}/zones/${local.mtx_vm_zone}/instances/${local.mtx_vm_name}/start"
+    oauth_token { service_account_email = local.runner_sa_email }
+  }
+
+  depends_on = [google_compute_instance.mtx_trader]
+}
+
+# 台北 15:00–23:50 週一至週五，Spot 搶占後最多 10 分鐘拉回。
+resource "google_cloud_scheduler_job" "mtx_vm_keepalive_night" {
+  name             = "bag-holder-mtx-vm-keepalive-night"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "*/10 15-23 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "60s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://compute.googleapis.com/compute/v1/projects/${var.project_id}/zones/${local.mtx_vm_zone}/instances/${local.mtx_vm_name}/start"
+    oauth_token { service_account_email = local.runner_sa_email }
+  }
+
+  depends_on = [google_compute_instance.mtx_trader]
+}
+
+# 05:00 收盤時確認 VM 已啟動，讓 05:01 的最後通知可以執行。
+resource "google_cloud_scheduler_job" "mtx_vm_keepalive_close" {
+  name             = "bag-holder-mtx-vm-keepalive-close"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "0 5 * * 2-6"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "60s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://compute.googleapis.com/compute/v1/projects/${var.project_id}/zones/${local.mtx_vm_zone}/instances/${local.mtx_vm_name}/start"
+    oauth_token { service_account_email = local.runner_sa_email }
+  }
+
+  depends_on = [google_compute_instance.mtx_trader]
+}
+
+# 日盤 13:45 收盤後關機；14:50 再由夜盤 preopen 拉起。
+resource "google_cloud_scheduler_job" "mtx_vm_stop_midday" {
+  name             = "bag-holder-mtx-vm-stop-midday"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "55 13 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "60s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://compute.googleapis.com/compute/v1/projects/${var.project_id}/zones/${local.mtx_vm_zone}/instances/${local.mtx_vm_name}/stop"
+    oauth_token { service_account_email = local.runner_sa_email }
+  }
+
+  depends_on = [google_compute_instance.mtx_trader]
+}
+
+# 夜盤 05:00 收盤，保留 10 分鐘讓 05:01 最後通知完成後關機。
+resource "google_cloud_scheduler_job" "mtx_vm_stop_overnight" {
+  name             = "bag-holder-mtx-vm-stop-overnight"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "10 5 * * 2-6"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "60s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://compute.googleapis.com/compute/v1/projects/${var.project_id}/zones/${local.mtx_vm_zone}/instances/${local.mtx_vm_name}/stop"
+    oauth_token { service_account_email = local.runner_sa_email }
   }
 
   depends_on = [google_compute_instance.mtx_trader]

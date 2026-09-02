@@ -70,7 +70,16 @@ resource "google_artifact_registry_repository" "app" {
   location      = var.region
   format        = "DOCKER"
 
-  # 只保留最新 5 個 image，自動刪除舊版本節省儲存費用
+  # 刪除 30 天前版本；KEEP 規則優先，確保每個套件至少保留最新 5 版。
+  cleanup_policies {
+    id     = "delete-older-than-30-days"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "2592000s"
+    }
+  }
+
   cleanup_policies {
     id     = "keep-last-5"
     action = "KEEP"
