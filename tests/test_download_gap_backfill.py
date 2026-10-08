@@ -66,38 +66,112 @@ class TestCoverageAndMissing:
         assert dm.find_missing_trading_days(Counter(), 0, [date(2026, 10, 7)], date(2026, 10, 8)) == []
 
 
+class TestNonTradingCache:
+    def test_roundtrip_and_bad_file(self, tmp_path):
+        p = tmp_path / "nt.json"
+        assert dm.load_non_trading_days(p) == set()
+        dm.save_non_trading_days({date(2026, 10, 6)}, p)
+        assert dm.load_non_trading_days(p) == {date(2026, 10, 6)}
+        p.write_text("not json")
+        assert dm.load_non_trading_days(p) == set()
+
+
+class TestLocalSymbols:
+    def test_groups_by_market(self, tmp_path):
+        for name in ["2330_TW.csv", "8042_TWO.csv", "TEST_TW.csv", "weird.csv"]:
+            (tmp_path / name).write_text("date\n")
+        assert dm.local_symbols(str(tmp_path)) == {"TW": ["2330"], "TWO": ["8042"]}
+
+
+class FakeExchange:
+    """2026-10-06 為假日（兩市場皆無資料），10-07 有資料"""
+
+    def __init__(self, fail_days=()):
+        self.calls = []
+        self.fail_days = set(fail_days)
+
+    def fetch_day(self, day):
+        import pandas as pd
+        self.calls.append(day)
+        if day in self.fail_days:
+            raise RuntimeError("blocked")
+        if day == date(2026, 10, 6):
+            empty = pd.DataFrame(columns=["code", "open", "high", "low", "close", "volume"])
+            return {"TW": empty, "TWO": empty}
+        tw = pd.DataFrame([{"code": "2330", "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10.0},
+                           {"code": "9999", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}])
+        two = pd.DataFrame([{"code": "8042", "open": 3.0, "high": 4.0, "low": 2.5, "close": 3.5, "volume": 20.0}])
+        return {"TW": tw, "TWO": two}
+
+
 class TestBackfillGap:
-    def _run(self, missing, yf_side_effect=None):
-        with patch.object(dm, "reference_trading_calendar", return_value=[]), \
-                patch.object(dm, "local_date_coverage", return_value=(Counter(), 1)), \
-                patch.object(dm, "find_missing_trading_days", return_value=missing), \
+    def _setup(self, tmp_path):
+        stocks = tmp_path / "stocks"
+        stocks.mkdir(exist_ok=True)
+        _write(stocks / "2330_TW.csv", ["2026-10-02", "2026-10-05", "2026-10-08"])
+        _write(stocks / "8042_TWO.csv", ["2026-10-02", "2026-10-05", "2026-10-08"])
+        return stocks
+
+    def _run(self, tmp_path, fake):
+        stocks = self._setup(tmp_path)
+        cache = tmp_path / "cache" / "nt.json"
+        settings_stub = SimpleNamespace(
+            download=SimpleNamespace(gap_check_days=7, gap_check_tail_bytes=4096),
+            data=SimpleNamespace(stocks_path=str(stocks)),
+        )
+        saved = []
+        with patch.object(dm, "settings", settings_stub), \
+                patch.object(dm, "NON_TRADING_CACHE", cache), \
                 patch.object(dm, "datetime", wraps=datetime) as dt, \
                 patch.object(dm, "YFinanceClient") as yf:
             dt.now.return_value = datetime(2026, 10, 8, 14, 30)
-            yf.return_value.download_all_stocks.return_value = 1999
-            if yf_side_effect:
-                yf.return_value.download_all_stocks.side_effect = yf_side_effect
-            return dm.DataDownloaderCLI().backfill_gap(), yf
+            yf.return_value.save_stock_data.side_effect = lambda sym, df: saved.append((sym, df)) or True
+            count = dm.DataDownloaderCLI().backfill_gap(client=fake)
+        return count, saved, cache
 
-    def test_backfills_from_earliest_missing_day(self):
-        count, yf = self._run([date(2026, 7, 3), date(2026, 10, 7)])
-        assert count == 1999
-        start, end = yf.return_value.download_all_stocks.call_args.args
-        assert start == datetime(2026, 7, 3)
-        assert end == datetime(2026, 10, 8)   # yfinance end 不含當日
+    def test_fills_missing_days_and_caches_holidays(self, tmp_path):
+        fake = FakeExchange()
+        count, saved, cache = self._run(tmp_path, fake)
+        # 10/01（窗口起點）、10/06、10/07 為疑似缺口；10/06 確認為非交易日
+        assert date(2026, 10, 6) in fake.calls and date(2026, 10, 7) in fake.calls
+        assert count == 2
+        by_sym = dict(saved)
+        assert set(by_sym) == {"2330.TW", "8042.TWO"}       # 9999 本地沒有檔案 → 不新增
+        df = by_sym["2330.TW"]
+        assert list(df.columns) == ["date", "open", "high", "low", "close", "volume", "symbol"]
+        assert date(2026, 10, 7) in set(df["date"].dt.date)
+        assert dm.load_non_trading_days(cache) == {date(2026, 10, 6)}
 
-    def test_skip_when_no_gap(self):
-        count, yf = self._run([])
-        assert count == 0
-        yf.assert_not_called()
+    def test_cached_holiday_not_requested_again(self, tmp_path):
+        first = FakeExchange()
+        self._run(tmp_path, first)
+        second = FakeExchange()
+        cache = tmp_path / "cache" / "nt.json"
+        assert dm.load_non_trading_days(cache)
+        # 第二次執行：本地資料未變（save 被 mock），但 10/06 已在快取中，不再查詢
+        self._run(tmp_path, second)
+        assert date(2026, 10, 6) not in second.calls
 
-    def test_download_failure_does_not_raise(self):
-        count, _ = self._run([date(2026, 10, 7)], yf_side_effect=RuntimeError("boom"))
-        assert count == 0
+    def test_no_gap_no_requests(self, tmp_path):
+        stocks = tmp_path / "stocks"
+        stocks.mkdir()
+        _write(stocks / "2330_TW.csv", ["2026-10-07", "2026-10-08"])
+        fake = FakeExchange()
+        settings_stub = SimpleNamespace(
+            download=SimpleNamespace(gap_check_days=1, gap_check_tail_bytes=4096),
+            data=SimpleNamespace(stocks_path=str(stocks)),
+        )
+        with patch.object(dm, "settings", settings_stub), \
+                patch.object(dm, "NON_TRADING_CACHE", tmp_path / "nt.json"), \
+                patch.object(dm, "datetime", wraps=datetime) as dt:
+            dt.now.return_value = datetime(2026, 10, 8, 14, 30)
+            assert dm.DataDownloaderCLI().backfill_gap(client=fake) == 0
+        assert fake.calls == []
 
-    def test_calendar_failure_does_not_raise(self):
-        with patch.object(dm, "reference_trading_calendar", side_effect=RuntimeError("net")):
-            assert dm.DataDownloaderCLI().backfill_gap() == 0
+    def test_fetch_error_skips_day(self, tmp_path):
+        fake = FakeExchange(fail_days={date(2026, 10, 7)})
+        count, saved, cache = self._run(tmp_path, fake)
+        assert date(2026, 10, 7) not in dm.load_non_trading_days(cache)  # 失敗不可誤記為假日
 
     def test_run_download_backfills_before_recent(self):
         cli = dm.DataDownloaderCLI()

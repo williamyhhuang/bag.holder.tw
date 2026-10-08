@@ -7,8 +7,9 @@ import os
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import json
 from collections import Counter
-from typing import Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
@@ -23,7 +24,7 @@ from config.settings import settings
 logger = get_logger(__name__)
 
 
-GAP_REFERENCE_SYMBOL = "2330.TW"   # 以台積電的交易日作為交易日曆
+NON_TRADING_CACHE = Path(settings.data.stocks_path).parent / "cache" / "non_trading_days.json"
 
 
 def _tail_dates(path: str, tail_bytes: int) -> List[date]:
@@ -73,13 +74,35 @@ def find_missing_trading_days(
     return sorted(d for d in calendar if d < today and coverage.get(d, 0) < threshold)
 
 
-def reference_trading_calendar(start: date, end: date) -> List[date]:
-    """以參考股票在 yfinance 的日K日期作為交易日曆（自動排除國定假日）"""
-    import yfinance as yf
-    raw = yf.download(GAP_REFERENCE_SYMBOL, start=start, end=end, progress=False, auto_adjust=True)
-    if raw is None or raw.empty:
-        return []
-    return [ts.date() for ts in raw.index]
+def load_non_trading_days(path: Path = None) -> set:
+    """已確認的非交易日（交易所查無資料），避免每天重複查詢國定假日"""
+    path = path or NON_TRADING_CACHE
+    try:
+        return {date.fromisoformat(d) for d in json.loads(path.read_text())}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def save_non_trading_days(days: set, path: Path = None) -> None:
+    path = path or NON_TRADING_CACHE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sorted(d.isoformat() for d in days)))
+    except OSError as e:
+        logger.warning(f"寫入非交易日快取失敗: {e}")
+
+
+def local_symbols(stocks_dir: str) -> Dict[str, List[str]]:
+    """本地已有 CSV 的股票：{"TW": ["2330", ...], "TWO": [...]}（不新增權證等其他商品）"""
+    out: Dict[str, List[str]] = {"TW": [], "TWO": []}
+    for path in glob.glob(os.path.join(stocks_dir, "*.csv")):
+        stem = os.path.splitext(os.path.basename(path))[0]
+        if stem.upper().startswith("TEST") or "_" not in stem:
+            continue
+        code, market = stem.rsplit("_", 1)
+        if market in out:
+            out[market].append(code)
+    return out
 
 
 class DataDownloaderCLI:
@@ -112,38 +135,56 @@ class DataDownloaderCLI:
             self.logger.error(f"Invalid date format: {date_str}. Use YYYY-MM-DD")
             sys.exit(1)
 
-    def backfill_gap(self) -> int:
-        """補齊近期缺漏的交易日（yfinance 批次下載，2000 檔約數分鐘）。
+    def backfill_gap(self, client=None) -> int:
+        """補齊近期缺漏的交易日（證交所／櫃買中心每日收盤行情，一天 2 個請求）。
 
         快照 API 只能抓「今天」；排程停過一段時間會留下缺口（可能在資料中間，
         例如 7/02 之後直接接上 10/08），均線與漲跌幅都會算錯。
-        以參考股票的交易日曆比對本地資料，從最早的缺口日補到昨天。
+        檢查最近 gap_check_days 天的平日，不到半數股票有資料者逐日補抓；
+        交易所查無資料的日子記為非交易日（國定假日），之後不再查詢。
         失敗不中斷主流程：今日資料仍會照常下載。
+
+        Returns: 補寫的股票檔數
         """
         import pytz
+        from src.infrastructure.market_data.exchange_daily_client import ExchangeDailyClient
+
         cfg = settings.download
+        stocks_dir = settings.data.stocks_path
         today = datetime.now(pytz.timezone("Asia/Taipei")).date()
-        try:
-            calendar = reference_trading_calendar(today - timedelta(days=cfg.gap_check_days), today)
-            coverage, n_files = local_date_coverage(settings.data.stocks_path, cfg.gap_check_tail_bytes)
-            missing = find_missing_trading_days(coverage, n_files, calendar, today)
-        except Exception as e:
-            self.logger.error(f"缺口偵測失敗: {e}")
-            return 0
+        weekdays = [d.date() for d in pd.bdate_range(today - timedelta(days=cfg.gap_check_days), today)]
+        non_trading = load_non_trading_days()
+        coverage, n_files = local_date_coverage(stocks_dir, cfg.gap_check_tail_bytes)
+        missing = [d for d in find_missing_trading_days(coverage, n_files, weekdays, today) if d not in non_trading]
         if not missing:
             return 0
 
-        start = missing[0]
-        self.logger.warning(f"偵測到 {len(missing)} 個缺漏交易日，補抓 {start} ~ {today - timedelta(days=1)}")
-        try:
-            # yfinance 的 end 不含當日；今日資料交由主要來源（富邦快照）下載
-            return YFinanceClient().download_all_stocks(
-                datetime.combine(start, datetime.min.time()),
-                datetime.combine(today, datetime.min.time()),
-            )
-        except Exception as e:
-            self.logger.error(f"補抓缺口失敗: {e}")
-            return 0
+        self.logger.warning(f"檢查 {len(missing)} 個疑似缺漏的平日：{missing[0]} ~ {missing[-1]}")
+        client = client or ExchangeDailyClient()
+        symbols = local_symbols(stocks_dir)
+        rows: Dict[str, List[Dict]] = {}
+        filled = []
+        for day in missing:
+            try:
+                markets = client.fetch_day(day)
+            except Exception as e:
+                self.logger.error(f"{day} 每日行情抓取失敗: {e}")
+                continue
+            if all(df.empty for df in markets.values()):
+                non_trading.add(day)
+                continue
+            filled.append(day)
+            for market, df in markets.items():
+                df = df[df["code"].isin(symbols.get(market, []))]
+                for rec in df.to_dict("records"):
+                    sym = f"{rec.pop('code')}.{market}"
+                    rows.setdefault(sym, []).append({"date": pd.Timestamp(day), **rec, "symbol": sym})
+        save_non_trading_days(non_trading)
+
+        saver = YFinanceClient()
+        saved = sum(saver.save_stock_data(sym, pd.DataFrame(recs)) for sym, recs in rows.items())
+        self.logger.warning(f"補抓完成：{len(filled)} 個交易日、{saved} 檔股票")
+        return saved
 
     def run_download(self, args):
         """Run the download command.

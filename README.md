@@ -493,7 +493,7 @@ python main.py ma-cross --no-sub-industry-filter
 # 強制重新抓取細產業對照
 python main.py ma-cross --refresh-sub-industries
 
-# 結果發送到 Telegram（HTML 格式，等寬區塊列代號／名稱／收盤價；超過長度自動分段）
+# 結果發送到 Telegram（每檔一行：代號 名稱 收盤價；超過長度自動分段）
 python main.py ma-cross --send-telegram
 
 # 排程用：最新資料日不是今天（休市或資料未更新）就略過，不發送
@@ -1340,13 +1340,26 @@ docker compose up -d
 
 ## 📝 更新日誌
 
+### v5.37.0 - 2026-10-08
+
+**資料缺口改用證交所／櫃買中心每日收盤行情補抓＋ Telegram 排版修正**
+
+- v5.36.3 用 yfinance 補抓，但從 GCP 的對外 IP 會被 Yahoo 限流（2000 檔只成功約 150 檔）
+- 新增 `src/infrastructure/market_data/exchange_daily_client.py`：一次請求取得全市場單日 OHLCV
+  （TWSE `MI_INDEX`、TPEx `dailyQuotes`），未還原價格與富邦快照一致，成交量單位為股
+- 缺口偵測：最近 `DOWNLOAD_GAP_CHECK_DAYS`（180）天的平日中，不到半數股票有資料者逐日補抓（每日 2 個請求，間隔 2 秒）；
+  交易所查無資料的日子記入 `data/cache/non_trading_days.json`（國定假日／颱風假），之後不再查詢
+- 只補寫本地已有 CSV 的股票（不新增權證等商品）；當日無成交（價格為 `--`）的股票不寫入
+- Telegram：拿掉等寬區塊（手機右上角複製按鈕會遮住內容、中文字寬對不齊），改為每檔一行「**代號** 名稱 收盤價」
+- 新增單元測試 `tests/test_exchange_daily_client.py`，改寫 `tests/test_download_gap_backfill.py`
+
 ### v5.36.3 - 2026-10-08
 
 **修正缺口偵測漏掉「中間缺口」＋ Telegram 手機排版**
 
 - v5.36.2 只比對資料最後日期，若缺口後已寫入當日資料（例：7/02 → 10/08），缺口在中間就偵測不到。
   改以參考股票（2330.TW）在 yfinance 的日K日期作為交易日曆（自動排除國定假日），
-  檢查最近 `DOWNLOAD_GAP_CHECK_DAYS`（180）天內不到半數股票有資料的交易日，從最早的缺口補抓到昨天
+  檢查最近 `DOWNLOAD_GAP_CHECK_DAYS`（180）天內不到半數股票有資料的交易日，從最早的缺口補抓到昨天（v5.37.0 改用交易所每日行情）
 - 新增設定 `DOWNLOAD_GAP_CHECK_DAYS`、`DOWNLOAD_GAP_CHECK_TAIL_BYTES`（只讀每檔 CSV 檔尾，避免整檔讀入）
 - Telegram 改用 HTML：標題兩行短句；股票清單放在等寬區塊，代號／名稱／收盤價三欄對齊（中文字以 2 格寬計算）
   ```

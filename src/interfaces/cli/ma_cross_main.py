@@ -10,7 +10,6 @@
 import argparse
 import html
 import sys
-import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
@@ -65,20 +64,12 @@ def print_result(result: MACrossScanResult, show_filter: bool) -> None:
 WEEKDAYS = "一二三四五六日"
 
 
-def _display_width(text: str) -> int:
-    """等寬字型下的顯示寬度（中文字佔 2 格）"""
-    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
-
-
-def _pad(text: str, width: int) -> str:
-    return text + " " * max(0, width - _display_width(text))
-
-
 def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks: int = 30) -> List[str]:
     """組成 Telegram HTML 訊息（parse_mode=HTML）。
 
-    手機版面：標題兩行短句；股票清單放在 <pre> 等寬區塊，代號／名稱／收盤價三欄對齊。
-    超過長度時依股票列切段，每段都是完整的 HTML。
+    手機版面：標題兩行短句；每檔一行「代號(粗體) 名稱 收盤價」。
+    不用 <pre> 等寬區塊：手機上右上角的複製按鈕會遮住內容，中文字寬也對不齊。
+    超過長度時依股票列切段。
     """
     as_of = result.as_of
     day = f"{as_of:%Y-%m-%d}（{WEEKDAYS[as_of.weekday()]}）" if as_of else "-"
@@ -89,27 +80,23 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
         return [f"{header}\n\n今日無符合條件的股票"]
 
     shown = result.stocks.head(max_stocks) if max_stocks > 0 else result.stocks
-    code_width = max(len(str(c)) for c in shown["code"])
-    name_width = max(_display_width(str(n)) for n in shown["name"])
-    prices = [f"{c:.2f}" for c in shown["close"]]
-    price_width = max(len(p) for p in prices)
-    rows = [
-        html.escape(f"{str(r['code']):<{code_width}}  {_pad(str(r['name']), name_width)}  {p:>{price_width}}")
-        for (_, r), p in zip(shown.iterrows(), prices)
+    lines = [
+        f"<b>{html.escape(str(r['code']))}</b>  {html.escape(str(r['name']))}  {r['close']:.2f}"
+        for _, r in shown.iterrows()
     ]
-    footer = f"…另有 {len(result.stocks) - len(shown)} 檔" if len(shown) < len(result.stocks) else ""
+    if len(shown) < len(result.stocks):
+        lines.append(f"…另有 {len(result.stocks) - len(shown)} 檔")
 
     chunks: List[str] = []
-    block: List[str] = []
-    prefix = header + "\n\n"
-    for row in rows:
-        candidate = prefix + "<pre>" + "\n".join(block + [row]) + "</pre>"
-        if block and len(candidate) > TELEGRAM_CHUNK_LIMIT:
-            chunks.append(prefix + "<pre>" + "\n".join(block) + "</pre>")
-            block, prefix = [], ""
-        block.append(row)
-    last = prefix + "<pre>" + "\n".join(block) + "</pre>"
-    chunks.append(last + (f"\n{footer}" if footer else ""))
+    current = header + "\n"
+    for line in lines:
+        candidate = f"{current}\n{line}"
+        if len(candidate) > TELEGRAM_CHUNK_LIMIT and current.strip():
+            chunks.append(current.strip())
+            current = line
+        else:
+            current = candidate
+    chunks.append(current.strip())
     return chunks
 
 
