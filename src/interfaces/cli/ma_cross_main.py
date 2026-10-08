@@ -8,7 +8,9 @@
     python -m src.interfaces.cli.ma_cross_main --send-telegram --require-today   # 排程用
 """
 import argparse
+import html
 import sys
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
@@ -60,37 +62,61 @@ def print_result(result: MACrossScanResult, show_filter: bool) -> None:
         )
 
 
+WEEKDAYS = "一二三四五六日"
+
+
+def _display_width(text: str) -> int:
+    """等寬字型下的顯示寬度（中文字佔 2 格）"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def _pad(text: str, width: int) -> str:
+    return text + " " * max(0, width - _display_width(text))
+
+
 def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks: int = 30) -> List[str]:
-    """組成 Telegram 純文字訊息（只列代號、名稱、收盤價），依長度切段"""
-    title = "均線穿越 60MA" + ("（細產業過濾）" if show_filter else "")
-    lines = [f"📈 {title}｜{result.as_of}｜{len(result.stocks)} 檔"]
+    """組成 Telegram HTML 訊息（parse_mode=HTML）。
+
+    手機版面：標題兩行短句；股票清單放在 <pre> 等寬區塊，代號／名稱／收盤價三欄對齊。
+    超過長度時依股票列切段，每段都是完整的 HTML。
+    """
+    as_of = result.as_of
+    day = f"{as_of:%Y-%m-%d}（{WEEKDAYS[as_of.weekday()]}）" if as_of else "-"
+    label = "細產業過濾後" if show_filter else "符合"
+    header = f"<b>📈 均線穿越 60MA</b>\n{day}・{label} <b>{len(result.stocks)}</b> 檔"
 
     if result.stocks.empty:
-        lines.append("今日無符合條件的股票")
+        return [f"{header}\n\n今日無符合條件的股票"]
+
     shown = result.stocks.head(max_stocks) if max_stocks > 0 else result.stocks
-    for _, r in shown.iterrows():
-        lines.append(f"{r['code']} {r['name']} {r['close']:g}")
-    if len(shown) < len(result.stocks):
-        lines.append(f"…另有 {len(result.stocks) - len(shown)} 檔")
+    code_width = max(len(str(c)) for c in shown["code"])
+    name_width = max(_display_width(str(n)) for n in shown["name"])
+    prices = [f"{c:.2f}" for c in shown["close"]]
+    price_width = max(len(p) for p in prices)
+    rows = [
+        html.escape(f"{str(r['code']):<{code_width}}  {_pad(str(r['name']), name_width)}  {p:>{price_width}}")
+        for (_, r), p in zip(shown.iterrows(), prices)
+    ]
+    footer = f"…另有 {len(result.stocks) - len(shown)} 檔" if len(shown) < len(result.stocks) else ""
 
     chunks: List[str] = []
-    current = ""
-    for line in lines:
-        candidate = f"{current}\n{line}" if current else line
-        if len(candidate) > TELEGRAM_CHUNK_LIMIT and current:
-            chunks.append(current)
-            current = line
-        else:
-            current = candidate
-    if current:
-        chunks.append(current)
+    block: List[str] = []
+    prefix = header + "\n\n"
+    for row in rows:
+        candidate = prefix + "<pre>" + "\n".join(block + [row]) + "</pre>"
+        if block and len(candidate) > TELEGRAM_CHUNK_LIMIT:
+            chunks.append(prefix + "<pre>" + "\n".join(block) + "</pre>")
+            block, prefix = [], ""
+        block.append(row)
+    last = prefix + "<pre>" + "\n".join(block) + "</pre>"
+    chunks.append(last + (f"\n{footer}" if footer else ""))
     return chunks
 
 
 def send_telegram(chunks: List[str], chat_id: Optional[str] = None) -> bool:
     notifier = TelegramNotifier()
     target = chat_id or settings.ma_cross.telegram_chat_id
-    return all(notifier.send_message(chunk, chat_id=target, parse_mode=None) for chunk in chunks)
+    return all(notifier.send_message(chunk, chat_id=target, parse_mode="HTML") for chunk in chunks)
 
 
 def today_taipei() -> date:

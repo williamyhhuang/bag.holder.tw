@@ -338,37 +338,54 @@ def _result(n_stocks=2, hot=True):
 
 
 class TestTelegramFormat:
-    def test_only_code_name_close(self):
-        text = "\n".join(cli.format_for_telegram(_result(), show_filter=True))
-        lines = text.splitlines()
-        assert "2026-10-07" in lines[0] and "2 檔" in lines[0]
-        assert lines[1:] == ["8000 股0 126", "8001 股1 126"]
+    def test_header_and_aligned_rows(self):
+        chunks = cli.format_for_telegram(_result(), show_filter=True)
+        assert len(chunks) == 1
+        text = chunks[0]
+        assert text.startswith("<b>📈 均線穿越 60MA</b>\n2026-10-07（三）・細產業過濾後 <b>2</b> 檔")
+        body = text.split("<pre>")[1].split("</pre>")[0].splitlines()
+        assert body == ["8000  股0  126.00", "8001  股1  126.00"]
         # 不含細產業排行與其他欄位
-        assert "熱門細產業" not in text
-        assert "被動元件" not in text and "60MA 113" not in text
+        assert "熱門細產業" not in text and "被動元件" not in text
+
+    def test_cjk_names_aligned_by_display_width(self):
+        res = _result(2)
+        res.stocks.loc[0, "name"] = "台嘉碩"
+        res.stocks.loc[1, "name"] = "長科*"
+        body = cli.format_for_telegram(res, True)[0].split("<pre>")[1].split("</pre>")[0].splitlines()
+        # 名稱欄補到相同顯示寬度，價格欄位置一致
+        assert cli._display_width(body[0]) == cli._display_width(body[1])
+
+    def test_html_escaped(self):
+        res = _result(1)
+        res.stocks.loc[0, "name"] = "A<B>&C"
+        text = cli.format_for_telegram(res, True)[0]
+        assert "A&lt;B&gt;&amp;C" in text
 
     def test_empty_results(self):
         text = "\n".join(cli.format_for_telegram(_result(0, hot=False), show_filter=True))
-        assert "今日無符合條件的股票" in text
+        assert "今日無符合條件的股票" in text and "<pre>" not in text
 
     def test_max_stocks_truncation(self):
         text = "\n".join(cli.format_for_telegram(_result(5), show_filter=True, max_stocks=2))
         assert "8001" in text and "8002" not in text
         assert "另有 3 檔" in text
 
-    def test_chunking_respects_limit(self):
+    def test_chunking_respects_limit_and_keeps_html_valid(self):
         chunks = cli.format_for_telegram(_result(400), show_filter=True, max_stocks=0)
         assert len(chunks) > 1
         assert all(len(c) <= cli.TELEGRAM_CHUNK_LIMIT for c in chunks)
+        assert all(c.count("<pre>") == c.count("</pre>") == 1 for c in chunks)
         assert sum(c.count(" 股") for c in chunks) == 400
+        assert chunks[0].startswith("<b>") and not chunks[1].startswith("<b>")
 
-    def test_send_uses_plain_text_and_configured_chat(self):
+    def test_send_uses_html_and_configured_chat(self):
         with patch.object(cli, "TelegramNotifier") as notifier_cls:
             notifier_cls.return_value.send_message.return_value = True
             assert cli.send_telegram(["a", "b"], chat_id="-100123")
             calls = notifier_cls.return_value.send_message.call_args_list
             assert [c.args[0] for c in calls] == ["a", "b"]
-            assert all(c.kwargs == {"chat_id": "-100123", "parse_mode": None} for c in calls)
+            assert all(c.kwargs == {"chat_id": "-100123", "parse_mode": "HTML"} for c in calls)
 
 
 class TestCliMain:

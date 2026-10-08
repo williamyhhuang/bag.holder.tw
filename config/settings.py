@@ -233,6 +233,10 @@ class DownloadSettings(BaseSettings):
     data_source: str = Field(default="yfinance", env="DOWNLOAD_DATA_SOURCE")
     # Fubon concurrent workers – mirrors yfinance batch_size (200 stocks at a time)
     fubon_max_workers: int = Field(default=200, env="DOWNLOAD_FUBON_MAX_WORKERS")
+    # 缺口偵測：檢查最近 N 天內是否有多數股票缺資料的交易日，有則先以 yfinance 補抓
+    gap_check_days: int = Field(default=180, env="DOWNLOAD_GAP_CHECK_DAYS")
+    # 每檔 CSV 只讀檔尾此位元組數判斷近期日期（約 80 bytes/列，16KB ≈ 200 列 > 180 天）
+    gap_check_tail_bytes: int = Field(default=16384, env="DOWNLOAD_GAP_CHECK_TAIL_BYTES")
 
     class Config:
         extra = 'ignore'

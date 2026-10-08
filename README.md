@@ -493,7 +493,7 @@ python main.py ma-cross --no-sub-industry-filter
 # 強制重新抓取細產業對照
 python main.py ma-cross --refresh-sub-industries
 
-# 結果發送到 Telegram（只列代號、名稱、收盤價；超過長度自動分段）
+# 結果發送到 Telegram（HTML 格式，等寬區塊列代號／名稱／收盤價；超過長度自動分段）
 python main.py ma-cross --send-telegram
 
 # 排程用：最新資料日不是今天（休市或資料未更新）就略過，不發送
@@ -1339,6 +1339,23 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.36.3 - 2026-10-08
+
+**修正缺口偵測漏掉「中間缺口」＋ Telegram 手機排版**
+
+- v5.36.2 只比對資料最後日期，若缺口後已寫入當日資料（例：7/02 → 10/08），缺口在中間就偵測不到。
+  改以參考股票（2330.TW）在 yfinance 的日K日期作為交易日曆（自動排除國定假日），
+  檢查最近 `DOWNLOAD_GAP_CHECK_DAYS`（180）天內不到半數股票有資料的交易日，從最早的缺口補抓到昨天
+- 新增設定 `DOWNLOAD_GAP_CHECK_DAYS`、`DOWNLOAD_GAP_CHECK_TAIL_BYTES`（只讀每檔 CSV 檔尾，避免整檔讀入）
+- Telegram 改用 HTML：標題兩行短句；股票清單放在等寬區塊，代號／名稱／收盤價三欄對齊（中文字以 2 格寬計算）
+  ```
+  📈 均線穿越 60MA
+  2026-10-08（四）・細產業過濾後 13 檔
+
+  3372  典範    16.40
+  4164  承業醫  28.00
+  ```
 
 ### v5.36.2 - 2026-10-08
 
