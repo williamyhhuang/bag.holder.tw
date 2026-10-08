@@ -61,40 +61,17 @@ def print_result(result: MACrossScanResult, show_filter: bool) -> None:
 
 
 def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks: int = 30) -> List[str]:
-    """組成 Telegram 純文字訊息（不使用 Markdown，避免股票名稱中的符號造成解析錯誤），依長度切段"""
-    cfg = settings.ma_cross
-    lines = [f"📈 均線穿越 60MA 選股｜{result.as_of}", ""]
-
-    if show_filter:
-        lines.append(
-            f"🔥 熱門細產業（成交值≥{_fmt_value(cfg.sub_industry_min_trade_value)}，"
-            f"漲幅前{cfg.sub_industry_top_n}）"
-        )
-        if result.hot_sub_industries.empty:
-            lines.append("（無細產業達成交值門檻）")
-        for i, r in result.hot_sub_industries.iterrows():
-            lines.append(
-                f"{i + 1}. {r['chain']}/{r['name']} {r['change_pct']:+.2f}%  {_fmt_value(r['trade_value'])}"
-            )
-        lines.append("")
-
-    header = f"5/10/20MA 穿越下彎或走平 60MA：{len(result.candidates)} 檔"
-    if show_filter:
-        header += f"，細產業過濾後 {len(result.stocks)} 檔"
-    lines.append(f"🎯 {header}")
+    """組成 Telegram 純文字訊息（只列代號、名稱、收盤價），依長度切段"""
+    title = "均線穿越 60MA" + ("（細產業過濾）" if show_filter else "")
+    lines = [f"📈 {title}｜{result.as_of}｜{len(result.stocks)} 檔"]
 
     if result.stocks.empty:
         lines.append("今日無符合條件的股票")
     shown = result.stocks.head(max_stocks) if max_stocks > 0 else result.stocks
     for _, r in shown.iterrows():
-        subs = r["hot_sub_industries"] if show_filter else r["sub_industries"]
-        cross = r["cross_date"].strftime("%m/%d") if hasattr(r["cross_date"], "strftime") else r["cross_date"]
-        lines.append(
-            f"• {r['code']} {r['name']}  收{r['close']:g}  60MA {r['ma60']:g}({r['ma60_slope_pct']:+.2f}%)"
-            f"  穿越{cross}" + (f"\n   {subs}" if subs else "")
-        )
+        lines.append(f"{r['code']} {r['name']} {r['close']:g}")
     if len(shown) < len(result.stocks):
-        lines.append(f"…另有 {len(result.stocks) - len(shown)} 檔，完整清單見 CSV")
+        lines.append(f"…另有 {len(result.stocks) - len(shown)} 檔")
 
     chunks: List[str] = []
     current = ""

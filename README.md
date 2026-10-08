@@ -493,7 +493,7 @@ python main.py ma-cross --no-sub-industry-filter
 # 強制重新抓取細產業對照
 python main.py ma-cross --refresh-sub-industries
 
-# 結果發送到 Telegram（純文字，超過長度自動分段）
+# 結果發送到 Telegram（只列代號、名稱、收盤價；超過長度自動分段）
 python main.py ma-cross --send-telegram
 
 # 排程用：最新資料日不是今天（休市或資料未更新）就略過，不發送
@@ -1339,6 +1339,18 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.36.1 - 2026-10-08
+
+**`ma-cross` Telegram 訊息精簡**
+
+- 移除熱門細產業排行，股票只列「代號 名稱 收盤價」，標題列含日期與檔數
+- 範例：
+  ```
+  📈 均線穿越 60MA（細產業過濾）｜2026-10-08｜13 檔
+  3372 典範 16.4
+  2484 希華 90.6
+  ```
 
 ### v5.36.0 - 2026-10-08
 

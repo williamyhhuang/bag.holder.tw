@@ -338,17 +338,17 @@ def _result(n_stocks=2, hot=True):
 
 
 class TestTelegramFormat:
-    def test_contains_key_info(self):
+    def test_only_code_name_close(self):
         text = "\n".join(cli.format_for_telegram(_result(), show_filter=True))
-        assert "2026-10-07" in text
-        assert "被動元件/電容器 +3.85%" in text
-        assert "1,324.9億" in text
-        assert "8000 股0" in text and "穿越10/06" in text
-        assert "-3.54%" in text
+        lines = text.splitlines()
+        assert "2026-10-07" in lines[0] and "2 檔" in lines[0]
+        assert lines[1:] == ["8000 股0 126", "8001 股1 126"]
+        # 不含細產業排行與其他欄位
+        assert "熱門細產業" not in text
+        assert "被動元件" not in text and "60MA 113" not in text
 
     def test_empty_results(self):
         text = "\n".join(cli.format_for_telegram(_result(0, hot=False), show_filter=True))
-        assert "無細產業達成交值門檻" in text
         assert "今日無符合條件的股票" in text
 
     def test_max_stocks_truncation(self):
@@ -357,10 +357,10 @@ class TestTelegramFormat:
         assert "另有 3 檔" in text
 
     def test_chunking_respects_limit(self):
-        chunks = cli.format_for_telegram(_result(200), show_filter=True, max_stocks=0)
+        chunks = cli.format_for_telegram(_result(400), show_filter=True, max_stocks=0)
         assert len(chunks) > 1
         assert all(len(c) <= cli.TELEGRAM_CHUNK_LIMIT for c in chunks)
-        assert sum(c.count("• ") for c in chunks) == 200
+        assert sum(c.count(" 股") for c in chunks) == 400
 
     def test_send_uses_plain_text_and_configured_chat(self):
         with patch.object(cli, "TelegramNotifier") as notifier_cls:
