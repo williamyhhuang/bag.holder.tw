@@ -315,3 +315,92 @@ class TestLoadPriceFrames:
         assert frames["1234"]["market"] == "TW"
         assert list(df["date"].dt.strftime("%Y-%m-%d")) == ["2026-10-06", "2026-10-07"]
         assert df["close"].iloc[0] == 10.5  # 重複日期保留最後一筆
+
+
+# ── CLI：Telegram 訊息與排程保護 ─────────────────────────────────────────────
+
+from src.application.services.ma_cross_scanner import MACrossScanResult, RESULT_COLUMNS
+from src.interfaces.cli import ma_cross_main as cli
+
+
+def _result(n_stocks=2, hot=True):
+    rows = [{
+        "cross_date": date(2026, 10, 6), "code": f"{8000 + i}", "name": f"股{i}", "market": "上市",
+        "sector": "電子零組件", "sub_industries": "被動元件/電容器", "hot_sub_industries": "被動元件/電容器",
+        "close": 126.0, "ma5": 1.0, "ma10": 1.0, "ma20": 1.0, "ma60": 113.25, "ma60_slope_pct": -3.54,
+        "volume": 1000,
+    } for i in range(n_stocks)]
+    stocks = pd.DataFrame(rows, columns=RESULT_COLUMNS)
+    hot_df = pd.DataFrame([{"sub_id": "J600", "chain": "被動元件", "name": "電容器", "members": 16,
+                            "trade_value": 1.3249e11, "change_pct": 3.85}]) if hot else pd.DataFrame(
+        columns=["sub_id", "chain", "name", "members", "trade_value", "change_pct"])
+    return MACrossScanResult(date(2026, 10, 7), stocks, stocks, pd.DataFrame(), hot_df)
+
+
+class TestTelegramFormat:
+    def test_contains_key_info(self):
+        text = "\n".join(cli.format_for_telegram(_result(), show_filter=True))
+        assert "2026-10-07" in text
+        assert "被動元件/電容器 +3.85%" in text
+        assert "1,324.9億" in text
+        assert "8000 股0" in text and "穿越10/06" in text
+        assert "-3.54%" in text
+
+    def test_empty_results(self):
+        text = "\n".join(cli.format_for_telegram(_result(0, hot=False), show_filter=True))
+        assert "無細產業達成交值門檻" in text
+        assert "今日無符合條件的股票" in text
+
+    def test_max_stocks_truncation(self):
+        text = "\n".join(cli.format_for_telegram(_result(5), show_filter=True, max_stocks=2))
+        assert "8001" in text and "8002" not in text
+        assert "另有 3 檔" in text
+
+    def test_chunking_respects_limit(self):
+        chunks = cli.format_for_telegram(_result(200), show_filter=True, max_stocks=0)
+        assert len(chunks) > 1
+        assert all(len(c) <= cli.TELEGRAM_CHUNK_LIMIT for c in chunks)
+        assert sum(c.count("• ") for c in chunks) == 200
+
+    def test_send_uses_plain_text_and_configured_chat(self):
+        with patch.object(cli, "TelegramNotifier") as notifier_cls:
+            notifier_cls.return_value.send_message.return_value = True
+            assert cli.send_telegram(["a", "b"], chat_id="-100123")
+            calls = notifier_cls.return_value.send_message.call_args_list
+            assert [c.args[0] for c in calls] == ["a", "b"]
+            assert all(c.kwargs == {"chat_id": "-100123", "parse_mode": None} for c in calls)
+
+
+class TestCliMain:
+    def _run(self, result, argv, today=date(2026, 10, 7)):
+        with patch.object(cli, "MACrossScanner") as scanner_cls, \
+                patch.object(cli, "today_taipei", return_value=today), \
+                patch.object(cli, "send_telegram", return_value=True) as send:
+            scanner_cls.return_value.scan.return_value = result
+            scanner_cls.return_value.save.return_value = "out.csv"
+            code = cli.main(argv)
+            return code, send, scanner_cls.return_value.save
+
+    def test_require_today_skips_stale_data(self):
+        code, send, save = self._run(_result(), ["--send-telegram", "--require-today"], today=date(2026, 10, 8))
+        assert code == 0
+        send.assert_not_called()
+        save.assert_not_called()
+
+    def test_sends_when_data_is_today(self):
+        code, send, save = self._run(_result(), ["--send-telegram", "--require-today"])
+        assert code == 0
+        send.assert_called_once()
+        save.assert_called_once()
+
+    def test_no_telegram_by_default(self):
+        code, send, _ = self._run(_result(), [])
+        assert code == 0
+        send.assert_not_called()
+
+    def test_telegram_failure_returns_error(self):
+        with patch.object(cli, "MACrossScanner") as scanner_cls, \
+                patch.object(cli, "send_telegram", return_value=False):
+            scanner_cls.return_value.scan.return_value = _result()
+            scanner_cls.return_value.save.return_value = "out.csv"
+            assert cli.main(["--send-telegram"]) == 1

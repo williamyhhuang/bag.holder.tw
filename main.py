@@ -133,6 +133,10 @@ def run_ma_cross(args):
         cmd.append('--refresh-sub-industries')
     if getattr(args, 'output_dir', None):
         cmd.extend(['--output-dir', args.output_dir])
+    if getattr(args, 'send_telegram', False):
+        cmd.append('--send-telegram')
+    if getattr(args, 'require_today', False):
+        cmd.append('--require-today')
 
     try:
         result = subprocess.run(cmd, cwd=project_root, check=True)
@@ -179,6 +183,7 @@ def create_parser():
   # 5/10/20MA 穿越下彎或走平 60MA，且所屬細產業指標成交值 >= 100 億、漲幅前 10 名
   python main.py ma-cross
   python main.py ma-cross --no-sub-industry-filter   # 只看均線條件
+  python main.py ma-cross --send-telegram            # 結果發送到 Telegram
         """
     )
 
@@ -295,6 +300,12 @@ def create_parser():
         help='強制重新抓取細產業對照（產業價值鏈平台）'
     )
     ma_cross_parser.add_argument('--output-dir', help='結果 CSV 輸出目錄')
+    ma_cross_parser.add_argument('--send-telegram', action='store_true', help='發送結果到 Telegram')
+    ma_cross_parser.add_argument(
+        '--require-today',
+        action='store_true',
+        help='最新資料日不是今天（台北時間）時略過，供排程使用'
+    )
 
     return parser
 

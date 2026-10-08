@@ -53,8 +53,9 @@ COPY docker/entrypoint-check-holdings.sh /entrypoint-check-holdings.sh
 COPY docker/entrypoint-sync-trades.sh /entrypoint-sync-trades.sh
 COPY docker/entrypoint-mtx-trader.sh /entrypoint-mtx-trader.sh
 COPY docker/entrypoint-mtx-60m-alert.sh /entrypoint-mtx-60m-alert.sh
+COPY docker/entrypoint-ma-cross.sh /entrypoint-ma-cross.sh
 
-RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh /entrypoint-check-holdings.sh /entrypoint-sync-trades.sh /entrypoint-mtx-trader.sh /entrypoint-mtx-60m-alert.sh && \
+RUN chmod +x /entrypoint-download.sh /entrypoint-signals.sh /entrypoint-webhook.sh /entrypoint-check-holdings.sh /entrypoint-sync-trades.sh /entrypoint-mtx-trader.sh /entrypoint-mtx-60m-alert.sh /entrypoint-ma-cross.sh && \
     mkdir -p /app/data /app/logs /app/reports /app/data/stocks
 
 ENV PYTHONPATH=/app

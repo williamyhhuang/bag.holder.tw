@@ -493,6 +493,12 @@ python main.py ma-cross --no-sub-industry-filter
 # 強制重新抓取細產業對照
 python main.py ma-cross --refresh-sub-industries
 
+# 結果發送到 Telegram（純文字，超過長度自動分段）
+python main.py ma-cross --send-telegram
+
+# 排程用：最新資料日不是今天（休市或資料未更新）就略過，不發送
+python main.py ma-cross --send-telegram --require-today
+
 # 也可以直接呼叫 CLI 模組
 python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 ```
@@ -530,6 +536,23 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 | `MA_CROSS_SUB_INDUSTRY_WEIGHTING` | equal | `equal` 等權 / `value` 成交值加權 |
 | `MA_CROSS_SUB_INDUSTRY_CACHE_TTL_HOURS` | 168 | 細產業對照快取時數 |
 | `MA_CROSS_OUTPUT_DIR` | data/ma_cross | 輸出目錄 |
+| `MA_CROSS_TELEGRAM_CHAT_ID` | （空） | 發送的 Telegram 頻道/聊天 ID，未設定沿用 `TELEGRAM_CHAT_ID`；頻道 ID 為 `-100` 開頭，且 Bot 須為頻道管理員 |
+| `MA_CROSS_TELEGRAM_MAX_STOCKS` | 30 | 訊息最多列出幾檔（0 = 不限） |
+
+**GCP 每日排程（台北時間週一至週五 14:30）：**
+
+Cloud Scheduler `bag-holder-run-ma-cross-trigger` → Workflow `bag-holder-run-ma-cross`
+（`terraform/deployable/run-ma-cross.workflow.yaml`）依序執行：
+
+1. `bag-holder-download`：下載當日日K，上傳 `gs://bag-holder-data/stocks.tar.gz`
+2. `bag-holder-ma-cross`（`docker/entrypoint-ma-cross.sh`）：取回資料 → `python main.py ma-cross --send-telegram --require-today`；
+   細產業對照快取保存在 `gs://bag-holder-data/sub_industries.json`
+
+休市日下載不到當日資料，`--require-today` 會略過發送。手動觸發：
+
+```bash
+gcloud workflows run bag-holder-run-ma-cross --location asia-east1 --project bag-holder-tw
+```
 
 > 自行合成的指標與看盤 App 的細產業指標分類、權重不同，數值不會完全一致。
 
@@ -1316,6 +1339,16 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.36.0 - 2026-10-08
+
+**`ma-cross` 每日排程 + Telegram 通知**
+
+- 新增 `--send-telegram`（純文字訊息，自動分段）與 `--require-today`（休市或資料未更新時略過）
+- 新增設定 `MA_CROSS_TELEGRAM_CHAT_ID`（可發送至指定頻道，未設定沿用 `TELEGRAM_CHAT_ID`）、`MA_CROSS_TELEGRAM_MAX_STOCKS`
+- GCP：新增 Cloud Run Job `bag-holder-ma-cross`、Workflow `bag-holder-run-ma-cross`（download → ma-cross）、
+  Cloud Scheduler 台北時間週一至週五 14:30 觸發
+- 新增單元測試：Telegram 訊息格式／分段／截斷、`--require-today` 略過邏輯、發送失敗回傳錯誤碼
 
 ### v5.35.0 - 2026-10-08
 

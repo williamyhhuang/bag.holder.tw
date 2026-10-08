@@ -132,6 +132,26 @@ module "job_check_holdings" {
   env_vars      = local.common_env_vars
 }
 
+# ── Cloud Run Job: bag-holder-ma-cross ───────────────────────────────────────
+module "job_ma_cross" {
+  source = "../modules/cloud_run_job"
+
+  name                  = "bag-holder-ma-cross"
+  project_id            = var.project_id
+  region                = var.region
+  image                 = var.image
+  service_account_email = local.runner_sa_email
+  command               = ["/entrypoint-ma-cross.sh"]
+  memory                = "2Gi"
+  cpu                   = "2"
+  task_timeout_seconds  = 600
+  max_retries           = 1
+  secret_env_vars       = local.common_secret_env_vars
+  # 只讀 GCS 資料、抓產業價值鏈平台並通知 Telegram，不需固定 NAT 出口。
+  vpc_subnet_id = null
+  env_vars      = local.common_env_vars
+}
+
 # ── Cloud Run Service: bag-holder-webhook ─────────────────────────────────────
 module "service_webhook" {
   source = "../modules/cloud_run_service"
@@ -205,6 +225,17 @@ resource "google_workflows_workflow" "run_jobs_10" {
   source_contents = file("${path.module}/run-jobs-10.workflow.yaml")
 
   depends_on = [module.job_download, module.job_signals, module.job_check_holdings]
+}
+
+# ── GCP Workflows: download → ma-cross 依序執行（14:30）──────────────────────
+resource "google_workflows_workflow" "run_ma_cross" {
+  name            = "bag-holder-run-ma-cross"
+  region          = var.region
+  project         = var.project_id
+  service_account = local.runner_sa_email
+  source_contents = file("${path.module}/run-ma-cross.workflow.yaml")
+
+  depends_on = [module.job_download, module.job_ma_cross]
 }
 
 # ── Cloud Scheduler → GCP Workflows ──────────────────────────────────────────
@@ -298,6 +329,29 @@ resource "google_cloud_scheduler_job" "sync_trades" {
   }
 
   depends_on = [google_workflows_workflow.sync_trades]
+}
+
+# 台北時間 14:30 週一至週五（收盤後下載當日資料 → ma-cross 選股 → Telegram）
+resource "google_cloud_scheduler_job" "run_ma_cross" {
+  name             = "bag-holder-run-ma-cross-trigger"
+  region           = var.region
+  project          = var.project_id
+  schedule         = "30 14 * * 1-5"
+  time_zone        = "Asia/Taipei"
+  attempt_deadline = "320s"
+  paused           = false
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://workflowexecutions.googleapis.com/v1/${google_workflows_workflow.run_ma_cross.id}/executions"
+    body        = base64encode("{}")
+
+    oauth_token {
+      service_account_email = local.runner_sa_email
+    }
+  }
+
+  depends_on = [google_workflows_workflow.run_ma_cross]
 }
 
 # ── MTX 自動交易已遷移至 GCE Spot VM（見 gce.tf）──────────────────────────────

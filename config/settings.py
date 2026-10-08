@@ -1276,6 +1276,16 @@ class MACrossSettings(BaseSettings):
         validation_alias=AliasChoices("MA_CROSS_OUTPUT_DIR"),
         description="篩選結果 CSV 輸出目錄",
     )
+    telegram_chat_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("MA_CROSS_TELEGRAM_CHAT_ID"),
+        description="ma-cross 結果發送的 Telegram 頻道/聊天 ID（未設定則沿用 TELEGRAM_CHAT_ID）",
+    )
+    telegram_max_stocks: int = Field(
+        default=30,
+        validation_alias=AliasChoices("MA_CROSS_TELEGRAM_MAX_STOCKS"),
+        description="Telegram 訊息最多列出幾檔股票（完整清單見 CSV）",
+    )
 
     model_config = {
         "extra": "ignore",
