@@ -125,6 +125,9 @@ python main.py check-holdings --send-telegram
 # 執行股票觀察清單
 python main.py scan
 
+# 5/10/20MA 穿越下彎或走平 60MA（含細產業指標過濾）
+python main.py ma-cross
+
 # 運行回測
 python main.py backtest
 
@@ -459,6 +462,76 @@ signal_cooldown_days: int = 0   # 冷卻期交易日數（0 = 停用）
 - **停用**：設定 `BACKTEST_SIGNAL_COOLDOWN_DAYS=0`
 - **適用範圍**：策略掃描（`signals`）與回測（`backtest`）皆有效
 - **歷史感知**：Scanner 即使只看今日訊號，冷卻期也會回溯歷史資料確認先前是否已觸發
+
+### 均線穿越 60MA + 細產業指標過濾 (ma-cross)
+
+篩出「**日K 5/10/20MA 穿越下彎或走平的 60MA**」，並只保留**所屬細產業指標當日成交值 ≥ 100 億、且漲幅排名前 10** 的股票。
+
+**均線條件**（`src/domain/services/ma_cross_screener.py`）：
+1. 60MA 下彎或走平：今日 60MA ÷ 5 日前 60MA − 1 ≤ +0.2%
+2. 5MA、10MA、20MA 皆在 60MA 之上
+3. 最近 5 個交易日內 20MA 由下往上穿越 60MA（20MA 最慢，它穿越代表三條都已站上）
+
+**細產業指標**（`src/domain/services/sub_industry_index.py`）：
+
+交易所與富邦 API 只提供官方大分類指數（如 `IX0032` 電子零組件類），沒有「石英元件」、「被動元件」這類細產業，因此自行合成：
+
+- **細產業與成分股**：櫃買中心[產業價值鏈資訊平台](https://ic.tpex.org.tw/)（約 410 個細產業，涵蓋約 1,750 檔上市櫃股票；一檔股票可屬多個細產業），快取於 `data/cache/sub_industries.json`（預設 7 天）
+- **成交值** = Σ 成分股 收盤價 × 成交股數
+- **漲幅** = 成分股當日漲跌幅等權平均（可改為成交值加權）
+- **熱門細產業** = 成交值 ≥ 門檻的細產業中，漲幅前 N 名；股票只要有任一所屬細產業入選即保留
+
+**使用方式：**
+
+```bash
+# 預設：均線條件 + 細產業過濾
+python main.py ma-cross
+
+# 只看均線條件，不過濾細產業
+python main.py ma-cross --no-sub-industry-filter
+
+# 強制重新抓取細產業對照
+python main.py ma-cross --refresh-sub-industries
+
+# 也可以直接呼叫 CLI 模組
+python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
+```
+
+**範例輸出：**
+
+```
+📅 基準日：2026-10-07
+
+🔥 熱門細產業（成交值 ≥ 100.0億，漲幅前 10 名，equal 加權）
+   1. 印刷電路板/玻璃纖維/玻纖布   漲幅 +5.72%  成交值 616.5億  成分股 6
+   ...
+   8. 被動元件/電容器              漲幅 +3.85%  成交值 1,324.9億  成分股 16
+  10. 被動元件/濾波器、振盪器      漲幅 +3.52%  成交值 1,018.7億  成分股 15
+
+📈 5/10/20MA 穿越下彎或走平 60MA：96 檔，細產業過濾後 7 檔
+  2026-10-06  2484   希華   電子零組件  收 87.10  60MA 72.94 (-0.36%)  被動元件/濾波器、振盪器
+  2026-10-06  8042   金山電 電子零組件  收 126.00 60MA 113.25 (-3.54%) 被動元件/電容器
+  ...
+```
+
+結果輸出至 `data/ma_cross/ma_cross_YYYYMMDD.csv`（股票清單，含名稱、產業別、所屬細產業、均線數值），
+以及 `data/ma_cross/sub_industry_metrics_YYYYMMDD.csv`（當日所有細產業指標排行）。
+
+**設定（`config/settings.py` → `MACrossSettings`，可用環境變數覆寫）：**
+
+| 環境變數 | 預設 | 說明 |
+|---|---|---|
+| `MA_CROSS_LOOKBACK_DAYS` | 5 | 20MA 需在最近 N 個交易日內穿越 60MA |
+| `MA_CROSS_MA60_SLOPE_DAYS` | 5 | 60MA 斜率比較區間 |
+| `MA_CROSS_MA60_FLAT_TOLERANCE` | 0.002 | 60MA 區間漲幅 ≤ 此值視為下彎或走平 |
+| `MA_CROSS_ENABLE_SUB_INDUSTRY_FILTER` | true | 是否套用細產業過濾 |
+| `MA_CROSS_SUB_INDUSTRY_MIN_TRADE_VALUE` | 1e10 | 細產業成交值門檻（元） |
+| `MA_CROSS_SUB_INDUSTRY_TOP_N` | 10 | 取漲幅前 N 名（0 = 不限） |
+| `MA_CROSS_SUB_INDUSTRY_WEIGHTING` | equal | `equal` 等權 / `value` 成交值加權 |
+| `MA_CROSS_SUB_INDUSTRY_CACHE_TTL_HOURS` | 168 | 細產業對照快取時數 |
+| `MA_CROSS_OUTPUT_DIR` | data/ma_cross | 輸出目錄 |
+
+> 自行合成的指標與看盤 App 的細產業指標分類、權重不同，數值不會完全一致。
 
 ### 回測分析 (backtest)
 完整的策略回測系統，驗證交易策略績效。
@@ -1217,6 +1290,18 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.34.0 - 2026-10-08
+
+**新增 `ma-cross`：5/10/20MA 穿越下彎或走平 60MA + 細產業指標過濾**
+
+- 新指令 `python main.py ma-cross`：篩出 20MA 於近 5 日穿越 60MA、5/10/20MA 皆站上下彎或走平（5 日斜率 ≤ +0.2%）60MA 的股票
+- 細產業指標：富邦 API 只有官方大分類指數（無細產業），改以櫃買中心產業價值鏈平台的細產業成分股自行合成
+  （成交值 = Σ 收盤 × 成交量；漲幅 = 成分股等權平均），保留所屬細產業成交值 ≥ 100 億且漲幅前 10 名的股票
+- 新增模組：`src/utils/sub_industry_mapper.py`、`src/domain/services/ma_cross_screener.py`、
+  `src/domain/services/sub_industry_index.py`、`src/application/services/ma_cross_scanner.py`、`src/interfaces/cli/ma_cross_main.py`
+- 新增設定 `MACrossSettings`（`MA_CROSS_*`），詳見「均線穿越 60MA + 細產業指標過濾」章節
+- 新增單元測試 `tests/test_ma_cross.py`（均線判斷、細產業指標計算、HTML 解析、快取、掃描整合）
 
 ### v5.33.0 - 2026-06-26
 

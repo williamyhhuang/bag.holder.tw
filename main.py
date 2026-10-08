@@ -123,6 +123,24 @@ def run_sync_trades(args):
         logger.error(f"Sync-trades command failed: {e}")
         return False
 
+def run_ma_cross(args):
+    """Run ma-cross command（5/10/20MA 穿越下彎或走平 60MA + 細產業指標過濾）"""
+    cmd = ['python', '-m', 'src.interfaces.cli.ma_cross_main']
+
+    if getattr(args, 'no_sub_industry_filter', False):
+        cmd.append('--no-sub-industry-filter')
+    if getattr(args, 'refresh_sub_industries', False):
+        cmd.append('--refresh-sub-industries')
+    if getattr(args, 'output_dir', None):
+        cmd.extend(['--output-dir', args.output_dir])
+
+    try:
+        result = subprocess.run(cmd, cwd=project_root, check=True)
+        return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        logger.error(f"MA-cross command failed: {e}")
+        return False
+
 def create_parser():
     """Create main argument parser"""
     parser = argparse.ArgumentParser(
@@ -157,6 +175,10 @@ def create_parser():
 
   # 同步 Fubon 今日成交記錄至 Google Sheets（每日 14:35 自動執行）
   python main.py sync-trades
+
+  # 5/10/20MA 穿越下彎或走平 60MA，且所屬細產業指標成交值 >= 100 億、漲幅前 10 名
+  python main.py ma-cross
+  python main.py ma-cross --no-sub-industry-filter   # 只看均線條件
         """
     )
 
@@ -257,6 +279,23 @@ def create_parser():
         help='同步 Fubon 今日成交記錄至 Google Sheets 交易記錄頁籤'
     )
 
+    # MA-cross command
+    ma_cross_parser = subparsers.add_parser(
+        'ma-cross',
+        help='5/10/20MA 穿越下彎或走平 60MA 篩選（含細產業指標過濾）'
+    )
+    ma_cross_parser.add_argument(
+        '--no-sub-industry-filter',
+        action='store_true',
+        help='不套用細產業指標過濾'
+    )
+    ma_cross_parser.add_argument(
+        '--refresh-sub-industries',
+        action='store_true',
+        help='強制重新抓取細產業對照（產業價值鏈平台）'
+    )
+    ma_cross_parser.add_argument('--output-dir', help='結果 CSV 輸出目錄')
+
     return parser
 
 def main():
@@ -287,6 +326,8 @@ def main():
             success = run_check_holdings(args)
         elif args.command == 'sync-trades':
             success = run_sync_trades(args)
+        elif args.command == 'ma-cross':
+            success = run_ma_cross(args)
         else:
             parser.print_help()
             sys.exit(1)

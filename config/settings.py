@@ -1229,6 +1229,62 @@ class MTXTraderSettings(BaseSettings):
     }
 
 
+class MACrossSettings(BaseSettings):
+    """均線穿越 60MA 篩選 + 細產業指標過濾（python main.py ma-cross）"""
+    lookback_days: int = Field(
+        default=5,
+        validation_alias=AliasChoices("MA_CROSS_LOOKBACK_DAYS"),
+        description="20MA 需在最近 N 個交易日內由下往上穿越 60MA",
+    )
+    ma60_slope_days: int = Field(
+        default=5,
+        validation_alias=AliasChoices("MA_CROSS_MA60_SLOPE_DAYS"),
+        description="60MA 斜率比較區間（今日 60MA vs N 日前 60MA）",
+    )
+    ma60_flat_tolerance: float = Field(
+        default=0.002,
+        validation_alias=AliasChoices("MA_CROSS_MA60_FLAT_TOLERANCE"),
+        description="60MA 區間漲幅 <= 此值視為下彎或走平（0.002 = +0.2%）",
+    )
+    enable_sub_industry_filter: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MA_CROSS_ENABLE_SUB_INDUSTRY_FILTER"),
+        description="是否只保留所屬細產業指標屬於熱門族群的股票",
+    )
+    sub_industry_min_trade_value: float = Field(
+        default=1e10,
+        validation_alias=AliasChoices("MA_CROSS_SUB_INDUSTRY_MIN_TRADE_VALUE"),
+        description="細產業指標當日成交值門檻（元，1e10 = 100 億）",
+    )
+    sub_industry_top_n: int = Field(
+        default=10,
+        validation_alias=AliasChoices("MA_CROSS_SUB_INDUSTRY_TOP_N"),
+        description="成交值達門檻的細產業中，取漲幅前 N 名",
+    )
+    sub_industry_weighting: str = Field(
+        default="equal",
+        validation_alias=AliasChoices("MA_CROSS_SUB_INDUSTRY_WEIGHTING"),
+        description="細產業漲幅計算方式：equal（成分股等權平均）/ value（成交值加權）",
+    )
+    sub_industry_cache_ttl_hours: float = Field(
+        default=168,
+        validation_alias=AliasChoices("MA_CROSS_SUB_INDUSTRY_CACHE_TTL_HOURS"),
+        description="細產業對照快取有效時數（產業價值鏈平台更新頻率低，預設 7 天）",
+    )
+    output_dir: str = Field(
+        default="data/ma_cross",
+        validation_alias=AliasChoices("MA_CROSS_OUTPUT_DIR"),
+        description="篩選結果 CSV 輸出目錄",
+    )
+
+    model_config = {
+        "extra": "ignore",
+        "populate_by_name": True,
+        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file_encoding": "utf-8",
+    }
+
+
 class Settings(BaseSettings):
     """Main application settings"""
     # Sub-settings
@@ -1253,6 +1309,7 @@ class Settings(BaseSettings):
     google_sheets: GoogleSheetsSettings = GoogleSheetsSettings()
     mtx_trader: MTXTraderSettings = MTXTraderSettings()
     finmind: FinMindSettings = FinMindSettings()
+    ma_cross: MACrossSettings = MACrossSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")
