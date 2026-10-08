@@ -533,6 +533,32 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 
 > 自行合成的指標與看盤 App 的細產業指標分類、權重不同，數值不會完全一致。
 
+**top N 回測比較（`scripts/backtest_ma_cross_topn.py`）：**
+
+每個交易日收盤後依 `ma-cross` 規則選股（與生產端同一套條件，`tests/test_ma_cross_backtest.py` 驗證逐日一致），
+t+1 開盤進場、t+h 收盤出場，並以同期全市場等權報酬計算超額報酬；預設只計「新進榜」訊號。
+
+```bash
+python scripts/backtest_ma_cross_topn.py                       # 比較 no_filter / top5/10/15/20/30
+python scripts/backtest_ma_cross_topn.py --top-n 10 20 --by-year
+python scripts/backtest_ma_cross_topn.py --start 2024-01-01 --all-days
+```
+
+2021-05 ~ 2026-10 結果摘要（新進榜訊號，20 日超額報酬為訊號平均）：
+
+| 組合 | 訊號數 | 20日報酬 | 20日勝率 | 20日超額 |
+|---|---|---|---|---|
+| no_filter | 16,480 | +0.16% | 42.5% | −0.17% |
+| top5 | 2,280 | +0.46% | 43.8% | +0.60% |
+| top10 | 3,861 | +0.77% | 42.7% | +0.72% |
+| top20 | 5,306 | +0.67% | 42.3% | +0.46% |
+
+- 細產業過濾讓 20 日超額報酬由負轉正（約 +0.5~0.9%），但以非重疊樣本檢定 t 值皆 < 2，**統計上不顯著**
+- top N 之間差異在雜訊範圍內；2022 空頭年度所有組合皆為負超額；2026 年表現特別突出（拉高全期平均）
+- 勝率約 42%、中位數報酬為負，報酬集中在少數大漲股，不宜單獨作為進場策略
+
+結果輸出至 `data/ma_cross/topn_backtest.csv`。
+
 ### 回測分析 (backtest)
 完整的策略回測系統，驗證交易策略績效。
 
@@ -1290,6 +1316,16 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.35.0 - 2026-10-08
+
+**新增 `ma-cross` 細產業 top N 回測（`scripts/backtest_ma_cross_topn.py`）**
+
+- 新增 `src/application/services/ma_cross_backtest.py`：均線條件、細產業指標、熱門細產業的向量化版本，
+  t+1 開盤進場、t+1/5/10/20 日收盤出場，含全市場等權超額報酬與逐年拆分
+- 一致性：`tests/test_ma_cross_backtest.py` 比對向量化結果與生產端 `MACrossScanner` 逐日選股完全一致
+- `load_price_frames` 增讀 `open` 欄位（回測進場價）
+- 回測結論：細產業過濾使 20 日超額報酬由 −0.17% 提升至 +0.5~0.7%，但不顯著；top10 與 top20 差異在雜訊內，維持預設 top10
 
 ### v5.34.0 - 2026-10-08
 

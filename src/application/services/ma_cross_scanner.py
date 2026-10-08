@@ -59,7 +59,7 @@ def load_price_frames(stocks_dir: str) -> Dict[str, Dict]:
             continue
         code, market = stem.split("_", 1)
         try:
-            df = pd.read_csv(path, usecols=["date", "close", "volume"])
+            df = pd.read_csv(path, usecols=lambda c: c in ("date", "open", "close", "volume"))
         except Exception as e:
             logger.warning(f"讀取 {path} 失敗: {e}")
             continue
