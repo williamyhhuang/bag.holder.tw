@@ -2,10 +2,14 @@
 Main data downloader module
 """
 import argparse
+import glob
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Optional
+
+import pandas as pd
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -16,6 +20,46 @@ from src.utils.logger import get_logger
 from config.settings import settings
 
 logger = get_logger(__name__)
+
+
+def _last_date_in_csv(path: str) -> Optional[date]:
+    """只讀檔尾取最後一筆日期（避免整檔讀入）"""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 512))
+            tail = f.read().decode("utf-8", errors="ignore").strip().splitlines()
+        if not tail:
+            return None
+        return datetime.strptime(tail[-1].split(",")[0][:10], "%Y-%m-%d").date()
+    except (OSError, ValueError):
+        return None
+
+
+def latest_local_date(stocks_dir: str) -> Optional[date]:
+    """本地日K最常見的最後日期（取眾數，避免少數髒檔或停牌股影響）"""
+    dates = [
+        d for path in glob.glob(os.path.join(stocks_dir, "*.csv"))
+        if not os.path.basename(path).upper().startswith("TEST")
+        and (d := _last_date_in_csv(path)) is not None
+    ]
+    if not dates:
+        return None
+    return pd.Series(dates).mode().iloc[0]
+
+
+def find_backfill_start(latest: Optional[date], today: date) -> Optional[date]:
+    """本地最後日期與今天之間若有缺漏的平日，回傳需補抓的起始日；無缺口回傳 None。
+
+    快照 API 只能抓「今天」，排程停過一段時間後會留下缺口（均線、漲跌幅都會算錯）。
+    國定假日也會被當成缺口，只會多做一次小範圍補抓，不影響正確性。
+    """
+    if latest is None:
+        return None
+    missing = pd.bdate_range(latest + timedelta(days=1), today - timedelta(days=1))
+    return (latest + timedelta(days=1)) if len(missing) else None
+
 
 class DataDownloaderCLI:
     """Command line interface for data downloader"""
@@ -47,6 +91,27 @@ class DataDownloaderCLI:
             self.logger.error(f"Invalid date format: {date_str}. Use YYYY-MM-DD")
             sys.exit(1)
 
+    def backfill_gap(self) -> int:
+        """補齊本地資料與今天之間的缺口（yfinance 批次下載，2000 檔約數分鐘）。
+
+        失敗不中斷主流程：今日資料仍會照常下載。
+        """
+        import pytz
+        today = datetime.now(pytz.timezone("Asia/Taipei")).date()
+        start = find_backfill_start(latest_local_date(settings.data.stocks_path), today)
+        if start is None:
+            return 0
+        self.logger.warning(f"偵測到資料缺口，補抓 {start} ~ {today - timedelta(days=1)}")
+        try:
+            # yfinance 的 end 不含當日；今日資料交由主要來源（富邦快照）下載
+            return YFinanceClient().download_all_stocks(
+                datetime.combine(start, datetime.min.time()),
+                datetime.combine(today, datetime.min.time()),
+            )
+        except Exception as e:
+            self.logger.error(f"補抓缺口失敗: {e}")
+            return 0
+
     def run_download(self, args):
         """Run the download command.
 
@@ -73,6 +138,7 @@ class DataDownloaderCLI:
                 self.logger.info(f"Data source: {attempt_source}")
 
                 if start_date is None and end_date is None:
+                    self.backfill_gap()
                     self.logger.info("No dates provided, downloading recent data")
                     count = client.download_recent_data()
                 else:
