@@ -493,7 +493,7 @@ python main.py ma-cross --no-sub-industry-filter
 # 強制重新抓取細產業對照
 python main.py ma-cross --refresh-sub-industries
 
-# 結果發送到 Telegram（依細產業分組，每檔一行：代號 名稱 收盤價；超過長度自動分段）
+# 結果發送到 Telegram（依細產業分組，每檔一行：代號 名稱 收盤價 漲跌幅；超過長度自動分段）
 python main.py ma-cross --send-telegram
 
 # 排程用：最新資料日不是今天（休市或資料未更新）就略過，不發送
@@ -1339,6 +1339,13 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.37.2 - 2026-10-08
+
+**Telegram 訊息加上當日漲跌幅**
+
+- 結果新增欄位 `change_pct`（當日漲跌幅 %，相對前一個交易日收盤）
+- Telegram 每檔一行改為「代號 名稱 收盤價 漲跌幅」，例：`2484  希華  90.60  +4.02%`
 
 ### v5.37.1 - 2026-10-08
 

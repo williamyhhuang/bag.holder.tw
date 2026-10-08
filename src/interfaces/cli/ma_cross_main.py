@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+import pandas as pd
+
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
@@ -68,7 +70,7 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
     """組成 Telegram HTML 訊息（parse_mode=HTML）。
 
     手機版面：標題兩行短句；股票依代表細產業分組（熱門細產業依漲幅排名排序），
-    每組一行細產業名稱，其下每檔一行「代號(粗體) 名稱 收盤價」。
+    每組一行細產業名稱，其下每檔一行「代號(粗體) 名稱 收盤價 漲跌幅」。
     不用 <pre> 等寬區塊：手機上右上角的複製按鈕會遮住內容，中文字寬也對不齊。
     超過長度時依行切段。
     """
@@ -90,6 +92,7 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
         group = r.get("main_sub_industry") or "其他"
         groups.setdefault(group, []).append(
             f"<b>{html.escape(str(r['code']))}</b>  {html.escape(str(r['name']))}  {r['close']:.2f}"
+            + (f"  {r['change_pct']:+.2f}%" if pd.notna(r.get("change_pct")) else "")
         )
 
     lines: List[str] = []

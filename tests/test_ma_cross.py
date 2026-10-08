@@ -280,6 +280,9 @@ class TestMACrossScanner:
         assert row["sector"] == "電子零組件"
         assert row["hot_sub_industries"] == "鏈/熱"
         assert row["main_sub_industry"] == "鏈/熱"
+        df = self._frames()["1111"]["df"]
+        expected = round((df["close"].iloc[-1] / df["close"].iloc[-2] - 1) * 100, 2)
+        assert row["change_pct"] == expected
 
     def test_trade_value_threshold_excludes_all(self):
         subs = {"HOT": {"name": "熱", "chain": "鏈", "codes": ["1111"]}}
@@ -344,7 +347,7 @@ def _result(n_stocks=2, hot=True):
         "cross_date": date(2026, 10, 6), "code": f"{8000 + i}", "name": f"股{i}", "market": "上市",
         "sector": "電子零組件", "sub_industries": "被動元件/電容器", "hot_sub_industries": "被動元件/電容器",
         "main_sub_industry": "被動元件/電容器",
-        "close": 126.0, "ma5": 1.0, "ma10": 1.0, "ma20": 1.0, "ma60": 113.25, "ma60_slope_pct": -3.54,
+        "close": 126.0, "change_pct": 9.92, "ma5": 1.0, "ma10": 1.0, "ma20": 1.0, "ma60": 113.25, "ma60_slope_pct": -3.54,
         "volume": 1000,
     } for i in range(n_stocks)]
     stocks = pd.DataFrame(rows, columns=RESULT_COLUMNS)
@@ -360,7 +363,7 @@ class TestTelegramFormat:
         assert chunks == [
             "<b>📈 均線穿越 60MA</b>\n2026-10-07（三）・細產業過濾後 <b>2</b> 檔\n\n"
             "🏷 <b>被動元件/電容器</b>\n"
-            "<b>8000</b>  股0  126.00\n<b>8001</b>  股1  126.00"
+            "<b>8000</b>  股0  126.00  +9.92%\n<b>8001</b>  股1  126.00  +9.92%"
         ]
         # 不用 <pre>（手機複製按鈕會遮住內容），也不含細產業漲幅排行
         assert "<pre>" not in chunks[0] and "熱門細產業" not in chunks[0]
@@ -381,6 +384,14 @@ class TestTelegramFormat:
         # 同組股票維持原順序
         yi = text.split("🏷 <b>鏈/乙</b>\n")[1].split("\n\n")[0].splitlines()
         assert [line.split("</b>")[0][3:] for line in yi] == ["8000", "8003"]
+
+    def test_change_pct_sign_and_missing(self):
+        res = _result(2)
+        res.stocks.loc[0, "change_pct"] = -1.5
+        res.stocks.loc[1, "change_pct"] = float("nan")
+        lines = cli.format_for_telegram(res, True)[0].splitlines()
+        assert "<b>8000</b>  股0  126.00  -1.50%" in lines
+        assert "<b>8001</b>  股1  126.00" in lines
 
     def test_html_escaped(self):
         res = _result(1)

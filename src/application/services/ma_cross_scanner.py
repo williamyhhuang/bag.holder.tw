@@ -38,7 +38,7 @@ logger = get_logger(__name__)
 RESULT_COLUMNS = [
     "cross_date", "code", "name", "market", "sector", "sub_industries", "hot_sub_industries",
     "main_sub_industry",
-    "close", "ma5", "ma10", "ma20", "ma60", "ma60_slope_pct", "volume",
+    "close", "change_pct", "ma5", "ma10", "ma20", "ma60", "ma60_slope_pct", "volume",
 ]
 
 
@@ -146,6 +146,8 @@ class MACrossScanner:
                 # 代表細產業：所屬熱門細產業中排名最前者；無熱門細產業時取第一個所屬細產業
                 "main_sub_industry": self._main_sub_industry(subs, hot_rank, sub_industries),
                 "close": round(hit["close"], 2),
+                # 當日漲跌幅（%）：相對該股前一個有交易的日子
+                "change_pct": round((df["close"].iloc[-1] / df["close"].iloc[-2] - 1) * 100, 2),
                 "ma5": round(hit["ma5"], 2),
                 "ma10": round(hit["ma10"], 2),
                 "ma20": round(hit["ma20"], 2),
