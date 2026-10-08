@@ -12,7 +12,7 @@ import html
 import sys
 from datetime import date, datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 project_root = Path(__file__).parent.parent.parent.parent
@@ -67,9 +67,10 @@ WEEKDAYS = "一二三四五六日"
 def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks: int = 30) -> List[str]:
     """組成 Telegram HTML 訊息（parse_mode=HTML）。
 
-    手機版面：標題兩行短句；每檔一行「代號(粗體) 名稱 收盤價」。
+    手機版面：標題兩行短句；股票依代表細產業分組（熱門細產業依漲幅排名排序），
+    每組一行細產業名稱，其下每檔一行「代號(粗體) 名稱 收盤價」。
     不用 <pre> 等寬區塊：手機上右上角的複製按鈕會遮住內容，中文字寬也對不齊。
-    超過長度時依股票列切段。
+    超過長度時依行切段。
     """
     as_of = result.as_of
     day = f"{as_of:%Y-%m-%d}（{WEEKDAYS[as_of.weekday()]}）" if as_of else "-"
@@ -80,15 +81,28 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
         return [f"{header}\n\n今日無符合條件的股票"]
 
     shown = result.stocks.head(max_stocks) if max_stocks > 0 else result.stocks
-    lines = [
-        f"<b>{html.escape(str(r['code']))}</b>  {html.escape(str(r['name']))}  {r['close']:.2f}"
-        for _, r in shown.iterrows()
-    ]
+    order = {}
+    if not result.hot_sub_industries.empty:
+        for i, r in result.hot_sub_industries.reset_index(drop=True).iterrows():
+            order[f"{r['chain']}/{r['name']}"] = i
+    groups: Dict[str, List[str]] = {}
+    for _, r in shown.iterrows():
+        group = r.get("main_sub_industry") or "其他"
+        groups.setdefault(group, []).append(
+            f"<b>{html.escape(str(r['code']))}</b>  {html.escape(str(r['name']))}  {r['close']:.2f}"
+        )
+
+    lines: List[str] = []
+    for group in sorted(groups, key=lambda g: (order.get(g, len(order)), g == "其他")):
+        lines.append("")
+        lines.append(f"🏷 <b>{html.escape(group)}</b>")
+        lines.extend(groups[group])
     if len(shown) < len(result.stocks):
+        lines.append("")
         lines.append(f"…另有 {len(result.stocks) - len(shown)} 檔")
 
     chunks: List[str] = []
-    current = header + "\n"
+    current = header
     for line in lines:
         candidate = f"{current}\n{line}"
         if len(candidate) > TELEGRAM_CHUNK_LIMIT and current.strip():

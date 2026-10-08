@@ -37,6 +37,7 @@ logger = get_logger(__name__)
 
 RESULT_COLUMNS = [
     "cross_date", "code", "name", "market", "sector", "sub_industries", "hot_sub_industries",
+    "main_sub_industry",
     "close", "ma5", "ma10", "ma20", "ma60", "ma60_slope_pct", "volume",
 ]
 
@@ -114,7 +115,7 @@ class MACrossScanner:
         snapshot = build_daily_snapshot(dfs, as_of)
         metrics = compute_sub_industry_metrics(snapshot, sub_industries, cfg.sub_industry_weighting)
         hot = select_hot_sub_industries(metrics, cfg.sub_industry_min_trade_value, cfg.sub_industry_top_n)
-        hot_ids = set(hot["sub_id"])
+        hot_rank = {sub_id: i for i, sub_id in enumerate(hot["sub_id"])}  # 漲幅排名，0 = 第一名
 
         # ── 均線條件 ─────────────────────────────────────────────────
         rows: List[Dict] = []
@@ -140,8 +141,10 @@ class MACrossScanner:
                 "sector": get_sector_name(industries[code]) if code in industries else "",
                 "sub_industries": "、".join(format_sub_industry(sub_industries[s]) for s in subs),
                 "hot_sub_industries": "、".join(
-                    format_sub_industry(sub_industries[s]) for s in subs if s in hot_ids
+                    format_sub_industry(sub_industries[s]) for s in subs if s in hot_rank
                 ),
+                # 代表細產業：所屬熱門細產業中排名最前者；無熱門細產業時取第一個所屬細產業
+                "main_sub_industry": self._main_sub_industry(subs, hot_rank, sub_industries),
                 "close": round(hit["close"], 2),
                 "ma5": round(hit["ma5"], 2),
                 "ma10": round(hit["ma10"], 2),
@@ -166,6 +169,13 @@ class MACrossScanner:
             f"過濾後 {len(stocks)} 檔"
         )
         return MACrossScanResult(as_of, candidates, stocks, metrics, hot)
+
+    @staticmethod
+    def _main_sub_industry(subs: List[str], hot_rank: Dict[str, int], sub_industries: Dict[str, Dict]) -> str:
+        hot_subs = [s for s in subs if s in hot_rank]
+        if hot_subs:
+            return format_sub_industry(sub_industries[min(hot_subs, key=hot_rank.get)])
+        return format_sub_industry(sub_industries[subs[0]]) if subs else ""
 
     def save(self, result: MACrossScanResult, output_dir: Optional[str] = None) -> str:
         out_dir = output_dir or self.cfg.output_dir

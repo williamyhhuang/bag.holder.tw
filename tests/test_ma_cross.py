@@ -279,6 +279,7 @@ class TestMACrossScanner:
         assert row["market"] == "上市"
         assert row["sector"] == "電子零組件"
         assert row["hot_sub_industries"] == "鏈/熱"
+        assert row["main_sub_industry"] == "鏈/熱"
 
     def test_trade_value_threshold_excludes_all(self):
         subs = {"HOT": {"name": "熱", "chain": "鏈", "codes": ["1111"]}}
@@ -298,6 +299,21 @@ class TestMACrossScanner:
         path = scanner.save(result, str(tmp_path))
         assert os.path.exists(path)
         assert any(p.name.startswith("sub_industry_metrics_") for p in tmp_path.iterdir())
+
+
+class TestMainSubIndustry:
+    SUBS = {
+        "A": {"name": "甲", "chain": "鏈"},
+        "B": {"name": "乙", "chain": "鏈"},
+        "C": {"name": "丙", "chain": "鏈"},
+    }
+
+    def test_picks_best_ranked_hot_sub(self):
+        assert MACrossScanner._main_sub_industry(["A", "B", "C"], {"C": 0, "B": 3}, self.SUBS) == "鏈/丙"
+
+    def test_falls_back_to_first_sub(self):
+        assert MACrossScanner._main_sub_industry(["B", "A"], {}, self.SUBS) == "鏈/乙"
+        assert MACrossScanner._main_sub_industry([], {}, self.SUBS) == ""
 
 
 class TestLoadPriceFrames:
@@ -327,6 +343,7 @@ def _result(n_stocks=2, hot=True):
     rows = [{
         "cross_date": date(2026, 10, 6), "code": f"{8000 + i}", "name": f"股{i}", "market": "上市",
         "sector": "電子零組件", "sub_industries": "被動元件/電容器", "hot_sub_industries": "被動元件/電容器",
+        "main_sub_industry": "被動元件/電容器",
         "close": 126.0, "ma5": 1.0, "ma10": 1.0, "ma20": 1.0, "ma60": 113.25, "ma60_slope_pct": -3.54,
         "volume": 1000,
     } for i in range(n_stocks)]
@@ -342,10 +359,28 @@ class TestTelegramFormat:
         chunks = cli.format_for_telegram(_result(), show_filter=True)
         assert chunks == [
             "<b>📈 均線穿越 60MA</b>\n2026-10-07（三）・細產業過濾後 <b>2</b> 檔\n\n"
+            "🏷 <b>被動元件/電容器</b>\n"
             "<b>8000</b>  股0  126.00\n<b>8001</b>  股1  126.00"
         ]
-        # 不用 <pre>（手機複製按鈕會遮住內容），也不含細產業排行
+        # 不用 <pre>（手機複製按鈕會遮住內容），也不含細產業漲幅排行
         assert "<pre>" not in chunks[0] and "熱門細產業" not in chunks[0]
+
+    def test_grouped_by_hot_rank_and_other_last(self):
+        res = _result(4)
+        res.stocks.loc[0, "main_sub_industry"] = "鏈/乙"
+        res.stocks.loc[1, "main_sub_industry"] = ""
+        res.stocks.loc[2, "main_sub_industry"] = "鏈/甲"
+        res.stocks.loc[3, "main_sub_industry"] = "鏈/乙"
+        res.hot_sub_industries = pd.DataFrame([
+            {"sub_id": "A", "chain": "鏈", "name": "甲", "members": 1, "trade_value": 1e11, "change_pct": 5.0},
+            {"sub_id": "B", "chain": "鏈", "name": "乙", "members": 1, "trade_value": 1e11, "change_pct": 3.0},
+        ])
+        text = cli.format_for_telegram(res, True)[0]
+        groups = [line for line in text.splitlines() if line.startswith("🏷")]
+        assert groups == ["🏷 <b>鏈/甲</b>", "🏷 <b>鏈/乙</b>", "🏷 <b>其他</b>"]
+        # 同組股票維持原順序
+        yi = text.split("🏷 <b>鏈/乙</b>\n")[1].split("\n\n")[0].splitlines()
+        assert [line.split("</b>")[0][3:] for line in yi] == ["8000", "8003"]
 
     def test_html_escaped(self):
         res = _result(1)
