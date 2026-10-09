@@ -422,6 +422,27 @@ class TestDownloadSnapshot:
         assert count == 2  # 00679B filtered out, TIB returns empty
 
 
+    def test_snapshot_skipped_when_quote_date_is_not_today(self, mock_weekday):
+        """休市日快照回傳上一交易日行情（date != 今天）→ 不寫入任何資料"""
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {
+            "date": "2026-05-14", "time": "140000", "data": self.SNAPSHOT_TSE,
+        }
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            count = client.download_snapshot(markets=["TSE"])
+        assert count == 0
+        mock_save.assert_not_called()
+
+    def test_snapshot_saved_when_quote_date_is_today(self, mock_weekday):
+        client = _make_client()
+        client._reststock.snapshot.quotes.return_value = {
+            "date": WEEKDAY_DATE, "time": "140000", "data": self.SNAPSHOT_TSE,
+        }
+        with patch.object(client, "save_stock_data", return_value=True) as mock_save:
+            count = client.download_snapshot(markets=["TSE"])
+        assert count == 4  # TSE + TIB 各 2 檔（同一個 mock 回應）
+        assert all(c.args[1]["date"].iloc[0] == pd.Timestamp(WEEKDAY_DATE) for c in mock_save.call_args_list)
+
     def test_snapshot_skipped_on_weekend(self):
         """download_snapshot should return 0 without any API calls on weekends."""
         import pytz

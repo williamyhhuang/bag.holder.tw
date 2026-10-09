@@ -455,6 +455,16 @@ class FubonDownloadClient:
                 logger.error(f"Snapshot failed for {market}: {e}")
                 continue
 
+            # 休市日（國定假日、颱風假）快照回傳的是上一個交易日的行情；
+            # 若直接標成今天寫入，會產生一筆重複價格、漲跌 0% 的假 K 棒。
+            quote_date = result.get("date") if isinstance(result, dict) else None
+            if quote_date and str(quote_date)[:10] != today_str:
+                logger.warning(
+                    f"Snapshot {market} skipped: quote date {quote_date} != today {today_str} "
+                    f"(market closed today)"
+                )
+                continue
+
             # Filter to plain 4-digit numeric symbols only (same as yfinance)
             # Fubon tradeVolume is in 張 (1 張 = 1000 shares); multiply to match
             # yfinance's shares-based volume.
