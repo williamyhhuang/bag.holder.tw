@@ -1250,6 +1250,11 @@ class MACrossSettings(BaseSettings):
         validation_alias=AliasChoices("MA_CROSS_MA60_FLAT_TOLERANCE"),
         description="60MA 區間漲幅 <= 此值視為下彎或走平（0.002 = +0.2%）",
     )
+    min_volume_lots: int = Field(
+        default=1000,
+        validation_alias=AliasChoices("MA_CROSS_MIN_VOLUME_LOTS"),
+        description="當日成交量下限（張，1 張 = 1000 股；0 = 不限）",
+    )
     enable_sub_industry_filter: bool = Field(
         default=True,
         validation_alias=AliasChoices("MA_CROSS_ENABLE_SUB_INDUSTRY_FILTER"),

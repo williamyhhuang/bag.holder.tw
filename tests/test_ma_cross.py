@@ -57,7 +57,7 @@ def find_cross_len(closes):
 def default_cfg(**over):
     base = dict(
         lookback_days=5, ma60_slope_days=5, ma60_flat_tolerance=0.002,
-        enable_sub_industry_filter=True, sub_industry_min_trade_value=1e4,
+        min_volume_lots=0, enable_sub_industry_filter=True, sub_industry_min_trade_value=1e4,
         sub_industry_top_n=10, sub_industry_weighting="equal",
         sub_industry_cache_ttl_hours=168, output_dir="unused",
     )
@@ -290,6 +290,11 @@ class TestMACrossScanner:
         assert result.hot_sub_industries.empty
         assert result.stocks.empty
         assert len(result.candidates) == 2
+
+    def test_min_volume_filter(self):
+        # 測試資料成交量為 1000 股（1 張）
+        assert len(self._scan({}, enable_sub_industry_filter=False, min_volume_lots=1).candidates) == 2
+        assert self._scan({}, enable_sub_industry_filter=False, min_volume_lots=2).candidates.empty
 
     def test_filter_disabled(self):
         result = self._scan({}, enable_sub_industry_filter=False)

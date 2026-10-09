@@ -471,6 +471,7 @@ signal_cooldown_days: int = 0   # 冷卻期交易日數（0 = 停用）
 1. 60MA 下彎或走平：今日 60MA ÷ 5 日前 60MA − 1 ≤ +0.2%
 2. 5MA、10MA、20MA 皆在 60MA 之上
 3. 最近 5 個交易日內 20MA 由下往上穿越 60MA（20MA 最慢，它穿越代表三條都已站上）
+4. 當日成交量 ≥ 1,000 張（`MA_CROSS_MIN_VOLUME_LOTS`）
 
 **細產業指標**（`src/domain/services/sub_industry_index.py`）：
 
@@ -530,6 +531,7 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 | `MA_CROSS_LOOKBACK_DAYS` | 5 | 20MA 需在最近 N 個交易日內穿越 60MA |
 | `MA_CROSS_MA60_SLOPE_DAYS` | 5 | 60MA 斜率比較區間 |
 | `MA_CROSS_MA60_FLAT_TOLERANCE` | 0.002 | 60MA 區間漲幅 ≤ 此值視為下彎或走平 |
+| `MA_CROSS_MIN_VOLUME_LOTS` | 1000 | 當日成交量下限（張；0 = 不限） |
 | `MA_CROSS_ENABLE_SUB_INDUSTRY_FILTER` | true | 是否套用細產業過濾 |
 | `MA_CROSS_SUB_INDUSTRY_MIN_TRADE_VALUE` | 1e10 | 細產業成交值門檻（元） |
 | `MA_CROSS_SUB_INDUSTRY_TOP_N` | 10 | 取漲幅前 N 名（0 = 不限） |
@@ -1339,6 +1341,15 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.38.0 - 2026-10-09
+
+**ma-cross 新增成交量門檻：當日成交量 ≥ 1,000 張**
+
+- 新增設定 `MA_CROSS_MIN_VOLUME_LOTS`（預設 1000 張，0 = 不限），於均線條件之後、細產業過濾之前套用
+- 回測 `run_topn_backtest(min_volume_lots=...)` 同步支援，`scripts/backtest_ma_cross_topn.py` 讀取同一設定；
+  一致性測試納入成交量門檻
+- 2026-10-08 實測：均線條件 103 → 42 檔，細產業過濾後 15 → 11 檔（排除典範、承業醫、邦泰、博大）
 
 ### v5.37.2 - 2026-10-08
 

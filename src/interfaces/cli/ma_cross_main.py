@@ -52,7 +52,7 @@ def print_result(result: MACrossScanResult, show_filter: bool) -> None:
             )
 
     print(
-        f"\n📈 5/10/20MA 穿越下彎或走平 60MA：{len(result.candidates)} 檔"
+        f"\n📈 5/10/20MA 穿越下彎或走平 60MA、成交量 ≥ {cfg.min_volume_lots:,} 張：{len(result.candidates)} 檔"
         + (f"，細產業過濾後 {len(result.stocks)} 檔" if show_filter else "")
     )
     for _, r in result.stocks.iterrows():

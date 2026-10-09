@@ -42,6 +42,7 @@ def main() -> None:
         flat_tolerance=cfg.ma60_flat_tolerance,
         min_trade_value=cfg.sub_industry_min_trade_value,
         weighting=cfg.sub_industry_weighting,
+        min_volume_lots=cfg.min_volume_lots,
         new_entries_only=not args.all_days,
     )
     start = pd.Timestamp(args.start) if args.start else None

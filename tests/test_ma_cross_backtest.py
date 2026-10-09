@@ -113,13 +113,13 @@ class TestConsistencyWithProduction:
         """最後一天：回測選股 == MACrossScanner 選股"""
         cfg = SimpleNamespace(
             lookback_days=5, ma60_slope_days=5, ma60_flat_tolerance=0.01,
-            enable_sub_industry_filter=True, sub_industry_min_trade_value=0.0,
+            min_volume_lots=50, enable_sub_industry_filter=True, sub_industry_min_trade_value=0.0,
             sub_industry_top_n=2, sub_industry_weighting="equal",
             sub_industry_cache_ttl_hours=1, output_dir="unused",
         )
         scan = MACrossScanner(cfg=cfg).scan(price_frames=frames, sub_industries=SUBS, names={}, industries={})
 
-        base = ma_cross_signals(panel.close, 5, 5, 0.01)
+        base = ma_cross_signals(panel.close, 5, 5, 0.01) & (panel.volume >= 50 * 1000).fillna(False)
         hot = hot_sub_industry_mask(sub_industry_daily_metrics(panel, SUBS), 0.0, 2)
         picks = base & stock_hot_mask(hot, SUBS, base.columns)
         last = picks.iloc[-1]
@@ -165,6 +165,13 @@ class TestHelpers:
         assert row["ret5d"] == pytest.approx((2 - 1 + 4) / 3)
         assert row["win5d"] == pytest.approx(200 / 3)
         assert row["excess5d"] == pytest.approx(((2 - .5) + (-1 - .5) + (4 - 1)) / 3)
+
+    def test_min_volume_reduces_signals(self, panel):
+        common = dict(top_ns=(), horizons=(1,), flat_tolerance=0.01, min_trade_value=0.0, new_entries_only=False)
+        all_sig = run_topn_backtest(panel, SUBS, **common)["signals"].iloc[0]
+        vol_sig = run_topn_backtest(panel, SUBS, min_volume_lots=50, **common)["signals"].iloc[0]
+        none_sig = run_topn_backtest(panel, SUBS, min_volume_lots=10**6, **common)["signals"].iloc[0]
+        assert none_sig == 0 <= vol_sig <= all_sig
 
     def test_run_topn_backtest_shape(self, panel):
         res = run_topn_backtest(panel, SUBS, top_ns=(1, 2), horizons=(1, 5),

@@ -2,7 +2,7 @@
 均線穿越 60MA 掃描 + 細產業指標過濾
 ====================================
 1. 讀取 data/stocks/*.csv 日K
-2. 篩出「5/10/20MA 穿越下彎或走平的 60MA」的股票（ma_cross_screener）
+2. 篩出「5/10/20MA 穿越下彎或走平的 60MA」且當日成交量 >= min_volume_lots 張的股票（ma_cross_screener）
 3. 以產業價值鏈平台的細產業成分股合成細產業指標（sub_industry_index），
    保留「所屬細產業指標成交值 >= 門檻，且漲幅排名前 N」的股票
 4. 附上股票名稱、官方產業別、所屬細產業
@@ -130,6 +130,9 @@ class MACrossScanner:
                 flat_tolerance=cfg.ma60_flat_tolerance,
             )
             if hit is None:
+                continue
+            # 成交量門檻（CSV 成交量單位為股）
+            if df["volume"].iloc[-1] < cfg.min_volume_lots * 1000:
                 continue
             market = item["market"]
             subs = stock_subs.get(code, [])

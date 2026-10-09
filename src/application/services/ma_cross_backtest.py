@@ -2,7 +2,7 @@
 ma-cross 細產業 top N 回測
 ==========================
 每個交易日 t 收盤後，依 ma-cross 的規則選股（與 MACrossScanner 同一套條件）：
-  1. 均線條件（ma_cross_screener.detect_ma_cross_flat60 的向量化版本）
+  1. 均線條件（ma_cross_screener.detect_ma_cross_flat60 的向量化版本）＋ 當日成交量門檻
   2. 細產業指標（sub_industry_index 的向量化版本）：成交值 >= 門檻、漲幅前 N 名
 
 進場：t+1 開盤價；出場：t+h 收盤價（h = 1, 5, 10, 20 個交易日）。
@@ -208,6 +208,7 @@ def run_topn_backtest(
     flat_tolerance: float = 0.002,
     min_trade_value: float = 1e10,
     weighting: str = "equal",
+    min_volume_lots: int = 0,
     start: Optional[pd.Timestamp] = None,
     end: Optional[pd.Timestamp] = None,
     new_entries_only: bool = True,
@@ -217,6 +218,9 @@ def run_topn_backtest(
     Returns: 每列一個組合（no_filter / top{N}）的統計表
     """
     base = ma_cross_signals(panel.close, lookback_days, slope_days, flat_tolerance)
+    if min_volume_lots > 0:
+        # 當日成交量門檻（與 MACrossScanner 相同，單位：張 → 股）
+        base = base & (panel.volume >= min_volume_lots * 1000).fillna(False)
     metrics = sub_industry_daily_metrics(panel, sub_industries, weighting)
     fwd = forward_returns(panel, horizons)
     market = {h: r.mean(axis=1) for h, r in fwd.items()}
