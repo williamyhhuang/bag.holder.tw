@@ -173,12 +173,31 @@ class TestBackfillGap:
         count, saved, cache = self._run(tmp_path, fake)
         assert date(2026, 10, 7) not in dm.load_non_trading_days(cache)  # 失敗不可誤記為假日
 
+    def test_run_download_skips_snapshot_on_holiday(self):
+        cli = dm.DataDownloaderCLI()
+        client = MagicMock()
+        with patch.object(cli, "_make_client", return_value=client), \
+                patch.object(cli, "backfill_gap", return_value=0) as backfill, \
+                patch.object(cli, "is_market_open_today", return_value=False):
+            args = SimpleNamespace(start_date=None, end_date=None, source="fubon", markets=None, limit=None)
+            assert cli.run_download(args) == 0
+        backfill.assert_called_once()          # 缺口補抓照常執行
+        client.download_recent_data.assert_not_called()
+
+    def test_is_market_open_today(self):
+        cli = dm.DataDownloaderCLI()
+        with patch("src.utils.trading_calendar.is_trading_day", return_value=False):
+            assert cli.is_market_open_today() is False
+        with patch("src.utils.trading_calendar.is_trading_day", return_value=True):
+            assert cli.is_market_open_today() is True
+
     def test_run_download_backfills_before_recent(self):
         cli = dm.DataDownloaderCLI()
         order = []
         client = MagicMock()
         client.download_recent_data.side_effect = lambda: order.append("recent") or 10
         with patch.object(cli, "_make_client", return_value=client), \
+                patch.object(cli, "is_market_open_today", return_value=True), \
                 patch.object(cli, "backfill_gap", side_effect=lambda: order.append("backfill") or 0):
             args = SimpleNamespace(start_date=None, end_date=None, source="fubon", markets=None, limit=None)
             assert cli.run_download(args) == 10

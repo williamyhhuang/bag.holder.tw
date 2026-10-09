@@ -25,6 +25,7 @@ from src.application.services.ma_cross_scanner import MACrossScanner, MACrossSca
 from src.infrastructure.notification.telegram_notifier import TelegramNotifier
 from src.utils.logger import get_logger
 from src.utils.sub_industry_mapper import get_sub_industries
+from src.utils.trading_calendar import is_trading_day
 
 logger = get_logger(__name__)
 
@@ -136,9 +137,13 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--require-today",
         action="store_true",
-        help="最新資料日不是今天（台北時間）時不執行（休市日或資料未更新），供排程使用",
+        help="台股休市或最新資料日不是今天（台北時間）時不執行，供排程使用",
     )
     args = parser.parse_args(argv)
+
+    if args.require_today and not is_trading_day(today_taipei()):
+        print(f"⏭️ {today_taipei()} 台股休市，略過")
+        return 0
 
     sub_industries = None
     if args.refresh_sub_industries:

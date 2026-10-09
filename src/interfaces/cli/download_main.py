@@ -186,6 +186,15 @@ class DataDownloaderCLI:
         self.logger.warning(f"補抓完成：{len(filled)} 個交易日、{saved} 檔股票")
         return saved
 
+    def is_market_open_today(self) -> bool:
+        import pytz
+        from src.utils.trading_calendar import is_trading_day
+        today = datetime.now(pytz.timezone("Asia/Taipei")).date()
+        if is_trading_day(today):
+            return True
+        self.logger.warning(f"{today} 台股休市，略過今日行情下載")
+        return False
+
     def run_download(self, args):
         """Run the download command.
 
@@ -213,6 +222,9 @@ class DataDownloaderCLI:
 
                 if start_date is None and end_date is None:
                     self.backfill_gap()
+                    if not self.is_market_open_today():
+                        # 休市日快照只會回傳上一交易日行情，不需下載
+                        return 0
                     self.logger.info("No dates provided, downloading recent data")
                     count = client.download_recent_data()
                 else:

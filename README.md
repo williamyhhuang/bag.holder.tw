@@ -497,7 +497,7 @@ python main.py ma-cross --refresh-sub-industries
 # 結果發送到 Telegram（依細產業分組，每檔一行：代號 名稱 收盤價 漲跌幅；超過長度自動分段）
 python main.py ma-cross --send-telegram
 
-# 排程用：最新資料日不是今天（休市或資料未更新）就略過，不發送
+# 排程用：台股休市（證交所休市日程表）或最新資料日不是今天就略過，不發送
 python main.py ma-cross --send-telegram --require-today
 
 # 也可以直接呼叫 CLI 模組
@@ -550,7 +550,12 @@ Cloud Scheduler `bag-holder-run-ma-cross-trigger` → Workflow `bag-holder-run-m
 2. `bag-holder-ma-cross`（`docker/entrypoint-ma-cross.sh`）：取回資料 → `python main.py ma-cross --send-telegram --require-today`；
    細產業對照快取保存在 `gs://bag-holder-data/sub_industries.json`
 
-休市日下載不到當日資料，`--require-today` 會略過發送。手動觸發：
+休市日判斷有兩道：
+1. 證交所 OpenAPI 休市日程表（`src/utils/trading_calendar.py`，快取 `data/cache/twse_holidays.json`）：
+   休市日 download 不抓今日快照、ma-cross 直接略過
+2. 颱風等臨時休市不在日程表中：富邦快照的行情日期不是今天時不寫入，ma-cross 因資料日不是今天而略過
+
+手動觸發：
 
 ```bash
 gcloud workflows run bag-holder-run-ma-cross --location asia-east1 --project bag-holder-tw
@@ -1341,6 +1346,17 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.38.2 - 2026-10-09
+
+**新增台股休市判斷：休市日直接跳過**
+
+- 新增 `src/utils/trading_calendar.py`：以證交所 OpenAPI 休市日程表判斷交易日
+  （排除表中「開始交易日」「最後交易日」等照常交易的提示日；抓取失敗時用過期快取，再不行只判斷週末）
+- `ma-cross --require-today`：休市日在掃描前就略過，不發 Telegram
+- `download`（未指定日期）：休市日不抓今日快照（缺口補抓照常執行）
+- 颱風等臨時休市仍由 v5.38.1 的快照日期檢查把關
+- 新增單元測試 `tests/test_trading_calendar.py`，並補充 ma-cross / download 休市情境測試
 
 ### v5.38.1 - 2026-10-09
 

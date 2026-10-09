@@ -430,9 +430,10 @@ class TestTelegramFormat:
 
 
 class TestCliMain:
-    def _run(self, result, argv, today=date(2026, 10, 7)):
+    def _run(self, result, argv, today=date(2026, 10, 7), trading=True):
         with patch.object(cli, "MACrossScanner") as scanner_cls, \
                 patch.object(cli, "today_taipei", return_value=today), \
+                patch.object(cli, "is_trading_day", return_value=trading), \
                 patch.object(cli, "send_telegram", return_value=True) as send:
             scanner_cls.return_value.scan.return_value = result
             scanner_cls.return_value.save.return_value = "out.csv"
@@ -444,6 +445,17 @@ class TestCliMain:
         assert code == 0
         send.assert_not_called()
         save.assert_not_called()
+
+    def test_holiday_skips_before_scanning(self):
+        code, send, save = self._run(_result(), ["--send-telegram", "--require-today"], trading=False)
+        assert code == 0
+        send.assert_not_called()
+        save.assert_not_called()
+
+    def test_holiday_check_only_with_require_today(self):
+        code, send, _ = self._run(_result(), ["--send-telegram"], trading=False)
+        assert code == 0
+        send.assert_called_once()
 
     def test_sends_when_data_is_today(self):
         code, send, save = self._run(_result(), ["--send-telegram", "--require-today"])
