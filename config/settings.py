@@ -1235,10 +1235,15 @@ class MTXTraderSettings(BaseSettings):
 
 class MACrossSettings(BaseSettings):
     """均線穿越 60MA 篩選 + 細產業指標過濾（python main.py ma-cross）"""
+    short_ma_periods: List[int] = Field(
+        default=[5, 10],
+        validation_alias=AliasChoices("MA_CROSS_SHORT_MA_PERIODS"),
+        description="需站上 60MA 的短均線（最慢者須在 lookback_days 內由下往上穿越 60MA），例：[5, 10]",
+    )
     lookback_days: int = Field(
         default=5,
         validation_alias=AliasChoices("MA_CROSS_LOOKBACK_DAYS"),
-        description="20MA 需在最近 N 個交易日內由下往上穿越 60MA",
+        description="最慢的短均線需在最近 N 個交易日內由下往上穿越 60MA",
     )
     ma60_slope_days: int = Field(
         default=5,

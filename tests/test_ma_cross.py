@@ -44,10 +44,10 @@ def cross_series():
     return down + base + up
 
 
-def find_cross_len(closes):
-    """截到 20MA 剛穿越 60MA 的那天，確保測試資料落在 lookback 視窗內"""
+def find_cross_len(closes, slowest=10):
+    """截到最慢短均線（預設 10MA）剛穿越 60MA 的那天，確保測試資料落在 lookback 視窗內"""
     s = pd.Series(closes, dtype=float)
-    diff = s.rolling(20).mean() - s.rolling(60).mean()
+    diff = s.rolling(slowest).mean() - s.rolling(60).mean()
     for i in range(61, len(s)):
         if diff.iloc[i - 1] <= 0 < diff.iloc[i]:
             return i + 1
@@ -56,7 +56,7 @@ def find_cross_len(closes):
 
 def default_cfg(**over):
     base = dict(
-        lookback_days=5, ma60_slope_days=5, ma60_flat_tolerance=0.002,
+        short_ma_periods=[5, 10], lookback_days=5, ma60_slope_days=5, ma60_flat_tolerance=0.002,
         min_volume_lots=0, enable_sub_industry_filter=True, sub_industry_min_trade_value=1e4,
         sub_industry_top_n=10, sub_industry_weighting="equal",
         sub_industry_cache_ttl_hours=168, output_dir="unused",
@@ -74,7 +74,7 @@ class TestDetectMaCross:
         df = make_df(closes[:n + 2])
         hit = detect_ma_cross_flat60(df)
         assert hit is not None
-        assert hit["ma5"] > hit["ma60"] and hit["ma10"] > hit["ma60"] and hit["ma20"] > hit["ma60"]
+        assert hit["ma5"] > hit["ma60"] and hit["ma10"] > hit["ma60"]
         assert hit["ma60_slope"] <= 0.002
         assert hit["cross_date"] == df["date"].iloc[n - 1].date()
 
@@ -93,6 +93,23 @@ class TestDetectMaCross:
     def test_rejects_when_short_ma_below_ma60(self):
         closes = list(np.linspace(120, 80, 120))  # 一路下跌，均線都在 60MA 下
         assert detect_ma_cross_flat60(make_df(closes)) is None
+
+    def test_20ma_not_required(self):
+        # 10MA 剛穿越 60MA 時 20MA 仍在 60MA 之下：新邏輯（5/10MA）應入選，舊邏輯（含 20MA）不入選
+        closes = cross_series()
+        n = find_cross_len(closes, slowest=10)
+        df = make_df(closes[:n])
+        ma20 = df["close"].rolling(20).mean().iloc[-1]
+        ma60 = df["close"].rolling(60).mean().iloc[-1]
+        assert ma20 <= ma60
+        assert detect_ma_cross_flat60(df) is not None
+        assert detect_ma_cross_flat60(df, short_periods=(5, 10, 20)) is None
+
+    def test_old_20ma_rule_still_supported(self):
+        closes = cross_series()
+        n = find_cross_len(closes, slowest=20)
+        hit = detect_ma_cross_flat60(make_df(closes[:n + 2]), short_periods=(5, 10, 20))
+        assert hit is not None and hit["ma20"] > hit["ma60"]
 
     def test_insufficient_history(self):
         assert detect_ma_cross_flat60(make_df([100.0] * 50)) is None

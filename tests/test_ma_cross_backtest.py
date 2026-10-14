@@ -77,6 +77,16 @@ def panel(frames):
 
 
 class TestConsistencyWithProduction:
+    @pytest.mark.parametrize("short_periods", [(5, 10), (5, 10, 20)])
+    def test_ma_signals_match_detect_short_periods(self, frames, panel, short_periods):
+        sig = ma_cross_signals(panel.close, 5, 5, 0.01, short_periods)
+        for code, item in frames.items():
+            df = item["df"]
+            for i in range(0, len(df), 3):
+                d = df["date"].iloc[i]
+                hit = detect_ma_cross_flat60(df.iloc[: i + 1], 5, 5, 0.01, short_periods)
+                assert bool(sig.at[d, code]) == (hit is not None), (code, d)
+
     def test_ma_signals_match_detect(self, frames, panel):
         sig = ma_cross_signals(panel.close, lookback_days=5, slope_days=5, flat_tolerance=0.01)
         assert sig.values.any(), "測試資料應至少產生一個訊號"
@@ -112,7 +122,7 @@ class TestConsistencyWithProduction:
     def test_final_picks_match_scanner(self, frames, panel):
         """最後一天：回測選股 == MACrossScanner 選股"""
         cfg = SimpleNamespace(
-            lookback_days=5, ma60_slope_days=5, ma60_flat_tolerance=0.01,
+            short_ma_periods=[5, 10], lookback_days=5, ma60_slope_days=5, ma60_flat_tolerance=0.01,
             min_volume_lots=50, enable_sub_industry_filter=True, sub_industry_min_trade_value=0.0,
             sub_industry_top_n=2, sub_industry_weighting="equal",
             sub_industry_cache_ttl_hours=1, output_dir="unused",

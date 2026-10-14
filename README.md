@@ -465,12 +465,12 @@ signal_cooldown_days: int = 0   # 冷卻期交易日數（0 = 停用）
 
 ### 均線穿越 60MA + 細產業指標過濾 (ma-cross)
 
-篩出「**日K 5/10/20MA 穿越下彎或走平的 60MA**」，並只保留**所屬細產業指標當日成交值 ≥ 100 億、且漲幅排名前 10** 的股票。
+篩出「**日K 5/10MA 穿越下彎或走平的 60MA**」，並只保留**所屬細產業指標當日成交值 ≥ 100 億、且漲幅排名前 10** 的股票。
 
 **均線條件**（`src/domain/services/ma_cross_screener.py`）：
 1. 60MA 下彎或走平：今日 60MA ÷ 5 日前 60MA − 1 ≤ +0.2%
-2. 5MA、10MA、20MA 皆在 60MA 之上
-3. 最近 5 個交易日內 20MA 由下往上穿越 60MA（20MA 最慢，它穿越代表三條都已站上）
+2. 5MA、10MA 皆在 60MA 之上（`MA_CROSS_SHORT_MA_PERIODS`，預設 `[5, 10]`）
+3. 最近 5 個交易日內 10MA 由下往上穿越 60MA（10MA 較慢，它穿越代表兩條都已站上；20MA 不參與判斷）
 4. 當日成交量 ≥ 1,000 張（`MA_CROSS_MIN_VOLUME_LOTS`）
 
 **細產業指標**（`src/domain/services/sub_industry_index.py`）：
@@ -528,7 +528,8 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 
 | 環境變數 | 預設 | 說明 |
 |---|---|---|
-| `MA_CROSS_LOOKBACK_DAYS` | 5 | 20MA 需在最近 N 個交易日內穿越 60MA |
+| `MA_CROSS_SHORT_MA_PERIODS` | [5, 10] | 需站上 60MA 的短均線；最慢者須在 lookback 內穿越（舊版為 `[5, 10, 20]`） |
+| `MA_CROSS_LOOKBACK_DAYS` | 5 | 最慢的短均線需在最近 N 個交易日內穿越 60MA |
 | `MA_CROSS_MA60_SLOPE_DAYS` | 5 | 60MA 斜率比較區間 |
 | `MA_CROSS_MA60_FLAT_TOLERANCE` | 0.002 | 60MA 區間漲幅 ≤ 此值視為下彎或走平 |
 | `MA_CROSS_MIN_VOLUME_LOTS` | 1000 | 當日成交量下限（張；0 = 不限） |
@@ -1346,6 +1347,23 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.39.0 - 2026-10-14
+
+**ma-cross 條件改為「5/10MA 穿越下彎或走平的 60MA」（原 5/10/20MA）**
+
+- 5MA、10MA 站上 60MA，且 10MA 於近 5 日由下往上穿越 60MA；20MA 不再參與判斷（CSV 仍輸出 20MA 作參考）
+- 新增設定 `MA_CROSS_SHORT_MA_PERIODS`（預設 `[5, 10]`；設 `[5, 10, 20]` 可恢復舊條件），
+  生產端 `detect_ma_cross_flat60` 與回測 `ma_cross_signals` 共用同一參數，一致性測試涵蓋兩種設定
+- 2026-10-13 實測（成交量 ≥ 1,000 張）：均線條件 39 → 51 檔，細產業過濾後 0 → 1 檔
+- 回測比較（top10＋成交量門檻，新進榜訊號，20 日超額報酬）：
+
+  | 條件 | 訊號數 | 20日勝率 | 20日超額（全期） | 20日超額（不含 2026） |
+  |---|---|---|---|---|
+  | 5/10/20MA | 817 | 44.3% | +2.00% | +0.64% |
+  | 5/10MA | 1,174 | 43.6% | +0.34% | +0.20% |
+
+  新條件訊號較多、較早進場，但歷史超額報酬較低
 
 ### v5.38.2 - 2026-10-09
 

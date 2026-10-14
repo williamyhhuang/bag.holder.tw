@@ -20,6 +20,7 @@ from typing import Dict, Iterable, List, Optional, Sequence
 import numpy as np
 import pandas as pd
 
+from src.domain.services.ma_cross_screener import DEFAULT_SHORT_PERIODS
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,6 +64,7 @@ def ma_cross_signals(
     lookback_days: int = 5,
     slope_days: int = 5,
     flat_tolerance: float = 0.002,
+    short_periods: Sequence[int] = DEFAULT_SHORT_PERIODS,
 ) -> pd.DataFrame:
     """向量化均線條件（布林寬表），邏輯與 detect_ma_cross_flat60 相同。
 
@@ -74,14 +76,13 @@ def ma_cross_signals(
         s = close[code].dropna()
         if len(s) < need:
             continue
-        ma5, ma10, ma20, ma60 = (s.rolling(n).mean() for n in (5, 10, 20, 60))
+        ma60 = s.rolling(60).mean()
+        shorts = {n: s.rolling(n).mean() for n in short_periods}
         slope = ma60 / ma60.shift(slope_days) - 1
-        diff = ma20 - ma60
-        cond = (
-            (slope <= flat_tolerance)
-            & (ma5 > ma60) & (ma10 > ma60) & (ma20 > ma60)
-            & (diff.shift(lookback_days) <= 0)
-        )
+        diff = shorts[max(short_periods)] - ma60
+        cond = (slope <= flat_tolerance) & (diff.shift(lookback_days) <= 0)
+        for ma in shorts.values():
+            cond &= ma > ma60
         # 前 need-1 根資料不足，生產端會直接回傳 None
         cond.iloc[: need - 1] = False
         out.loc[cond.index, code] = cond.to_numpy()
@@ -209,6 +210,7 @@ def run_topn_backtest(
     min_trade_value: float = 1e10,
     weighting: str = "equal",
     min_volume_lots: int = 0,
+    short_periods: Sequence[int] = DEFAULT_SHORT_PERIODS,
     start: Optional[pd.Timestamp] = None,
     end: Optional[pd.Timestamp] = None,
     new_entries_only: bool = True,
@@ -217,7 +219,7 @@ def run_topn_backtest(
 
     Returns: 每列一個組合（no_filter / top{N}）的統計表
     """
-    base = ma_cross_signals(panel.close, lookback_days, slope_days, flat_tolerance)
+    base = ma_cross_signals(panel.close, lookback_days, slope_days, flat_tolerance, short_periods)
     if min_volume_lots > 0:
         # 當日成交量門檻（與 MACrossScanner 相同，單位：張 → 股）
         base = base & (panel.volume >= min_volume_lots * 1000).fillna(False)

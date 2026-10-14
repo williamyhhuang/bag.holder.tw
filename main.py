@@ -124,7 +124,7 @@ def run_sync_trades(args):
         return False
 
 def run_ma_cross(args):
-    """Run ma-cross command（5/10/20MA 穿越下彎或走平 60MA + 細產業指標過濾）"""
+    """Run ma-cross command（5/10MA 穿越下彎或走平 60MA + 細產業指標過濾）"""
     cmd = ['python', '-m', 'src.interfaces.cli.ma_cross_main']
 
     if getattr(args, 'no_sub_industry_filter', False):
@@ -180,7 +180,7 @@ def create_parser():
   # 同步 Fubon 今日成交記錄至 Google Sheets（每日 14:35 自動執行）
   python main.py sync-trades
 
-  # 5/10/20MA 穿越下彎或走平 60MA，且所屬細產業指標成交值 >= 100 億、漲幅前 10 名
+  # 5/10MA 穿越下彎或走平 60MA，且所屬細產業指標成交值 >= 100 億、漲幅前 10 名
   python main.py ma-cross
   python main.py ma-cross --no-sub-industry-filter   # 只看均線條件
   python main.py ma-cross --send-telegram            # 結果發送到 Telegram
@@ -287,7 +287,7 @@ def create_parser():
     # MA-cross command
     ma_cross_parser = subparsers.add_parser(
         'ma-cross',
-        help='5/10/20MA 穿越下彎或走平 60MA 篩選（含細產業指標過濾）'
+        help='5/10MA 穿越下彎或走平 60MA 篩選（含細產業指標過濾）'
     )
     ma_cross_parser.add_argument(
         '--no-sub-industry-filter',

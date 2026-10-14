@@ -53,7 +53,7 @@ def print_result(result: MACrossScanResult, show_filter: bool) -> None:
             )
 
     print(
-        f"\n📈 5/10/20MA 穿越下彎或走平 60MA、成交量 ≥ {cfg.min_volume_lots:,} 張：{len(result.candidates)} 檔"
+        f"\n📈 {'/'.join(map(str, cfg.short_ma_periods))}MA 穿越下彎或走平 60MA、成交量 ≥ {cfg.min_volume_lots:,} 張：{len(result.candidates)} 檔"
         + (f"，細產業過濾後 {len(result.stocks)} 檔" if show_filter else "")
     )
     for _, r in result.stocks.iterrows():
@@ -129,7 +129,7 @@ def today_taipei() -> date:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="5/10/20MA 穿越下彎或走平 60MA 篩選 + 細產業指標過濾")
+    parser = argparse.ArgumentParser(description="5/10MA 穿越下彎或走平 60MA 篩選 + 細產業指標過濾")
     parser.add_argument("--no-sub-industry-filter", action="store_true", help="不套用細產業指標過濾")
     parser.add_argument("--refresh-sub-industries", action="store_true", help="強制重新抓取細產業對照")
     parser.add_argument("--output-dir", help=f"輸出目錄（預設 {settings.ma_cross.output_dir}）")
