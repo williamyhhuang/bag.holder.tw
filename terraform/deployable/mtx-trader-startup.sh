@@ -1,10 +1,10 @@
 #!/bin/bash
-# GCE startup-script for MTX 60K Telegram alert (Container-Optimized OS)
+# GCE startup-script for MTX 60K / 5K Telegram alert (Container-Optimized OS)
 #
 # COS 的 /etc 不跨重開機保存，此腳本每次開機都會執行：
 #   1. 設定 docker 對 Artifact Registry 的認證
-#   2. 產生 60K 警示的 container launcher（secret 在 container 內抓取）
-#   3. 寫入日／夜盤 60K 警示的 systemd service + timer
+#   2. 產生 60K / 5K 警示的 container launcher（secret 在 container 內抓取）
+#   3. 寫入日／夜盤 60K、5K 警示的 systemd service + timer
 #
 # 原本的 MTX 模擬下單 mtx-trader-day/night 已停用，不在此 VM 自動啟動。
 set -euo pipefail
@@ -17,26 +17,35 @@ mkdir -p /var/lib/mtx/home /var/lib/mtx/state
 export HOME=/var/lib/mtx/home
 docker-credential-gcr configure-docker --registries=asia-east1-docker.pkg.dev
 
-# ── 60K 警示 launcher：使用同一個 image，狀態掛載到 VM 持久磁碟 ─────────────
-cat > /var/lib/mtx/launch-60m-alert.sh <<LAUNCH
+# ── 分 K 警示 launcher：使用同一個 image，狀態掛載到 VM 持久磁碟 ─────────────
+# 用法：launch-ma-alert.sh <day|night> <60|5>
+cat > /var/lib/mtx/launch-ma-alert.sh <<LAUNCH
 #!/bin/bash
 set -euo pipefail
 export HOME=/var/lib/mtx/home
 SESSION="\$1"
+INTERVAL="\${2:-60}"
 if ! docker pull ${IMAGE}; then
   echo "WARNING: image pull failed; using cached image if available" >&2
 fi
-exec docker run --rm --name "mtx-60m-alert" \\
+# 60K 與 5K 同時觸發時排隊執行，避免同一富邦帳號並行登入（lock 由 fd 9 持有至 container 結束）
+exec 9>/var/lib/mtx/alert.lock
+if command -v flock >/dev/null; then
+  flock -w 120 9 || echo "WARNING: alert lock wait timed out" >&2
+fi
+exec docker run --rm --name "mtx-\${INTERVAL}m-alert" \\
   --log-driver=gcplogs \\
   -e SESSION="\${SESSION}" \\
-  -e MTX_60M_STATE_FILE=/var/lib/mtx/state/60m-bars.json \\
+  -e INTERVAL="\${INTERVAL}" \\
+  -e MTX_MA_STATE_FILE=/var/lib/mtx/state/\${INTERVAL}m-bars.json \\
   -e APP_ENV=production \\
   -e PYTHONUNBUFFERED=1 \\
   -v /var/lib/mtx/state:/var/lib/mtx/state \\
   --entrypoint /bin/bash ${IMAGE} -c \\
   'export APP_SECRETS="\$(gcloud secrets versions access latest --secret=APP_SECRETS)" && exec /entrypoint-mtx-60m-alert.sh'
 LAUNCH
-chmod +x /var/lib/mtx/launch-60m-alert.sh
+chmod +x /var/lib/mtx/launch-ma-alert.sh
+rm -f /var/lib/mtx/launch-60m-alert.sh
 
 # ── systemd units ────────────────────────────────────────────────────────────
 # 清除舊版模擬交易 unit，避免 metadata 更新或重開機後再次啟動下單程式。
@@ -59,8 +68,22 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStartPre=-/usr/bin/docker rm -f mtx-60m-alert
-ExecStart=/bin/bash /var/lib/mtx/launch-60m-alert.sh %i
+ExecStart=/bin/bash /var/lib/mtx/launch-ma-alert.sh %i 60
 TimeoutStartSec=300
+UNIT
+
+# 5K 警示：每根 5K 收完後 20 秒檢查，只在多排／空排剛成立或轉向時通知。
+cat > /etc/systemd/system/mtx-5m-alert@.service <<'UNIT'
+[Unit]
+Description=MTX 5-minute MA alert (%i session)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStartPre=-/usr/bin/docker rm -f mtx-5m-alert
+ExecStart=/bin/bash /var/lib/mtx/launch-ma-alert.sh %i 5
+TimeoutStartSec=240
 UNIT
 
 # 日盤 60K：台北 09:46 / 10:46 / 11:46 / 12:46，最後縮短 K 於 13:31。
@@ -112,7 +135,45 @@ AccuracySec=1s
 WantedBy=timers.target
 UNIT
 
+# 日盤 5K：台北 08:50–13:45 每 5 分鐘（K 棒收完後 20 秒）。
+# 換算 UTC：週一至週五 00:50–05:45。
+cat > /etc/systemd/system/mtx-5m-alert-day.timer <<'UNIT'
+[Unit]
+Description=Check MTX day-session 5-minute MA alert
+
+[Timer]
+Unit=mtx-5m-alert@day.service
+OnCalendar=Mon..Fri 00:50,55:20
+OnCalendar=Mon..Fri 01..04:00/5:20
+OnCalendar=Mon..Fri 05:00,05,10,15,20,25,30,35,40,45:20
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+# 夜盤 5K：台北 15:05–翌日 05:00 每 5 分鐘（K 棒收完後 20 秒）。
+# 換算 UTC：週一至週五 07:05–21:00。
+cat > /etc/systemd/system/mtx-5m-alert-night.timer <<'UNIT'
+[Unit]
+Description=Check MTX night-session 5-minute MA alert
+
+[Timer]
+Unit=mtx-5m-alert@night.service
+OnCalendar=Mon..Fri 07:05/5:20
+OnCalendar=Mon..Fri 08..20:00/5:20
+OnCalendar=Mon..Fri 21:00:20
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 systemctl daemon-reload
 systemctl enable --now \
   mtx-60m-alert-day.timer \
-  mtx-60m-alert-night.timer
+  mtx-60m-alert-night.timer \
+  mtx-5m-alert-day.timer \
+  mtx-5m-alert-night.timer

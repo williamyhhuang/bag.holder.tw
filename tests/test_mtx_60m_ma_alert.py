@@ -6,9 +6,12 @@ from src.application.services.mtx_60m_ma_alert import (
     evaluate_ma_alert,
     format_alert,
     load_candle_state,
+    load_last_signal,
     mark_alert_sent,
     save_candle_state,
+    save_last_signal,
     select_near_month_symbol,
+    signal_changed,
     was_alert_sent,
 )
 
@@ -210,3 +213,130 @@ def test_returns_none_when_api_has_no_dated_active_tmf_contract():
     assert select_near_month_symbol(
         tickers, as_of=date(2026, 8, 11)
     ) is None
+
+
+# ── 5K ──────────────────────────────────────────────────────────────────────
+
+def test_5m_excludes_unfinished_bar():
+    now = datetime(2026, 8, 10, 9, 7, tzinfo=TW)
+    candles = [
+        {"time": "2026-08-10T09:00:00+08:00", "close": 20000},
+        {"time": "2026-08-10T09:05:00+08:00", "close": 20010},
+    ]
+
+    assert completed_candles(candles, now=now, session="day", interval_minutes=5) == [
+        (datetime(2026, 8, 10, 9, tzinfo=TW), 20000.0)
+    ]
+
+
+def test_5m_does_not_apply_60k_shortened_final_bar_rule():
+    now = datetime(2026, 8, 10, 13, 32, tzinfo=TW)
+    candles = [
+        {"time": "2026-08-10T13:25:00+08:00", "close": 20000},
+        {"time": "2026-08-10T13:30:00+08:00", "close": 20010},
+    ]
+
+    rows = completed_candles(candles, now=now, session="day", interval_minutes=5)
+
+    assert rows == [(datetime(2026, 8, 10, 13, 25, tzinfo=TW), 20000.0)]
+
+
+def test_formats_5m_telegram_message():
+    result = evaluate_ma_alert(_rows(range(100, 121)))
+
+    message = format_alert("TMFV6", "day", result, interval_minutes=5)
+
+    assert "📈 微台 5K 多排通知" in message
+    assert "60K" not in message
+
+
+def test_signal_changed_only_on_new_or_reversed_alignment():
+    assert signal_changed(None, "long") is True
+    assert signal_changed("none", "long") is True
+    assert signal_changed("short", "long") is True
+    assert signal_changed("long", "short") is True
+    assert signal_changed("long", "long") is False
+    assert signal_changed("short", "short") is False
+    assert signal_changed("long", None) is False
+
+
+def test_last_signal_round_trip(tmp_path):
+    path = tmp_path / "5m.json.last-signal"
+
+    assert load_last_signal(path) is None
+    save_last_signal(path, "long")
+    assert load_last_signal(path) == "long"
+    save_last_signal(path, None)
+    assert load_last_signal(path) == "none"
+    assert signal_changed(load_last_signal(path), "long") is True
+
+
+def _load_runner():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "run_mtx_60m_alert.py"
+    spec = importlib.util.spec_from_file_location("run_mtx_60m_alert", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_5m(runner, tmp_path, closes, now, sent):
+    import asyncio
+    from unittest.mock import patch
+
+    start = now - timedelta(minutes=5 * len(closes))
+    candles = [
+        {"time": (start + timedelta(minutes=5 * i)).isoformat(), "close": c}
+        for i, c in enumerate(closes)
+    ]
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get_futures_tickers(self, **kwargs):
+            return [{"symbol": "TMFV6", "end_date": "2026-12-31"}]
+
+        async def get_futures_candles(self, symbol, timeframe, session):
+            assert timeframe == "5"
+            return candles
+
+    class FakeNotifier:
+        def send_message(self, message, parse_mode=None):
+            sent.append(message)
+            return True
+
+    class FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    with patch.object(runner, "_build_client", return_value=FakeClient()), \
+            patch.object(runner, "TelegramNotifier", FakeNotifier), \
+            patch.object(runner, "datetime", FakeDatetime):
+        return asyncio.run(runner.run("day", tmp_path / "5m.json", interval=5))
+
+
+def test_5m_runner_notifies_only_when_alignment_changes(tmp_path):
+    runner = _load_runner()
+    sent = []
+    base = datetime(2026, 8, 10, 11, 0, tzinfo=TW)
+    up = list(range(100, 125))
+
+    # 第一次成立多排 → 通知
+    assert _run_5m(runner, tmp_path, up, base, sent) == 0
+    assert len(sent) == 1 and "微台 5K 多排通知" in sent[0]
+
+    # 下一根仍是多排 → 不重複通知
+    assert _run_5m(runner, tmp_path, up + [125], base + timedelta(minutes=5), sent) == 0
+    assert len(sent) == 1
+
+    # 轉為空排 → 通知
+    down = list(range(125, 95, -1))
+    assert _run_5m(runner, tmp_path, down, base + timedelta(minutes=200), sent) == 0
+    assert len(sent) == 2 and "微台 5K 空排通知" in sent[1]

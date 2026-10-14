@@ -1259,6 +1259,8 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
 |--------------|----------------|---------|
 | `mtx-60m-alert@day.service` | 週一至五 09:46–12:46 每小時、13:31 | 日盤已完成 60K 均線通知 |
 | `mtx-60m-alert@night.service` | 週一至五 16:01–翌日 05:01 每小時 | 夜盤已完成 60K 均線通知 |
+| `mtx-5m-alert@day.service` | 週一至五 08:50–13:45 每 5 分鐘（K 收完後 20 秒） | 日盤 5K 多空排列轉變通知 |
+| `mtx-5m-alert@night.service` | 週一至五 15:05–翌日 05:00 每 5 分鐘 | 夜盤 5K 多空排列轉變通知 |
 
 架構重點（`terraform/deployable/gce.tf` + `mtx-trader-startup.sh`）：
 
@@ -1268,6 +1270,16 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
 - **60K 多排通知**：MA5／MA10／MA20 斜率皆正，且 `MA5 ≥ MA10` 或 `MA5 ≥ MA20`；
 - **60K 空排通知**：MA5／MA10／MA20 斜率皆負，且 `MA5 ≤ MA10` 或 `MA5 ≤ MA20`；
   最近 200 根已完成 K 棒保存在 VM 持久磁碟 `/var/lib/mtx/state/60m-bars.json`
+- **5K 多空排列通知**：條件與 60K 相同，但只在多排／空排**剛成立或轉向**時發送（延續中不重複通知），
+  上一根訊號記在 `/var/lib/mtx/state/5m-bars.json.last-signal`；
+  哪些週期採「轉變才通知」由 `MTX_MA_ALERT_NOTIFY_ON_CHANGE_INTERVALS`（預設 `[5]`）設定。
+  本機手動測試：
+
+  ```bash
+  python scripts/run_mtx_60m_alert.py --session day --interval 5    # 5K
+  python scripts/run_mtx_60m_alert.py --session night               # 60K（預設）
+  ```
+- **任務排隊**：launcher（`launch-ma-alert.sh <session> <interval>`）以 `flock` 讓 5K 與 60K 依序執行，避免同一富邦帳號並行登入
 - **Spot 搶占自救**：Cloud Scheduler 每 10 分鐘冪等呼叫 `instances.start`（對已 RUNNING 的 VM 回 400 屬預期）；
   Persistent systemd timer 會在重開機後補跑尚未執行的最新一次檢查
 - **開盤前啟動**：Cloud Scheduler 以 `Asia/Taipei` 時區從交易日 08:00 啟動 VM，早於日盤 08:45 開盤
@@ -1347,6 +1359,18 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.40.0 - 2026-10-15
+
+**新增微台 5K 均線多空排列 Telegram 通知**
+
+- 5K 與 60K 共用同一套條件（`evaluate_ma_alert`）：
+  多排＝MA5／MA10／MA20 斜率皆正且 `MA5 ≥ MA10` 或 `MA5 ≥ MA20`；空排為鏡像條件
+- 5K 只在多排／空排**剛成立或轉向**時通知（延續中不重複發送），60K 維持每根成立都通知；
+  由新設定 `MTX_MA_ALERT_NOTIFY_ON_CHANGE_INTERVALS`（預設 `[5]`）控制
+- `scripts/run_mtx_60m_alert.py` 新增 `--interval {5,60}`；entrypoint 新增 `INTERVAL` 環境變數
+- VM 新增 `mtx-5m-alert@day/night` systemd timer（日盤 08:50–13:45、夜盤 15:05–05:00 每 5 分鐘），
+  launcher 改名 `launch-ma-alert.sh`，並以 `flock` 讓 5K / 60K 任務排隊，避免同帳號並行登入富邦
 
 ### v5.39.0 - 2026-10-14
 

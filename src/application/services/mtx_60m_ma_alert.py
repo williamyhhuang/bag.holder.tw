@@ -1,4 +1,4 @@
-"""60 分 K 均線條件 Telegram 警示。"""
+"""微台分 K（60K / 5K）均線多空排列 Telegram 警示。"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,7 +16,7 @@ _TW = ZoneInfo("Asia/Taipei")
 
 @dataclass(frozen=True)
 class MAAlertResult:
-    """最近一根已完成 60 分 K 的均線判斷結果。"""
+    """最近一根已完成分 K 的均線判斷結果。"""
 
     bar_time: datetime
     close: float
@@ -98,11 +98,12 @@ def completed_candles(
     *,
     now: Optional[datetime] = None,
     session: str,
+    interval_minutes: int = 60,
 ) -> list[tuple[datetime, float]]:
-    """整理並排除尚未收完的最新 60 分 K。
+    """整理並排除尚未收完的最新分 K。
 
-    富邦 intraday API 的時間是 K 棒起始時間。日盤最後一根會在 13:30
-    提早收完，因此另以日盤收盤時間判斷。
+    富邦 intraday API 的時間是 K 棒起始時間。60K 日盤最後一根會在 13:30
+    提早收完，因此另以日盤收盤時間判斷；5K 每根長度固定，不需特例。
     """
     current = now or datetime.now(_TW)
     if current.tzinfo is None:
@@ -120,9 +121,10 @@ def completed_candles(
         if bar_time is None or close <= 0 or bar_time > current:
             continue
 
-        closed = bar_time + timedelta(minutes=60) <= current
+        closed = bar_time + timedelta(minutes=interval_minutes) <= current
         if (
             not closed
+            and interval_minutes == 60
             and session == "day"
             and bar_time.date() == current.date()
             and current.time() >= time(13, 30)
@@ -135,7 +137,7 @@ def completed_candles(
 
 
 def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAAlertResult]:
-    """判斷 60K 多排或其鏡像空排條件。
+    """判斷分 K（60K / 5K）多排或其鏡像空排條件。
 
     多排：三條均線斜率皆正，且 MA5 >= MA10 或 MA5 >= MA20。
     空排：三條均線斜率皆負，且 MA5 <= MA10 或 MA5 <= MA20。
@@ -226,7 +228,34 @@ def mark_alert_sent(path: Path, bar_time: datetime) -> None:
     temporary.replace(path)
 
 
-def format_alert(symbol: str, session: str, result: MAAlertResult) -> str:
+def load_last_signal(path: Path) -> Optional[str]:
+    """讀取上次記錄的訊號（long / short / none）；不存在時回傳 None。"""
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def save_last_signal(path: Path, signal: Optional[str]) -> None:
+    """原子記錄最新一根 K 棒的訊號，供「排列轉變才通知」模式比較。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(signal or "none", encoding="utf-8")
+    temporary.replace(path)
+
+
+def signal_changed(previous: Optional[str], current: Optional[str]) -> bool:
+    """排列轉變才通知：本根成立多排／空排，且與上一根記錄的訊號不同。"""
+    return current is not None and current != (previous or "none")
+
+
+def format_alert(
+    symbol: str,
+    session: str,
+    result: MAAlertResult,
+    interval_minutes: int = 60,
+) -> str:
     session_label = "日盤" if session == "day" else "夜盤"
     is_long = result.signal == "long"
     signal_label = "多排" if is_long else "空排"
@@ -237,7 +266,7 @@ def format_alert(symbol: str, session: str, result: MAAlertResult) -> str:
         else "MA5 ≤ MA10 或 MA5 ≤ MA20，且三條均線斜率皆為負"
     )
     return (
-        f"{icon} 微台 60K {signal_label}通知\n"
+        f"{icon} 微台 {interval_minutes}K {signal_label}通知\n"
         f"商品：{symbol}｜{session_label}\n"
         f"K棒：{result.bar_time.strftime('%Y-%m-%d %H:%M')}｜收盤：{result.close:.0f}\n"
         f"MA5：{result.ma5:.2f}（斜率 {result.ma5_slope:+.2f}）\n"

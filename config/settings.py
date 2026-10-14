@@ -1309,6 +1309,23 @@ class MACrossSettings(BaseSettings):
     }
 
 
+class MTXMAAlertSettings(BaseSettings):
+    """微台分 K 均線多空排列 Telegram 通知（scripts/run_mtx_60m_alert.py）"""
+    notify_on_change_intervals: List[int] = Field(
+        default=[5],
+        validation_alias=AliasChoices("MTX_MA_ALERT_NOTIFY_ON_CHANGE_INTERVALS"),
+        description="這些 K 棒週期（分鐘）只在多排／空排「剛成立或轉向」時通知，避免每根 K 重複發送；"
+                    "其餘週期（如 60K）每根成立都通知",
+    )
+
+    model_config = {
+        "extra": "ignore",
+        "populate_by_name": True,
+        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file_encoding": "utf-8",
+    }
+
+
 class Settings(BaseSettings):
     """Main application settings"""
     # Sub-settings
@@ -1334,6 +1351,7 @@ class Settings(BaseSettings):
     mtx_trader: MTXTraderSettings = MTXTraderSettings()
     finmind: FinMindSettings = FinMindSettings()
     ma_cross: MACrossSettings = MACrossSettings()
+    mtx_ma_alert: MTXMAAlertSettings = MTXMAAlertSettings()
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

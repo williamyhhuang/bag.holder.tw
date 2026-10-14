@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""取得微台 60 分 K，符合均線條件時發送 Telegram。"""
+"""取得微台分 K（60K / 5K），符合均線多空排列條件時發送 Telegram。"""
 from __future__ import annotations
 
 import argparse
@@ -19,9 +19,12 @@ from src.application.services.mtx_60m_ma_alert import (
     evaluate_ma_alert,
     format_alert,
     load_candle_state,
+    load_last_signal,
     mark_alert_sent,
     save_candle_state,
+    save_last_signal,
     select_near_month_symbol,
+    signal_changed,
     was_alert_sent,
 )
 from src.infrastructure.market_data.fubon_client import FubonClient, get_near_month_symbol
@@ -44,7 +47,7 @@ def _build_client() -> FubonClient:
     )
 
 
-async def run(session: str, state_file: Path) -> int:
+async def run(session: str, state_file: Path, interval: int = 60) -> int:
     now = datetime.now(_TW)
     api_session = "afterhours" if session == "night" else None
     ticker_session = "AFTERHOURS" if session == "night" else "REGULAR"
@@ -65,24 +68,38 @@ async def run(session: str, state_file: Path) -> int:
         else:
             symbol = get_near_month_symbol("TMF", as_of=now.date())
             logger.warning("有效合約清單無可用資料，改用日期推算微台近月：%s", symbol)
-        candles = await client.get_futures_candles(symbol, "60", api_session)
+        candles = await client.get_futures_candles(symbol, str(interval), api_session)
 
     # 期貨 intraday API 只回傳當日資料；合併 VM 持久磁碟帶入的跨盤狀態，
-    # 才有足夠的 21 根 60K 可計算 MA20 斜率。
+    # 才有足夠的 21 根 K 棒可計算 MA20 斜率。
     state = load_candle_state(state_file)
     rows = completed_candles(
         [*state, *candles],
         now=now,
         session=session,
+        interval_minutes=interval,
     )
     save_candle_state(state_file, rows)
     result = evaluate_ma_alert(rows)
     if result is None:
-        logger.warning("60K 資料不足：需要至少 21 根已完成 K 棒，目前 %d 根", len(rows))
+        logger.warning("%dK 資料不足：需要至少 21 根已完成 K 棒，目前 %d 根", interval, len(rows))
         return 0
+
+    alert_marker = state_file.with_suffix(state_file.suffix + ".last-alert")
+    if was_alert_sent(alert_marker, result.bar_time):
+        logger.info("此 %dK 已處理，略過重複發送：%s", interval, result.bar_time)
+        return 0
+
+    on_change_only = interval in settings.mtx_ma_alert.notify_on_change_intervals
+    signal_marker = state_file.with_suffix(state_file.suffix + ".last-signal")
+    previous = load_last_signal(signal_marker)
+    if on_change_only:
+        save_last_signal(signal_marker, result.signal)
+
     if not result.matched:
         logger.info(
-            "條件未成立 %s: MA %.2f/%.2f/%.2f slope %+.2f/%+.2f/%+.2f",
+            "%dK 條件未成立 %s: MA %.2f/%.2f/%.2f slope %+.2f/%+.2f/%+.2f",
+            interval,
             result.bar_time,
             result.ma5,
             result.ma10,
@@ -93,16 +110,18 @@ async def run(session: str, state_file: Path) -> int:
         )
         return 0
 
-    logger.info("60K %s條件成立：%s", "多排" if result.signal == "long" else "空排", result.bar_time)
-
-    alert_marker = state_file.with_suffix(state_file.suffix + ".last-alert")
-    if was_alert_sent(alert_marker, result.bar_time):
-        logger.info("此 60K 已通知，略過重複發送：%s", result.bar_time)
+    signal_label = "多排" if result.signal == "long" else "空排"
+    if on_change_only and not signal_changed(previous, result.signal):
+        logger.info("%dK %s延續中（上一根已是%s），不重複通知：%s", interval, signal_label, signal_label, result.bar_time)
         return 0
 
-    message = format_alert(symbol, session, result)
+    logger.info("%dK %s條件成立：%s", interval, signal_label, result.bar_time)
+    message = format_alert(symbol, session, result, interval_minutes=interval)
     if not TelegramNotifier().send_message(message, parse_mode=None):
         logger.error("Telegram 通知發送失敗")
+        if on_change_only:
+            # 發送失敗時還原訊號，下次排程重試
+            save_last_signal(signal_marker, previous)
         return 1
     mark_alert_sent(alert_marker, result.bar_time)
     logger.info("Telegram 通知發送成功：%s", result.bar_time)
@@ -110,16 +129,24 @@ async def run(session: str, state_file: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="微台 60K 均線條件通知")
+    parser = argparse.ArgumentParser(description="微台分 K 均線多空排列通知")
     parser.add_argument("--session", choices=["day", "night"], required=True)
+    parser.add_argument(
+        "--interval",
+        type=int,
+        choices=[5, 60],
+        default=60,
+        help="K 棒週期（分鐘）：60 = 60K（預設），5 = 5K",
+    )
     parser.add_argument(
         "--state-file",
         type=Path,
-        default=Path("/tmp/mtx-60m-bars.json"),
-        help="跨排程 60K 狀態檔",
+        default=None,
+        help="跨排程 K 棒狀態檔（預設 /tmp/mtx-<interval>m-bars.json）",
     )
     args = parser.parse_args()
-    return asyncio.run(run(args.session, args.state_file))
+    state_file = args.state_file or Path(f"/tmp/mtx-{args.interval}m-bars.json")
+    return asyncio.run(run(args.session, state_file, args.interval))
 
 
 if __name__ == "__main__":
