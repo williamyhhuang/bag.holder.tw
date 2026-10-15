@@ -3,22 +3,55 @@
 
 從「前30個交易日期貨每筆成交資料」頁面取得可用清單，自動補下載本地缺少的檔案。
 
+下載後刪除超過保留天數的 Daily_*.zip（settings.download.taifex_tick_retention_days，預設 180 天），
+避免 GCS 上的 taifex_tick.tar.gz 無限成長。
+
 用法:
   python scripts/download_taifex_tick.py           # 補下載所有缺少的（最多近 30 個交易日）
   python scripts/download_taifex_tick.py --out data/taifex_tick
+  python scripts/download_taifex_tick.py --retention-days 0   # 不清理舊檔
 """
 from __future__ import annotations
 
 import re
+import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 PAGE_URL = "https://www.taifex.com.tw/cht/3/dlFutPrevious30DaysSalesData"
 BASE_URL = "https://www.taifex.com.tw/file/taifex/Dailydownload/DailydownloadCSV"
 DEFAULT_OUT = Path(__file__).parent.parent / "data" / "taifex_tick"
 SLEEP_SEC = 1.5
+_DAILY_RE = re.compile(r"^Daily_(\d{4})_(\d{2})_(\d{2})\.zip$")
+
+
+def prune_old_ticks(out_dir: Path, retention_days: int, today: Optional[date] = None) -> list[str]:
+    """刪除檔名日期早於 today - retention_days 的 Daily_*.zip，回傳刪除的檔名。
+
+    retention_days <= 0 時不清理；檔名不符格式的檔案一律保留。
+    """
+    if retention_days <= 0:
+        return []
+    cutoff = (today or date.today()) - timedelta(days=retention_days)
+    removed: list[str] = []
+    for path in sorted(out_dir.glob("Daily_*.zip")):
+        m = _DAILY_RE.match(path.name)
+        if not m:
+            continue
+        try:
+            file_date = date(int(m[1]), int(m[2]), int(m[3]))
+        except ValueError:
+            continue
+        if file_date < cutoff:
+            path.unlink()
+            removed.append(path.name)
+    return removed
 
 
 def fetch_available(session: requests.Session) -> list[str]:
@@ -51,7 +84,17 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="補下載 TAIFEX 每筆成交 tick zip")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="輸出目錄")
+    parser.add_argument(
+        "--retention-days",
+        type=int,
+        default=None,
+        help="保留天數，超過者刪除（預設 settings.download.taifex_tick_retention_days；0 = 不清理）",
+    )
     args = parser.parse_args()
+    retention_days = args.retention_days
+    if retention_days is None:
+        from config.settings import settings
+        retention_days = settings.download.taifex_tick_retention_days
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +121,9 @@ def main() -> None:
         skip = len(available) - len(missing)
 
     print(f"\n完成：下載 {ok} 筆，跳過 {skip} 筆，失敗 {err} 筆")
+    removed = prune_old_ticks(out_dir, retention_days)
+    if removed:
+        print(f"已刪除超過 {retention_days} 天的 tick 檔 {len(removed)} 個：{removed[0]} ～ {removed[-1]}")
     existing = sorted(out_dir.glob("Daily_*.zip"))
     if existing:
         print(f"目錄現有資料：{existing[0].name} ～ {existing[-1].name}（共 {len(existing)} 個）")

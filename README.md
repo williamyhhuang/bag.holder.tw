@@ -1235,6 +1235,16 @@ python scripts/backtest_mtx_strategies.py --data-dir data/taifex_tick
 python scripts/optimize_mtx.py --data-dir data/taifex_tick --metric pf
 ```
 
+**tick 資料保留期**：每日 download job 執行 `scripts/download_taifex_tick.py` 補下載後，
+會刪除檔名日期超過 `DOWNLOAD_TAIFEX_TICK_RETENTION_DAYS`（預設 180 天）的 `Daily_*.zip`，
+再重新打包上傳 GCS `taifex_tick.tar.gz`，避免 archive 無限成長。刪除後無法再從期交所補回（期交所只提供近 30 個交易日）。
+
+```bash
+python scripts/download_taifex_tick.py                     # 補下載 + 清除超過 180 天的檔案
+python scripts/download_taifex_tick.py --retention-days 365  # 自訂保留天數
+python scripts/download_taifex_tick.py --retention-days 0    # 不清理
+```
+
 ### 策略邏輯（SKILL.md）
 
 ```
@@ -1364,6 +1374,15 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.41.0 - 2026-10-15
+
+**期交所 tick 資料自動清理（保留 180 天）**
+
+- `scripts/download_taifex_tick.py` 補下載後刪除超過保留天數的 `Daily_*.zip`（新增 `--retention-days`）
+- 新設定 `DOWNLOAD_TAIFEX_TICK_RETENTION_DAYS`（預設 180；0 = 不清理）
+- 每日 download job 會一併把清理結果寫回 GCS `taifex_tick.tar.gz`（目前 148 MB / 88 天，原本無上限成長）
+- 其他 K 線資料：微台 5K／60K 狀態檔本來就只保留最近 200 根；個股日 K 為策略與回測所需，不清理
 
 ### v5.40.0 - 2026-10-15
 

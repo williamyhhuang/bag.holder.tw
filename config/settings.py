@@ -237,6 +237,8 @@ class DownloadSettings(BaseSettings):
     gap_check_days: int = Field(default=180, env="DOWNLOAD_GAP_CHECK_DAYS")
     # 每檔 CSV 只讀檔尾此位元組數判斷近期日期（約 80 bytes/列，16KB ≈ 200 列 > 180 天）
     gap_check_tail_bytes: int = Field(default=16384, env="DOWNLOAD_GAP_CHECK_TAIL_BYTES")
+    # 期交所 tick（Daily_YYYY_MM_DD.zip）保留天數；超過者在每日 download job 刪除（0 = 不清理）
+    taifex_tick_retention_days: int = Field(default=180, env="DOWNLOAD_TAIFEX_TICK_RETENTION_DAYS")
 
     class Config:
         extra = 'ignore'
