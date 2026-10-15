@@ -9,8 +9,8 @@
 # 轉實盤：把 provisioning_model 改 "STANDARD"、preemptible 改 false、
 #         移除 instance_termination_action、automatic_restart 改 true 即可。
 #
-# 注意：startup-script 變更會觸發 VM 重啟（allow_stopping_for_update），
-#       請挑非交易時段（台北 13:35–14:30）merge。
+# 注意：startup-script 變更只會 in-place 更新 metadata，VM 不會重啟；
+#       新腳本在下次開機（或 VM 上手動執行 google_metadata_script_runner startup）才生效。
 # ──────────────────────────────────────────────────────────────────────────────
 
 locals {

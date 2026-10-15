@@ -1287,7 +1287,12 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
 - **除錯**：`gcloud compute ssh bag-holder-mtx-trader --zone=asia-east1-b --tunnel-through-iap`，
   `journalctl -u 'mtx-60m-alert@day.service'`；container log 走 gcplogs 進 Cloud Logging（`resource.type="gce_instance"`）
 
-> ⚠️ `mtx-trader-startup.sh` 變更會觸發 VM 重啟（`allow_stopping_for_update`），請挑非交易時段（台北 13:35–14:30 或週末 05:30 後）merge。
+> ⚠️ `mtx-trader-startup.sh` 變更經 terraform 只會 in-place 更新 VM metadata，**VM 不會重啟、新腳本不會立即生效**；
+> 要等下次開機（週一 08:00 自動啟動）或手動在 VM 上重跑開機腳本：
+>
+> ```bash
+> gcloud compute ssh bag-holder-mtx-trader --zone=asia-east1-b --tunnel-through-iap --project bag-holder-tw --command "sudo google_metadata_script_runner startup"
+> ```
 
 ---
 
@@ -1371,6 +1376,7 @@ docker compose up -d
 - `scripts/run_mtx_60m_alert.py` 新增 `--interval {5,60}`；entrypoint 新增 `INTERVAL` 環境變數
 - VM 新增 `mtx-5m-alert@day/night` systemd timer（日盤 08:50–13:45、夜盤 15:05–05:00 每 5 分鐘），
   launcher 改名 `launch-ma-alert.sh`，並以 `flock` 讓 5K / 60K 任務排隊，避免同帳號並行登入富邦
+- 更正文件：startup-script 變更不會讓 VM 重啟，需重開機或手動執行 `google_metadata_script_runner startup` 才生效
 
 ### v5.39.0 - 2026-10-14
 
