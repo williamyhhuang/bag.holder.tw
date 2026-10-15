@@ -80,7 +80,8 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
         interval_minutes=interval,
     )
     save_candle_state(state_file, rows)
-    result = evaluate_ma_alert(rows)
+    strict_order = interval in settings.mtx_ma_alert.strict_order_intervals
+    result = evaluate_ma_alert(rows, strict_order=strict_order)
     if result is None:
         logger.warning("%dK 資料不足：需要至少 21 根已完成 K 棒，目前 %d 根", interval, len(rows))
         return 0
@@ -116,7 +117,7 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
         return 0
 
     logger.info("%dK %s條件成立：%s", interval, signal_label, result.bar_time)
-    message = format_alert(symbol, session, result, interval_minutes=interval)
+    message = format_alert(symbol, session, result, interval_minutes=interval, strict_order=strict_order)
     if not TelegramNotifier().send_message(message, parse_mode=None):
         logger.error("Telegram 通知發送失敗")
         if on_change_only:

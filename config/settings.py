@@ -1319,6 +1319,12 @@ class MTXMAAlertSettings(BaseSettings):
         description="這些 K 棒週期（分鐘）只在多排／空排「剛成立或轉向」時通知，避免每根 K 重複發送；"
                     "其餘週期（如 60K）每根成立都通知",
     )
+    strict_order_intervals: List[int] = Field(
+        default=[5],
+        validation_alias=AliasChoices("MTX_MA_ALERT_STRICT_ORDER_INTERVALS"),
+        description="這些 K 棒週期（分鐘）的排列條件採嚴格順序：多排 MA5 > MA10 > MA20、空排 MA5 < MA10 < MA20；"
+                    "其餘週期（如 60K）沿用 MA5 ≥ MA10 或 MA5 ≥ MA20（空排鏡像）",
+    )
 
     model_config = {
         "extra": "ignore",
