@@ -28,6 +28,10 @@ INTERVAL="\${2:-60}"
 if ! docker pull ${IMAGE}; then
   echo "WARNING: image pull failed; using cached image if available" >&2
 fi
+# 每次 pull :latest 都會留下未標記的舊 image，不清理會塞滿 VM 磁碟導致 pull 失敗
+docker image prune -f >/dev/null 2>&1 || true
+# MTX_60M_STATE_FILE 供不認得 INTERVAL 的舊 image 使用：舊 image 一律跑 60K 邏輯，
+# 固定指向 60K 狀態檔（同一根 K 已通知的 marker 會擋掉重複發送）
 # 60K 與 5K 同時觸發時排隊執行，避免同一富邦帳號並行登入（lock 由 fd 9 持有至 container 結束）
 exec 9>/var/lib/mtx/alert.lock
 if command -v flock >/dev/null; then
@@ -38,6 +42,7 @@ exec docker run --rm --name "mtx-\${INTERVAL}m-alert" \\
   -e SESSION="\${SESSION}" \\
   -e INTERVAL="\${INTERVAL}" \\
   -e MTX_MA_STATE_FILE=/var/lib/mtx/state/\${INTERVAL}m-bars.json \\
+  -e MTX_60M_STATE_FILE=/var/lib/mtx/state/60m-bars.json \\
   -e APP_ENV=production \\
   -e PYTHONUNBUFFERED=1 \\
   -v /var/lib/mtx/state:/var/lib/mtx/state \\

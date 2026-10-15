@@ -1376,6 +1376,8 @@ docker compose up -d
 - `scripts/run_mtx_60m_alert.py` 新增 `--interval {5,60}`；entrypoint 新增 `INTERVAL` 環境變數
 - VM 新增 `mtx-5m-alert@day/night` systemd timer（日盤 08:50–13:45、夜盤 15:05–05:00 每 5 分鐘），
   launcher 改名 `launch-ma-alert.sh`，並以 `flock` 讓 5K / 60K 任務排隊，避免同帳號並行登入富邦
+- launcher 每次 pull 後 `docker image prune -f`：未清理的舊 image 塞滿 VM 磁碟，導致新 image pull 失敗
+- launcher 同時傳 `MTX_60M_STATE_FILE`，新 image 未拉成功前（舊 image）60K 狀態仍寫在 VM 持久磁碟
 - 更正文件：startup-script 變更不會讓 VM 重啟，需重開機或手動執行 `google_metadata_script_runner startup` 才生效
 
 ### v5.39.0 - 2026-10-14
