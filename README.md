@@ -1277,11 +1277,10 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
 - **成本**：不使用常駐 Cloud Run Job；短任務共用 e2-small Spot VM
 - **網路**：VM 無外部 IP，egress 走既有 Cloud NAT 固定 IP → **Fubon API 白名單不需變動**
 - **Image 更新**：每次 60K 任務啟動前 `docker pull :latest`
-- **60K 多排通知**：MA5／MA10／MA20 斜率皆正，且 `MA5 ≥ MA10` 或 `MA5 ≥ MA20`；
-- **60K 空排通知**：MA5／MA10／MA20 斜率皆負，且 `MA5 ≤ MA10` 或 `MA5 ≤ MA20`；
+- **60K 多排通知**：MA5／MA10／MA20 斜率皆正，且 `MA5 ≥ MA10 ≥ MA20`；
+- **60K 空排通知**：MA5／MA10／MA20 斜率皆負，且 `MA5 ≤ MA10 ≤ MA20`；
   最近 200 根已完成 K 棒保存在 VM 持久磁碟 `/var/lib/mtx/state/60m-bars.json`
-- **5K 多空排列通知**：排列條件為**嚴格順序**——多排 `MA5 > MA10 > MA20`、空排 `MA5 < MA10 < MA20`，
-  且三條均線斜率同向（皆正／皆負）；採嚴格順序的週期由 `MTX_MA_ALERT_STRICT_ORDER_INTERVALS`（預設 `[5]`）設定。
+- **5K 多空排列通知**：條件與 60K 相同（多排 `MA5 ≥ MA10 ≥ MA20`、空排 `MA5 ≤ MA10 ≤ MA20`，且三條均線斜率同向），
   只在多排／空排**剛成立或轉向**時發送（延續中不重複通知），
   上一根訊號記在 `/var/lib/mtx/state/5m-bars.json.last-signal`；
   哪些週期採「轉變才通知」由 `MTX_MA_ALERT_NOTIFY_ON_CHANGE_INTERVALS`（預設 `[5]`）設定。
@@ -1376,6 +1375,14 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.43.0 - 2026-10-21
+
+**5K / 60K 均線排列條件統一為含等號的完整排列**
+
+- 多排：`MA5 ≥ MA10 ≥ MA20`；空排：`MA5 ≤ MA10 ≤ MA20`；三條均線斜率同向的條件不變
+- 60K 原本 `MA5 ≥ MA10 或 MA5 ≥ MA20` 的寬鬆條件、5K 的嚴格不等號皆改為此規則
+- 移除 `MTX_MA_ALERT_STRICT_ORDER_INTERVALS` 設定（兩種週期已共用同一條件）
 
 ### v5.42.0 - 2026-10-15
 

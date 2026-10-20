@@ -136,16 +136,11 @@ def completed_candles(
     return sorted(by_time.items())
 
 
-def evaluate_ma_alert(
-    candles: Iterable[tuple[datetime, float]],
-    strict_order: bool = False,
-) -> Optional[MAAlertResult]:
+def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAAlertResult]:
     """判斷分 K（60K / 5K）多排或其鏡像空排條件。
 
-    多排：三條均線斜率皆正，且 MA5 >= MA10 或 MA5 >= MA20。
-    空排：三條均線斜率皆負，且 MA5 <= MA10 或 MA5 <= MA20。
-    strict_order=True（5K 預設）時排列改為嚴格：
-    多排 MA5 > MA10 > MA20、空排 MA5 < MA10 < MA20（斜率條件不變）。
+    多排：三條均線斜率皆正，且 MA5 >= MA10 >= MA20。
+    空排：三條均線斜率皆負，且 MA5 <= MA10 <= MA20。
 
     斜率定義為「本根 K 的 MA 減去前一根 K 的 MA」，因此至少需要
     21 根已完成 K 棒才能判斷 MA20 斜率。
@@ -164,14 +159,8 @@ def evaluate_ma_alert(
     ma5, slope5 = latest_and_slope(5)
     ma10, slope10 = latest_and_slope(10)
     ma20, slope20 = latest_and_slope(20)
-    if strict_order:
-        long_order = ma5 > ma10 > ma20
-        short_order = ma5 < ma10 < ma20
-    else:
-        long_order = ma5 >= ma10 or ma5 >= ma20
-        short_order = ma5 <= ma10 or ma5 <= ma20
-    long_matched = slope5 > 0 and slope10 > 0 and slope20 > 0 and long_order
-    short_matched = slope5 < 0 and slope10 < 0 and slope20 < 0 and short_order
+    long_matched = slope5 > 0 and slope10 > 0 and slope20 > 0 and ma5 >= ma10 >= ma20
+    short_matched = slope5 < 0 and slope10 < 0 and slope20 < 0 and ma5 <= ma10 <= ma20
     signal = "long" if long_matched else "short" if short_matched else None
     return MAAlertResult(
         bar_time=rows[-1][0],
@@ -256,16 +245,12 @@ def format_alert(
     session: str,
     result: MAAlertResult,
     interval_minutes: int = 60,
-    strict_order: bool = False,
 ) -> str:
     session_label = "日盤" if session == "day" else "夜盤"
     is_long = result.signal == "long"
     signal_label = "多排" if is_long else "空排"
     icon = "📈" if is_long else "📉"
-    if strict_order:
-        order = "MA5 > MA10 > MA20" if is_long else "MA5 < MA10 < MA20"
-    else:
-        order = "MA5 ≥ MA10 或 MA5 ≥ MA20" if is_long else "MA5 ≤ MA10 或 MA5 ≤ MA20"
+    order = "MA5 ≥ MA10 ≥ MA20" if is_long else "MA5 ≤ MA10 ≤ MA20"
     condition = f"{order}，且三條均線斜率皆為{'正' if is_long else '負'}"
     return (
         f"{icon} 微台 {interval_minutes}K {signal_label}通知\n"

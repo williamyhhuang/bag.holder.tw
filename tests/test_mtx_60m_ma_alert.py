@@ -36,7 +36,7 @@ def test_matches_when_all_slopes_positive_and_mas_bullishly_aligned():
     assert result.ma20_slope > 0
 
 
-def test_matches_when_ma5_is_above_ma10_but_below_ma20():
+def test_rejects_when_ma5_is_above_ma10_but_below_ma20():
     closes = [
         112, 100, 117, 95, 86, 84, 120, 107, 89, 119, 102,
         100, 106, 80, 87, 84, 93, 98, 82, 86, 118,
@@ -47,10 +47,10 @@ def test_matches_when_ma5_is_above_ma10_but_below_ma20():
     assert result is not None
     assert result.ma5 >= result.ma10
     assert result.ma5 < result.ma20
-    assert result.matched is True
+    assert result.matched is False
 
 
-def test_matches_when_ma5_is_above_ma20_but_below_ma10():
+def test_rejects_when_ma5_is_above_ma20_but_below_ma10():
     closes = [
         84, 112, 108, 94, 102, 94, 112, 94, 85, 96, 84,
         103, 105, 105, 119, 88, 113, 113, 83, 90, 120,
@@ -61,7 +61,7 @@ def test_matches_when_ma5_is_above_ma20_but_below_ma10():
     assert result is not None
     assert result.ma5 < result.ma10
     assert result.ma5 >= result.ma20
-    assert result.matched is True
+    assert result.matched is False
 
 
 def test_does_not_match_when_short_ma_slope_is_not_positive():
@@ -85,7 +85,7 @@ def test_matches_short_when_all_slopes_negative_and_mas_bearishly_aligned():
     assert result.ma20_slope < 0
 
 
-def test_matches_short_when_ma5_is_below_ma10_but_above_ma20():
+def test_rejects_short_when_ma5_is_below_ma10_but_above_ma20():
     long_closes = [
         112, 100, 117, 95, 86, 84, 120, 107, 89, 119, 102,
         100, 106, 80, 87, 84, 93, 98, 82, 86, 118,
@@ -95,10 +95,10 @@ def test_matches_short_when_ma5_is_below_ma10_but_above_ma20():
     assert result is not None
     assert result.ma5 <= result.ma10
     assert result.ma5 > result.ma20
-    assert result.signal == "short"
+    assert result.matched is False
 
 
-def test_matches_short_when_ma5_is_below_ma20_but_above_ma10():
+def test_rejects_short_when_ma5_is_below_ma20_but_above_ma10():
     long_closes = [
         84, 112, 108, 94, 102, 94, 112, 94, 85, 96, 84,
         103, 105, 105, 119, 88, 113, 113, 83, 90, 120,
@@ -108,7 +108,7 @@ def test_matches_short_when_ma5_is_below_ma20_but_above_ma10():
     assert result is not None
     assert result.ma5 > result.ma10
     assert result.ma5 <= result.ma20
-    assert result.signal == "short"
+    assert result.matched is False
 
 
 def test_requires_21_completed_bars_for_ma20_slope():
@@ -140,7 +140,7 @@ def test_formats_telegram_message():
     message = format_alert("MTXQ6", "day", result)
 
     assert "微台 60K" in message
-    assert "MA5 ≥ MA10 或 MA5 ≥ MA20" in message
+    assert "MA5 ≥ MA10 ≥ MA20" in message
     assert "日盤" in message
 
 
@@ -150,7 +150,7 @@ def test_formats_short_telegram_message():
     message = format_alert("TMFI6", "night", result)
 
     assert "📉 微台 60K 空排通知" in message
-    assert "MA5 ≤ MA10 或 MA5 ≤ MA20" in message
+    assert "MA5 ≤ MA10 ≤ MA20" in message
     assert "三條均線斜率皆為負" in message
     assert "夜盤" in message
 
@@ -331,7 +331,7 @@ def test_5m_runner_notifies_only_when_alignment_changes(tmp_path):
     # 第一次成立多排 → 通知
     assert _run_5m(runner, tmp_path, up, base, sent) == 0
     assert len(sent) == 1 and "微台 5K 多排通知" in sent[0]
-    assert "MA5 > MA10 > MA20" in sent[0]
+    assert "MA5 ≥ MA10 ≥ MA20" in sent[0]
 
     # 下一根仍是多排 → 不重複通知
     assert _run_5m(runner, tmp_path, up + [125], base + timedelta(minutes=5), sent) == 0
@@ -343,62 +343,45 @@ def test_5m_runner_notifies_only_when_alignment_changes(tmp_path):
     assert len(sent) == 2 and "微台 5K 空排通知" in sent[1]
 
 
-# ── 5K 嚴格排列 ─────────────────────────────────────────────────────────────
 
-LOOSE_LONG_ABOVE_MA10_BELOW_MA20 = [
-    112, 100, 117, 95, 86, 84, 120, 107, 89, 119, 102,
-    100, 106, 80, 87, 84, 93, 98, 82, 86, 118,
-]
-LOOSE_LONG_ABOVE_MA20_BELOW_MA10 = [
-    84, 112, 108, 94, 102, 94, 112, 94, 85, 96, 84,
-    103, 105, 105, 119, 88, 113, 113, 83, 90, 120,
-]
+# ── 排列含等號：多排 MA5 >= MA10 >= MA20、空排 MA5 <= MA10 <= MA20 ─────────────
+
+# MA5 == MA10 == 60、MA20 == 55，三條均線斜率皆正
+EQUAL_MA5_MA10_LONG = [40] + [50] * 10 + [62, 60, 60, 60, 58, 60, 60, 60, 59, 61]
 
 
-def test_strict_order_matches_fully_aligned_long_and_short():
-    long_result = evaluate_ma_alert(_rows(range(100, 121)), strict_order=True)
-    short_result = evaluate_ma_alert(_rows(range(120, 99, -1)), strict_order=True)
+def test_long_matches_when_ma5_equals_ma10():
+    result = evaluate_ma_alert(_rows(EQUAL_MA5_MA10_LONG))
 
-    assert long_result.signal == "long"
-    assert long_result.ma5 > long_result.ma10 > long_result.ma20
-    assert short_result.signal == "short"
-    assert short_result.ma5 < short_result.ma10 < short_result.ma20
-
-
-def test_strict_order_rejects_partial_long_alignment():
-    for closes in (LOOSE_LONG_ABOVE_MA10_BELOW_MA20, LOOSE_LONG_ABOVE_MA20_BELOW_MA10):
-        assert evaluate_ma_alert(_rows(closes)).signal == "long"
-        assert evaluate_ma_alert(_rows(closes), strict_order=True).matched is False
+    assert result.ma5 == result.ma10 == 60
+    assert result.ma20 == 55
+    assert min(result.ma5_slope, result.ma10_slope, result.ma20_slope) > 0
+    assert result.signal == "long"
 
 
-def test_strict_order_rejects_partial_short_alignment():
-    for closes in (LOOSE_LONG_ABOVE_MA10_BELOW_MA20, LOOSE_LONG_ABOVE_MA20_BELOW_MA10):
-        mirrored = [200 - c for c in closes]
-        assert evaluate_ma_alert(_rows(mirrored)).signal == "short"
-        assert evaluate_ma_alert(_rows(mirrored), strict_order=True).matched is False
+def test_short_matches_when_ma5_equals_ma10():
+    result = evaluate_ma_alert(_rows([200 - c for c in EQUAL_MA5_MA10_LONG]))
+
+    assert result.ma5 == result.ma10 == 140
+    assert result.ma20 == 145
+    assert result.signal == "short"
 
 
-def test_strict_order_still_requires_slopes():
-    # 均線嚴格多排但 MA5 斜率轉負（最新一根大跌）→ 不成立
+def test_still_requires_slopes_when_aligned():
+    # 均線多排但 MA5 斜率轉負（最新一根大跌）→ 不成立
     closes = list(range(100, 141)) + [128]
-    result = evaluate_ma_alert(_rows(closes), strict_order=True)
+    result = evaluate_ma_alert(_rows(closes))
 
-    assert result.ma5 > result.ma10 > result.ma20
+    assert result.ma5 >= result.ma10 >= result.ma20
     assert result.ma5_slope < 0
     assert result.matched is False
 
 
-def test_formats_strict_order_condition():
-    result = evaluate_ma_alert(_rows(range(100, 121)), strict_order=True)
-    message = format_alert("TMFV6", "day", result, interval_minutes=5, strict_order=True)
-    assert "MA5 > MA10 > MA20，且三條均線斜率皆為正" in message
+def test_formats_5k_condition_with_equal_signs():
+    result = evaluate_ma_alert(_rows(range(100, 121)))
+    message = format_alert("TMFV6", "day", result, interval_minutes=5)
+    assert "MA5 ≥ MA10 ≥ MA20，且三條均線斜率皆為正" in message
 
-    result = evaluate_ma_alert(_rows(range(120, 99, -1)), strict_order=True)
-    message = format_alert("TMFV6", "night", result, interval_minutes=5, strict_order=True)
-    assert "MA5 < MA10 < MA20，且三條均線斜率皆為負" in message
-
-
-def test_strict_order_defaults_to_5k_only():
-    from config.settings import settings
-
-    assert settings.mtx_ma_alert.strict_order_intervals == [5]
+    result = evaluate_ma_alert(_rows(range(120, 99, -1)))
+    message = format_alert("TMFV6", "night", result, interval_minutes=5)
+    assert "MA5 ≤ MA10 ≤ MA20，且三條均線斜率皆為負" in message
