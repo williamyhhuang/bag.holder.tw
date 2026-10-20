@@ -16,8 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.settings import settings
 from src.application.services.mtx_60m_ma_alert import (
     completed_candles,
+    detect_ma5_cross,
     evaluate_ma_alert,
     format_alert,
+    format_ma5_cross_alert,
+    held_positions,
     load_candle_state,
     load_last_signal,
     mark_alert_sent,
@@ -70,6 +73,17 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
             logger.warning("有效合約清單無可用資料，改用日期推算微台近月：%s", symbol)
         candles = await client.get_futures_candles(symbol, str(interval), api_session)
 
+        positions = []
+        check_position_cross = interval == 5 and settings.mtx_ma_alert.position_ma5_cross_enabled
+        if check_position_cross:
+            try:
+                positions = held_positions(
+                    await client.get_futures_positions(),
+                    settings.mtx_ma_alert.position_symbol_keywords,
+                )
+            except Exception as exc:  # 部位查詢失敗不影響均線排列通知
+                logger.warning("查詢期貨部位失敗，略過持倉 MA5 通知：%s", exc)
+
     # 期貨 intraday API 只回傳當日資料；合併 VM 持久磁碟帶入的跨盤狀態，
     # 才有足夠的 21 根 K 棒可計算 MA20 斜率。
     state = load_candle_state(state_file)
@@ -80,6 +94,10 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
         interval_minutes=interval,
     )
     save_candle_state(state_file, rows)
+
+    if positions:
+        _notify_ma5_cross(symbol, session, interval, rows, positions, state_file)
+
     result = evaluate_ma_alert(rows)
     if result is None:
         logger.warning("%dK 資料不足：需要至少 21 根已完成 K 棒，目前 %d 根", interval, len(rows))
@@ -126,6 +144,24 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
     mark_alert_sent(alert_marker, result.bar_time)
     logger.info("Telegram 通知發送成功：%s", result.bar_time)
     return 0
+
+
+def _notify_ma5_cross(symbol, session, interval, rows, positions, state_file: Path) -> None:
+    """持有微台時，K 棒收盤站上／跌破 MA5 發送通知（同一根 K 只發一次）。"""
+    cross = detect_ma5_cross(rows)
+    if cross is None:
+        logger.info("持倉中，%dK 未穿越 MA5", interval)
+        return
+    marker = state_file.with_suffix(state_file.suffix + ".last-ma5-cross")
+    if was_alert_sent(marker, cross.bar_time):
+        logger.info("此 %dK MA5 穿越已通知，略過：%s", interval, cross.bar_time)
+        return
+    message = format_ma5_cross_alert(symbol, session, cross, positions, interval_minutes=interval)
+    if TelegramNotifier().send_message(message, parse_mode=None):
+        mark_alert_sent(marker, cross.bar_time)
+        logger.info("持倉 MA5 %s 通知發送成功：%s", cross.direction, cross.bar_time)
+    else:
+        logger.error("持倉 MA5 通知發送失敗")
 
 
 def main() -> int:

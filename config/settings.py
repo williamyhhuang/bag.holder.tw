@@ -1319,6 +1319,16 @@ class MTXMAAlertSettings(BaseSettings):
         description="這些 K 棒週期（分鐘）只在多排／空排「剛成立或轉向」時通知，避免每根 K 重複發送；"
                     "其餘週期（如 60K）每根成立都通知",
     )
+    position_ma5_cross_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MTX_MA_ALERT_POSITION_MA5_CROSS_ENABLED"),
+        description="持有微台部位時，5K 收盤站上／跌破 5K 的 MA5 即發 Telegram 通知",
+    )
+    position_symbol_keywords: List[str] = Field(
+        default=["TMF"],
+        validation_alias=AliasChoices("MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS"),
+        description="富邦部位商品代號含任一關鍵字即視為持有微台（部位代號格式可能為 TMF / FITMF 等）",
+    )
 
     model_config = {
         "extra": "ignore",

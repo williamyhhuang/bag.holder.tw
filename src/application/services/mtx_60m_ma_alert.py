@@ -176,6 +176,89 @@ def evaluate_ma_alert(candles: Iterable[tuple[datetime, float]]) -> Optional[MAA
     )
 
 
+@dataclass(frozen=True)
+class MA5CrossResult:
+    """最近一根已完成 K 棒收盤價相對 MA5 的穿越結果。"""
+
+    bar_time: datetime
+    close: float
+    ma5: float
+    direction: str  # "up" 站上 / "down" 跌破
+
+
+def detect_ma5_cross(candles: Iterable[tuple[datetime, float]]) -> Optional[MA5CrossResult]:
+    """K 棒收盤站上或跌破 MA5。
+
+    站上：上一根收盤 <= 上一根 MA5，且本根收盤 > 本根 MA5。
+    跌破：上一根收盤 >= 上一根 MA5，且本根收盤 < 本根 MA5。
+    至少需要 6 根已完成 K 棒；未穿越回傳 None。
+    """
+    rows = list(candles)
+    if len(rows) < 6:
+        return None
+    closes = np.asarray([close for _, close in rows], dtype=float)
+    ma5 = float(closes[-5:].mean())
+    prev_ma5 = float(closes[-6:-1].mean())
+    close, prev_close = float(closes[-1]), float(closes[-2])
+
+    if prev_close <= prev_ma5 and close > ma5:
+        direction = "up"
+    elif prev_close >= prev_ma5 and close < ma5:
+        direction = "down"
+    else:
+        return None
+    return MA5CrossResult(bar_time=rows[-1][0], close=close, ma5=ma5, direction=direction)
+
+
+def held_positions(
+    positions: Iterable[Mapping[str, object]],
+    keywords: Iterable[str],
+) -> list[Mapping[str, object]]:
+    """篩出商品代號含任一關鍵字（如 TMF）且仍有口數的期貨部位。"""
+    keys = [k.upper() for k in keywords if k]
+    held = []
+    for pos in positions:
+        symbol = str(pos.get("symbol") or "").upper()
+        lots = int(pos.get("tradable_lot") or 0) or int(pos.get("orig_lots") or 0)
+        if lots > 0 and any(k in symbol for k in keys):
+            held.append(pos)
+    return held
+
+
+def _position_side(pos: Mapping[str, object]) -> str:
+    text = str(pos.get("buy_sell") or "").lower()
+    if "buy" in text or text == "b":
+        return "多單"
+    if "sell" in text or text == "s":
+        return "空單"
+    return "部位"
+
+
+def format_ma5_cross_alert(
+    symbol: str,
+    session: str,
+    result: MA5CrossResult,
+    positions: Iterable[Mapping[str, object]],
+    interval_minutes: int = 5,
+) -> str:
+    session_label = "日盤" if session == "day" else "夜盤"
+    is_up = result.direction == "up"
+    icon = "🔼" if is_up else "🔽"
+    action = "站上" if is_up else "跌破"
+    holdings = "、".join(
+        f"{pos.get('symbol')} {pos.get('expiry_date')} {_position_side(pos)} "
+        f"{int(pos.get('tradable_lot') or 0) or int(pos.get('orig_lots') or 0)} 口 @ {float(pos.get('price') or 0):.0f}"
+        for pos in positions
+    )
+    return (
+        f"{icon} 微台 {interval_minutes}K {action} MA5（持倉通知）\n"
+        f"商品：{symbol}｜{session_label}\n"
+        f"K棒：{result.bar_time.strftime('%Y-%m-%d %H:%M')}｜收盤：{result.close:.0f}\n"
+        f"MA5：{result.ma5:.2f}\n"
+        f"持倉：{holdings}"
+    )
+
+
 def load_candle_state(path: Path) -> list[dict[str, object]]:
     """讀取跨排程保存的 60K 收盤資料；不存在或損壞時安全地從空狀態開始。"""
     try:

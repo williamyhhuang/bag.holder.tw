@@ -1290,6 +1290,11 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
   python scripts/run_mtx_60m_alert.py --session day --interval 5    # 5K
   python scripts/run_mtx_60m_alert.py --session night               # 60K（預設）
   ```
+- **持倉 5K MA5 通知**：5K 任務會查詢富邦期貨部位，持有微台（商品代號含 `MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS`，預設 `["TMF"]`）時：
+  - 5K 收盤**站上** MA5（上一根收盤 ≤ MA5、本根收盤 > MA5）→ `🔼 微台 5K 站上 MA5（持倉通知）`
+  - 5K 收盤**跌破** MA5（上一根收盤 ≥ MA5、本根收盤 < MA5）→ `🔽 微台 5K 跌破 MA5（持倉通知）`
+  - 訊息附持倉明細（代號、月份、多/空單、口數、成本）；同一根 K 只通知一次；部位查詢失敗不影響排列通知
+  - 關閉：`MTX_MA_ALERT_POSITION_MA5_CROSS_ENABLED=false`
 - **任務排隊**：launcher（`launch-ma-alert.sh <session> <interval>`）以 `flock` 讓 5K 與 60K 依序執行，避免同一富邦帳號並行登入
 - **Spot 搶占自救**：Cloud Scheduler 每 10 分鐘冪等呼叫 `instances.start`（對已 RUNNING 的 VM 回 400 屬預期）；
   Persistent systemd timer 會在重開機後補跑尚未執行的最新一次檢查
@@ -1376,7 +1381,14 @@ docker compose up -d
 
 ## 📝 更新日誌
 
-### v5.43.0 - 2026-10-21
+### v5.44.0 - 2026-10-21
+
+**持有微台時，5K 站上／跌破 MA5 發 Telegram 通知**
+
+- 5K 任務查詢富邦期貨部位，持有微台時 5K 收盤站上或跌破 MA5 即通知（附持倉明細）
+- 新設定 `MTX_MA_ALERT_POSITION_MA5_CROSS_ENABLED`（預設 true）、`MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS`（預設 `["TMF"]`）
+- 修正 `FubonClient.get_futures_positions`：SDK 回傳的 pyo3 物件沒有 `__dict__`，原本 `vars()` 會失敗而永遠回傳空清單
+
 
 **5K / 60K 均線排列條件統一為含等號的完整排列**
 

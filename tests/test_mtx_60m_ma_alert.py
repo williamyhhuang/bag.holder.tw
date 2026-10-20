@@ -3,8 +3,11 @@ from zoneinfo import ZoneInfo
 
 from src.application.services.mtx_60m_ma_alert import (
     completed_candles,
+    detect_ma5_cross,
     evaluate_ma_alert,
     format_alert,
+    format_ma5_cross_alert,
+    held_positions,
     load_candle_state,
     load_last_signal,
     mark_alert_sent,
@@ -282,7 +285,7 @@ def _load_runner():
     return module
 
 
-def _run_5m(runner, tmp_path, closes, now, sent):
+def _run_5m(runner, tmp_path, closes, now, sent, positions=None):
     import asyncio
     from unittest.mock import patch
 
@@ -305,6 +308,11 @@ def _run_5m(runner, tmp_path, closes, now, sent):
         async def get_futures_candles(self, symbol, timeframe, session):
             assert timeframe == "5"
             return candles
+
+        async def get_futures_positions(self):
+            if positions is None:
+                raise RuntimeError("positions unavailable")
+            return positions
 
     class FakeNotifier:
         def send_message(self, message, parse_mode=None):
@@ -385,3 +393,86 @@ def test_formats_5k_condition_with_equal_signs():
     result = evaluate_ma_alert(_rows(range(120, 99, -1)))
     message = format_alert("TMFV6", "night", result, interval_minutes=5)
     assert "MA5 ≤ MA10 ≤ MA20，且三條均線斜率皆為負" in message
+
+
+
+# ── 持倉時 5K 站上／跌破 MA5 ─────────────────────────────────────────────────
+
+TMF_LONG = {"symbol": "FITMF", "expiry_date": "202611", "buy_sell": "BSAction.Buy",
+            "price": 22000.0, "orig_lots": 2, "tradable_lot": 2}
+
+
+def _rows5(closes):
+    start = datetime(2026, 10, 21, 9, tzinfo=TW)
+    return [(start + timedelta(minutes=5 * i), c) for i, c in enumerate(closes)]
+
+
+def test_detects_close_crossing_above_ma5():
+    result = detect_ma5_cross(_rows5([100, 100, 100, 100, 100, 99, 105]))
+    assert result is not None
+    assert result.direction == "up"
+    assert result.close > result.ma5
+
+
+def test_detects_close_crossing_below_ma5():
+    result = detect_ma5_cross(_rows5([100, 100, 100, 100, 100, 101, 95]))
+    assert result is not None
+    assert result.direction == "down"
+    assert result.close < result.ma5
+
+
+def test_no_cross_when_already_above_or_below_ma5():
+    assert detect_ma5_cross(_rows5([100, 101, 102, 103, 104, 105, 106])) is None
+    assert detect_ma5_cross(_rows5([106, 105, 104, 103, 102, 101, 100])) is None
+
+
+def test_ma5_cross_requires_six_bars():
+    assert detect_ma5_cross(_rows5([100, 100, 100, 100, 105])) is None
+
+
+def test_held_positions_filters_tmf_with_lots():
+    positions = [
+        TMF_LONG,
+        {"symbol": "FITX", "orig_lots": 1, "tradable_lot": 1},
+        {"symbol": "TMFK6", "orig_lots": 0, "tradable_lot": 0},
+        {"symbol": "TMFK6", "orig_lots": 1, "tradable_lot": 0},
+    ]
+    held = held_positions(positions, ["TMF"])
+    assert [p["symbol"] for p in held] == ["FITMF", "TMFK6"]
+
+
+def test_formats_ma5_cross_alert_with_position():
+    cross = detect_ma5_cross(_rows5([100, 100, 100, 100, 100, 101, 95]))
+    message = format_ma5_cross_alert("TMFK6", "day", cross, [TMF_LONG])
+    assert "🔽 微台 5K 跌破 MA5（持倉通知）" in message
+    assert "FITMF 202611 多單 2 口 @ 22000" in message
+
+
+def _position_msgs(sent):
+    return [m for m in sent if "持倉通知" in m]
+
+
+def test_5m_runner_sends_ma5_cross_only_when_holding(tmp_path):
+    runner = _load_runner()
+    now = datetime(2026, 10, 21, 10, 0, tzinfo=TW)
+    closes = [100] * 25 + [101, 95]  # 最後一根跌破 MA5
+
+    sent = []
+    _run_5m(runner, tmp_path / "flat", closes, now, sent, positions=[])
+    assert _position_msgs(sent) == []
+
+    sent = []
+    _run_5m(runner, tmp_path / "held", closes, now, sent, positions=[TMF_LONG])
+    assert len(_position_msgs(sent)) == 1 and "跌破 MA5" in _position_msgs(sent)[0]
+
+    # 同一根 K 重跑不重複通知
+    _run_5m(runner, tmp_path / "held", closes, now, sent, positions=[TMF_LONG])
+    assert len(_position_msgs(sent)) == 1
+
+
+def test_5m_runner_ignores_position_query_failure(tmp_path):
+    runner = _load_runner()
+    sent = []
+    closes = [100] * 25 + [101, 95]
+    assert _run_5m(runner, tmp_path, closes, datetime(2026, 10, 21, 10, 0, tzinfo=TW), sent, positions=None) == 0
+    assert _position_msgs(sent) == []

@@ -474,6 +474,33 @@ class TestFubonClientFuturesAPI:
         assert positions == []
 
     @pytest.mark.asyncio
+    async def test_get_futures_positions_parses_sdk_objects_without_dict(
+        self, client_with_mock_sdk, mock_sdk
+    ):
+        class HybridPosition:  # 模擬 pyo3 物件：只有屬性、沒有 __dict__
+            __slots__ = ("symbol", "expiry_date", "buy_sell", "price", "orig_lots", "tradable_lots")
+
+            def __init__(self):
+                self.symbol = "FITMF"
+                self.expiry_date = 202611
+                self.buy_sell = "BSAction.Buy"
+                self.price = 22000.5
+                self.orig_lots = 2
+                self.tradable_lots = 1
+
+        mock_sdk.futopt_accounting.query_hybrid_position.return_value.data = [HybridPosition()]
+
+        positions = await client_with_mock_sdk.get_futures_positions()
+
+        assert len(positions) == 1
+        pos = positions[0]
+        assert pos['symbol'] == "FITMF"
+        assert pos['expiry_date'] == "202611"
+        assert "Buy" in pos['buy_sell']
+        assert pos['orig_lots'] == 2
+        assert pos['tradable_lot'] == 1
+
+    @pytest.mark.asyncio
     async def test_get_futures_margin_equity(self, client_with_mock_sdk):
         equity = await client_with_mock_sdk.get_futures_margin_equity()
         assert equity is not None

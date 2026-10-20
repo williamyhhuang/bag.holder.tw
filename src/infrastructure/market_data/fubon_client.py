@@ -585,20 +585,27 @@ class FubonClient:
             positions = []
             raw_data = result.data if isinstance(result.data, list) else []
             for item in raw_data:
-                d = item if isinstance(item, dict) else vars(item)
+                # SDK 回傳 pyo3 物件（無 __dict__），dict 與物件屬性都要支援
+                def field(*names, default=None):
+                    for name in names:
+                        value = item.get(name) if isinstance(item, dict) else getattr(item, name, None)
+                        if value is not None:
+                            return value
+                    return default
+
                 positions.append({
-                    'date': d.get('date', ''),
-                    'symbol': d.get('symbol', ''),
-                    'expiry_date': d.get('expiry_date', d.get('expiryDate', '')),
-                    'buy_sell': str(d.get('buy_sell', d.get('buySell', ''))),
-                    'price': float(d.get('price', 0) or 0),
-                    'orig_lots': int(d.get('orig_lots', d.get('origLots', 0)) or 0),
-                    'tradable_lot': int(d.get('tradable_lot', d.get('tradableLot', 0)) or 0),
-                    'order_type': str(d.get('order_type', d.get('orderType', ''))),
-                    'market_price': d.get('market_price', d.get('marketPrice', '')),
-                    'profit_or_loss': float(d.get('profit_or_loss', d.get('profitOrLoss', 0)) or 0),
-                    'initial_margin': float(d.get('initial_margin', d.get('initialMargin', 0)) or 0),
-                    'maintenance_margin': float(d.get('maintenance_margin', d.get('maintenanceMargin', 0)) or 0),
+                    'date': field('date', default=''),
+                    'symbol': str(field('symbol', default='')),
+                    'expiry_date': str(field('expiry_date', 'expiryDate', default='')),
+                    'buy_sell': str(field('buy_sell', 'buySell', default='')),
+                    'price': float(field('price', default=0) or 0),
+                    'orig_lots': int(field('orig_lots', 'origLots', default=0) or 0),
+                    'tradable_lot': int(field('tradable_lot', 'tradable_lots', 'tradableLot', default=0) or 0),
+                    'order_type': str(field('order_type', 'orderType', default='')),
+                    'market_price': field('market_price', 'marketPrice', default=''),
+                    'profit_or_loss': float(field('profit_or_loss', 'profitOrLoss', default=0) or 0),
+                    'initial_margin': float(field('initial_margin', 'initialMargin', default=0) or 0),
+                    'maintenance_margin': float(field('maintenance_margin', 'maintenanceMargin', default=0) or 0),
                 })
             return positions
 
