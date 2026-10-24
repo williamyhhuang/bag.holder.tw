@@ -77,9 +77,17 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
         check_position_cross = interval == 5 and settings.mtx_ma_alert.position_ma5_cross_enabled
         if check_position_cross:
             try:
+                await client.ensure_futopt_account(settings.mtx_ma_alert.futopt_login_retries)
+                raw_positions = await client.get_futures_positions()
                 positions = held_positions(
-                    await client.get_futures_positions(),
+                    raw_positions,
                     settings.mtx_ma_alert.position_symbol_keywords,
+                )
+                logger.info(
+                    "期貨部位 %d 筆 %s，符合微台持倉 %d 筆",
+                    len(raw_positions),
+                    _summarize_positions(raw_positions),
+                    len(positions),
                 )
             except Exception as exc:  # 部位查詢失敗不影響均線排列通知
                 logger.warning("查詢期貨部位失敗，略過持倉 MA5 通知：%s", exc)
@@ -144,6 +152,14 @@ async def run(session: str, state_file: Path, interval: int = 60) -> int:
     mark_alert_sent(alert_marker, result.bar_time)
     logger.info("Telegram 通知發送成功：%s", result.bar_time)
     return 0
+
+
+def _summarize_positions(positions) -> str:
+    """部位摘要（商品/買賣/口數），供 log 確認持倉篩選結果。"""
+    return "[" + ", ".join(
+        f"{p.get('symbol')}/{p.get('buy_sell')}/{p.get('tradable_lot')}/{p.get('orig_lots')}"
+        for p in positions
+    ) + "]"
 
 
 def _notify_ma5_cross(symbol, session, interval, rows, positions, state_file: Path) -> None:

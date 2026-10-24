@@ -1324,6 +1324,11 @@ class MTXMAAlertSettings(BaseSettings):
         validation_alias=AliasChoices("MTX_MA_ALERT_POSITION_MA5_CROSS_ENABLED"),
         description="持有微台部位時，5K 收盤站上／跌破 5K 的 MA5 即發 Telegram 通知",
     )
+    futopt_login_retries: int = Field(
+        default=3,
+        validation_alias=AliasChoices("MTX_MA_ALERT_FUTOPT_LOGIN_RETRIES"),
+        description="登入帳號清單缺少期貨帳號時重新登入的次數（富邦後端偶爾只回傳證券帳號）",
+    )
     position_symbol_keywords: List[str] = Field(
         default=["TMF"],
         validation_alias=AliasChoices("MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS"),

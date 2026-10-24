@@ -1295,6 +1295,8 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
   - 5K 收盤**跌破** MA5（上一根收盤 ≥ MA5、本根收盤 < MA5）→ `🔽 微台 5K 跌破 MA5（持倉通知）`
   - 訊息附持倉明細（代號、月份、多/空單、口數、成本）；同一根 K 只通知一次；部位查詢失敗不影響排列通知
   - 關閉：`MTX_MA_ALERT_POSITION_MA5_CROSS_ENABLED=false`
+  - 富邦登入偶爾只回傳證券帳號：缺期貨帳號時自動重新登入（`MTX_MA_ALERT_FUTOPT_LOGIN_RETRIES`，預設 3 次）
+  - 每次執行都記錄部位摘要 log：`期貨部位 N 筆 [商品/買賣/可交易口數/原始口數]，符合微台持倉 M 筆`
 - **任務排隊**：launcher（`launch-ma-alert.sh <session> <interval>`）以 `flock` 讓 5K 與 60K 依序執行，避免同一富邦帳號並行登入
 - **Spot 搶占自救**：Cloud Scheduler 每 10 分鐘冪等呼叫 `instances.start`（對已 RUNNING 的 VM 回 400 屬預期）；
   Persistent systemd timer 會在重開機後補跑尚未執行的最新一次檢查
@@ -1380,6 +1382,14 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.44.1 - 2026-10-24
+
+**修正持倉 MA5 通知因缺少期貨帳號而不發送**
+
+- 富邦登入回傳的帳號清單時有時無期貨帳號（10/22 log 顯示 Accounts 在 1 與 2 之間跳動），缺少時自動重新登入
+- 新設定 `MTX_MA_ALERT_FUTOPT_LOGIN_RETRIES`（預設 3）
+- 5K 任務記錄每次查到的期貨部位摘要，方便確認微台持倉是否被正確辨識
 
 ### v5.44.0 - 2026-10-21
 

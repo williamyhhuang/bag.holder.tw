@@ -309,6 +309,9 @@ def _run_5m(runner, tmp_path, closes, now, sent, positions=None):
             assert timeframe == "5"
             return candles
 
+        async def ensure_futopt_account(self, retries=3):
+            return True
+
         async def get_futures_positions(self):
             if positions is None:
                 raise RuntimeError("positions unavailable")
@@ -476,3 +479,14 @@ def test_5m_runner_ignores_position_query_failure(tmp_path):
     closes = [100] * 25 + [101, 95]
     assert _run_5m(runner, tmp_path, closes, datetime(2026, 10, 21, 10, 0, tzinfo=TW), sent, positions=None) == 0
     assert _position_msgs(sent) == []
+
+
+def test_5m_runner_logs_raw_positions(tmp_path, caplog):
+    import logging
+
+    runner = _load_runner()
+    sent = []
+    closes = [100] * 25 + [101, 102]
+    with caplog.at_level(logging.INFO):
+        _run_5m(runner, tmp_path, closes, datetime(2026, 10, 21, 10, 0, tzinfo=TW), sent, positions=[TMF_LONG])
+    assert any("期貨部位 1 筆" in r.message and "FITMF" in r.message for r in caplog.records)

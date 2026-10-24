@@ -204,6 +204,23 @@ class FubonClient:
                 return acc
         return None  # No futopt account; do not fall back to stock account
 
+    async def ensure_futopt_account(self, retries: int = 3, delay: float = 2.0) -> bool:
+        """登入回傳的帳號清單偶爾缺少期貨帳號（富邦後端不一致），缺少時重新登入。"""
+        for attempt in range(retries + 1):
+            if self.get_futopt_account() is not None:
+                return True
+            if attempt == retries:
+                break
+            logger.warning(
+                "登入帳號清單缺少期貨帳號（%d 個帳號），%.0f 秒後重新登入（%d/%d）",
+                len(self.accounts.data) if self.accounts and self.accounts.data else 0,
+                delay, attempt + 1, retries,
+            )
+            await asyncio.sleep(delay)
+            await self.close()
+            await self._initialize_sdk()
+        return False
+
     def get_stock_account(self):
         """Get the stock account from the logged-in accounts"""
         if not self.accounts or not self.accounts.data:

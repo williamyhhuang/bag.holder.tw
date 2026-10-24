@@ -681,3 +681,46 @@ class TestGetTaiexFromFubon:
         assert result is not None
         assert result['symbol'] == 'TAIEX'
         mock_fubon.assert_called_once()
+
+
+class TestEnsureFutoptAccount:
+    @staticmethod
+    def _accounts(*types):
+        accounts = MagicMock()
+        accounts.data = []
+        for t in types:
+            acc = MagicMock()
+            acc.account_type = t
+            accounts.data.append(acc)
+        return accounts
+
+    def _client(self, logins):
+        client = FubonClient(user_id='A123456789', api_key='k', cert_path='/tmp/test.p12')
+        client.accounts = logins.pop(0)
+        client.is_logged_in = True
+
+        async def relogin():
+            client.accounts = logins.pop(0)
+
+        async def close():
+            pass
+
+        client._initialize_sdk = relogin
+        client.close = close
+        return client
+
+    @pytest.mark.asyncio
+    async def test_relogins_until_futopt_account_appears(self):
+        client = self._client([self._accounts('stock'), self._accounts('stock'), self._accounts('stock', 'futopt')])
+        assert await client.ensure_futopt_account(retries=3, delay=0) is True
+        assert client.get_futopt_account().account_type == 'futopt'
+
+    @pytest.mark.asyncio
+    async def test_gives_up_after_retries(self):
+        client = self._client([self._accounts('stock'), self._accounts('stock')])
+        assert await client.ensure_futopt_account(retries=1, delay=0) is False
+
+    @pytest.mark.asyncio
+    async def test_no_relogin_when_futopt_present(self):
+        client = self._client([self._accounts('stock', 'futopt')])
+        assert await client.ensure_futopt_account(retries=3, delay=0) is True
