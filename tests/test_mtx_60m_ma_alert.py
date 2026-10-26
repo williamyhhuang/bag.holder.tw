@@ -490,3 +490,12 @@ def test_5m_runner_logs_raw_positions(tmp_path, caplog):
     with caplog.at_level(logging.INFO):
         _run_5m(runner, tmp_path, closes, datetime(2026, 10, 21, 10, 0, tzinfo=TW), sent, positions=[TMF_LONG])
     assert any("期貨部位 1 筆" in r.message and "FITMF" in r.message for r in caplog.records)
+
+
+def test_default_keywords_match_fubon_micro_taiex_symbol():
+    from config.settings import settings
+
+    fitm = {"symbol": "FITM", "expiry_date": "202611", "buy_sell": "BSAction.Sell", "orig_lots": 1, "tradable_lot": 1}
+    others = [{"symbol": "FITX", "orig_lots": 1, "tradable_lot": 1}, {"symbol": "FIMTX", "orig_lots": 1, "tradable_lot": 1}]
+    held = held_positions([fitm, *others], settings.mtx_ma_alert.position_symbol_keywords)
+    assert [p["symbol"] for p in held] == ["FITM"]

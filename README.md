@@ -1290,7 +1290,7 @@ VM 上的 systemd timer 每根 60K 收完後啟動一次性 Docker container。�
   python scripts/run_mtx_60m_alert.py --session day --interval 5    # 5K
   python scripts/run_mtx_60m_alert.py --session night               # 60K（預設）
   ```
-- **持倉 5K MA5 通知**：5K 任務會查詢富邦期貨部位，持有微台（商品代號含 `MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS`，預設 `["TMF"]`）時：
+- **持倉 5K MA5 通知**：5K 任務會查詢富邦期貨部位，持有微台（商品代號含 `MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS`，預設 `["FITM", "TMF"]`；富邦帳務 API 的微台代號為 `FITM`）時：
   - 5K 收盤**站上** MA5（上一根收盤 ≤ MA5、本根收盤 > MA5）→ `🔼 微台 5K 站上 MA5（持倉通知）`
   - 5K 收盤**跌破** MA5（上一根收盤 ≥ MA5、本根收盤 < MA5）→ `🔽 微台 5K 跌破 MA5（持倉通知）`
   - 訊息附持倉明細（代號、月份、多/空單、口數、成本）；同一根 K 只通知一次；部位查詢失敗不影響排列通知
@@ -1382,6 +1382,13 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.44.2 - 2026-10-27
+
+**修正持倉 MA5 通知辨識不到微台部位**
+
+- 富邦帳務 API 的微台商品代號為 `FITM`（行情代號才是 `TMF`），原預設關鍵字 `["TMF"]` 永遠篩不到持倉
+- `MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS` 預設改為 `["FITM", "TMF"]`
 
 ### v5.44.1 - 2026-10-24
 

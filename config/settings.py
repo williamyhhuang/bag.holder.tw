@@ -1330,9 +1330,9 @@ class MTXMAAlertSettings(BaseSettings):
         description="登入帳號清單缺少期貨帳號時重新登入的次數（富邦後端偶爾只回傳證券帳號）",
     )
     position_symbol_keywords: List[str] = Field(
-        default=["TMF"],
+        default=["FITM", "TMF"],
         validation_alias=AliasChoices("MTX_MA_ALERT_POSITION_SYMBOL_KEYWORDS"),
-        description="富邦部位商品代號含任一關鍵字即視為持有微台（部位代號格式可能為 TMF / FITMF 等）",
+        description="富邦部位商品代號含任一關鍵字即視為持有微台（富邦帳務 API 的微台代號為 FITM；行情代號為 TMF）",
     )
 
     model_config = {
