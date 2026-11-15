@@ -83,10 +83,15 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
     if result.stocks.empty:
         return [f"{header}\n\n今日無符合條件的股票"]
 
-    shown = result.stocks.head(max_stocks) if max_stocks > 0 else result.stocks
+    return _chunk_lines(header, _grouped_lines(result.stocks, result.hot_sub_industries, max_stocks))
+
+
+def _grouped_lines(stocks: pd.DataFrame, hot_sub_industries: pd.DataFrame, max_stocks: int) -> List[str]:
+    """依代表細產業分組（熱門細產業依漲幅排名排序，「其他」最後），每檔一行代號 名稱 收盤價 漲跌幅"""
+    shown = stocks.head(max_stocks) if max_stocks > 0 else stocks
     order = {}
-    if not result.hot_sub_industries.empty:
-        for i, r in result.hot_sub_industries.reset_index(drop=True).iterrows():
+    if not hot_sub_industries.empty:
+        for i, r in hot_sub_industries.reset_index(drop=True).iterrows():
             order[f"{r['chain']}/{r['name']}"] = i
     groups: Dict[str, List[str]] = {}
     for _, r in shown.iterrows():
@@ -101,10 +106,14 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
         lines.append("")
         lines.append(f"🏷 <b>{html.escape(group)}</b>")
         lines.extend(groups[group])
-    if len(shown) < len(result.stocks):
+    if len(shown) < len(stocks):
         lines.append("")
-        lines.append(f"…另有 {len(result.stocks) - len(shown)} 檔")
+        lines.append(f"…另有 {len(stocks) - len(shown)} 檔")
+    return lines
 
+
+def _chunk_lines(header: str, lines: List[str]) -> List[str]:
+    """超過 Telegram 長度時依行切段"""
     chunks: List[str] = []
     current = header
     for line in lines:
@@ -118,6 +127,61 @@ def format_for_telegram(result: MACrossScanResult, show_filter: bool, max_stocks
     return chunks
 
 
+ALIGN_LABELS = {"bull": "🔴 多頭排列", "bear": "🟢 空頭排列"}
+
+
+def _align_title(periods) -> str:
+    ps = sorted(periods)
+    return "/".join(map(str, ps)) + "MA"
+
+
+def format_alignment_for_telegram(
+    result: MACrossScanResult, show_filter: bool, max_stocks: int = 30, periods=(5, 10, 20)
+) -> List[str]:
+    """均線多頭／空頭排列訊息：標題後分「多頭」「空頭」兩段，每段依細產業分組（版型同 format_for_telegram）"""
+    as_of = result.as_of
+    day = f"{as_of:%Y-%m-%d}（{WEEKDAYS[as_of.weekday()]}）" if as_of else "-"
+    stocks = result.align_stocks
+    label = "細產業過濾後" if show_filter else "符合"
+    ps = sorted(periods)
+    bull_rule = "≥".join(f"{n}MA" for n in ps)
+    bear_rule = "≤".join(f"{n}MA" for n in ps)
+    header = (
+        f"<b>📊 均線排列（{_align_title(ps)}）</b>\n{day}・{label} <b>{len(stocks)}</b> 檔"
+    )
+    if stocks.empty:
+        return [f"{header}\n\n今日無新形成多頭／空頭排列的股票"]
+
+    lines: List[str] = []
+    for direction, rule in (("bull", bull_rule), ("bear", bear_rule)):
+        part = stocks[stocks["direction"] == direction]
+        lines.append("")
+        lines.append(f"<b>{ALIGN_LABELS[direction]}</b>（{rule}）{len(part)} 檔")
+        if part.empty:
+            lines.append("無")
+            continue
+        lines.extend(_grouped_lines(part, result.hot_sub_industries, max_stocks))
+    return _chunk_lines(header, lines)
+
+
+def print_alignment(result: MACrossScanResult, show_filter: bool) -> None:
+    cfg = settings.ma_cross
+    print(
+        f"\n📊 均線排列（{_align_title(cfg.align_periods)}，最近 {cfg.align_lookback_days} 日內形成，"
+        f"成交量 ≥ {cfg.min_volume_lots:,} 張）：{len(result.align_candidates)} 檔"
+        + (f"，細產業過濾後 {len(result.align_stocks)} 檔" if show_filter else "")
+    )
+    for direction in ("bull", "bear"):
+        part = result.align_stocks[result.align_stocks["direction"] == direction]
+        print(f"  {ALIGN_LABELS[direction]}：{len(part)} 檔")
+        for _, r in part.iterrows():
+            subs = r["hot_sub_industries"] if show_filter else r["sub_industries"]
+            print(
+                f"    {r['formed_date']}  {r['code']:<6} {r['name']:<8} {r['sector']:<6} "
+                f"收 {r['close']:>8.2f}  5/10/20MA {r['ma5']:.2f}/{r['ma10']:.2f}/{r['ma20']:.2f}  {subs}"
+            )
+
+
 def send_telegram(chunks: List[str], chat_id: Optional[str] = None) -> bool:
     notifier = TelegramNotifier()
     target = chat_id or settings.ma_cross.telegram_chat_id
@@ -129,7 +193,9 @@ def today_taipei() -> date:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="5/10MA 穿越下彎或走平 60MA 篩選 + 細產業指標過濾")
+    parser = argparse.ArgumentParser(
+        description="5/10MA 穿越下彎或走平 60MA 篩選 + 均線多頭／空頭排列 + 細產業指標過濾"
+    )
     parser.add_argument("--no-sub-industry-filter", action="store_true", help="不套用細產業指標過濾")
     parser.add_argument("--refresh-sub-industries", action="store_true", help="強制重新抓取細產業對照")
     parser.add_argument("--output-dir", help=f"輸出目錄（預設 {settings.ma_cross.output_dir}）")
@@ -160,12 +226,20 @@ def main(argv=None) -> int:
         print(f"⏭️ 最新資料日 {result.as_of} 不是今天 {today_taipei()}（休市或資料未更新），略過")
         return 0
 
+    align_enabled = settings.ma_cross.align_enabled
+    align_filter = show_filter and settings.ma_cross.align_apply_sub_industry_filter
     print_result(result, show_filter)
+    if align_enabled:
+        print_alignment(result, align_filter)
     path = scanner.save(result, args.output_dir)
     print(f"\n💾 已輸出：{path}")
 
     if args.send_telegram:
         chunks = format_for_telegram(result, show_filter, settings.ma_cross.telegram_max_stocks)
+        if align_enabled:
+            chunks += format_alignment_for_telegram(
+                result, align_filter, settings.ma_cross.telegram_max_stocks, settings.ma_cross.align_periods
+            )
         if not send_telegram(chunks):
             logger.error("Telegram 發送失敗")
             return 1

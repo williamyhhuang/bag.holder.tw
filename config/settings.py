@@ -1302,6 +1302,26 @@ class MACrossSettings(BaseSettings):
         validation_alias=AliasChoices("MA_CROSS_TELEGRAM_MAX_STOCKS"),
         description="Telegram 訊息最多列出幾檔股票（完整清單見 CSV）",
     )
+    align_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MA_CROSS_ALIGN_ENABLED"),
+        description="同時執行「均線多頭／空頭排列」策略（5MA>=10MA>=20MA 或 5MA<=10MA<=20MA）",
+    )
+    align_periods: List[int] = Field(
+        default=[5, 10, 20],
+        validation_alias=AliasChoices("MA_CROSS_ALIGN_PERIODS"),
+        description="參與排列的均線週期（由短到長）",
+    )
+    align_lookback_days: int = Field(
+        default=1,
+        validation_alias=AliasChoices("MA_CROSS_ALIGN_LOOKBACK_DAYS"),
+        description="排列需在最近 N 個交易日內形成（1 = 今天才形成；0 = 不限，持續中也列出）",
+    )
+    align_apply_sub_industry_filter: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MA_CROSS_ALIGN_APPLY_SUB_INDUSTRY_FILTER"),
+        description="均線排列結果是否也套用熱門細產業過濾（CLI --no-sub-industry-filter 時一律不套用）",
+    )
 
     model_config = {
         "extra": "ignore",

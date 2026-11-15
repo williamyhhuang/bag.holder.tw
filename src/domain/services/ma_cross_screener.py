@@ -64,3 +64,76 @@ def detect_ma_cross_flat60(
         "ma60_slope": float(slope),
         "cross_date": pd.Timestamp(cross_date).date(),
     }
+
+
+# ── 均線多頭／空頭排列 ──────────────────────────────────────────────────────
+DEFAULT_ALIGN_PERIODS = (5, 10, 20)
+
+
+def _alignment_flags(close: pd.Series, periods: Sequence[int]):
+    """回傳 (多頭排列布林序列, 空頭排列布林序列, {週期: 均線})；均線未滿週期的日子兩者皆 False。
+
+    多頭：短均線 >= 長均線（5MA >= 10MA >= 20MA）；空頭：短均線 <= 長均線。
+    """
+    ps = sorted(periods)
+    ma = {n: close.rolling(n).mean() for n in ps}
+    valid = ma[ps[-1]].notna()
+    bull = valid.copy()
+    bear = valid.copy()
+    for short, long in zip(ps, ps[1:]):
+        bull &= ma[short] >= ma[long]
+        bear &= ma[short] <= ma[long]
+    # 所有均線完全相等時兩邊都成立，視為無方向
+    both = bull & bear
+    return bull & ~both, bear & ~both, ma
+
+
+def detect_ma_alignment(
+    df: pd.DataFrame,
+    periods: Sequence[int] = DEFAULT_ALIGN_PERIODS,
+    lookback_days: int = 1,
+) -> Optional[Dict]:
+    """檢查單一股票最新一日是否為均線多頭／空頭排列，且排列是最近 lookback_days 個交易日內才形成。
+
+    Args:
+        df: 依日期升冪排序、含 date / close 欄位的日K資料
+        periods: 參與排列的均線週期（預設 5/10/20）
+        lookback_days: 排列需在最近 N 個交易日內形成（1 = 今天才形成；0 = 不限，持續中也算）
+    Returns:
+        {"direction": "bull"/"bear", "formed_date", "streak_days", "close", "ma5"...}；不符合回傳 None
+    """
+    longest = max(periods)
+    if len(df) < longest + max(lookback_days, 0) + 1:
+        return None
+
+    close = df["close"].astype(float)
+    bull, bear, ma = _alignment_flags(close, periods)
+    if bull.iloc[-1]:
+        direction, flags = "bull", bull
+    elif bear.iloc[-1]:
+        direction, flags = "bear", bear
+    else:
+        return None
+
+    # 從最新一日往回數連續成立的天數
+    arr = flags.to_numpy()
+    streak = 0
+    for v in arr[::-1]:
+        if not v:
+            break
+        streak += 1
+    start = len(arr) - streak
+    if lookback_days > 0:
+        # 形成日的前一天必須有完整均線且未成立，才算「新形成」
+        if streak > lookback_days or start == 0 or pd.isna(ma[longest].iloc[start - 1]):
+            return None
+
+    result = {
+        "direction": direction,
+        "formed_date": pd.Timestamp(df["date"].iloc[start]).date(),
+        "streak_days": int(streak),
+        "close": float(close.iloc[-1]),
+    }
+    for n in sorted(periods):
+        result[f"ma{n}"] = float(ma[n].iloc[-1])
+    return result

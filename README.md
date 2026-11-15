@@ -542,6 +542,56 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 | `MA_CROSS_TELEGRAM_CHAT_ID` | （空） | 發送的 Telegram 頻道/聊天 ID，未設定沿用 `TELEGRAM_CHAT_ID`；頻道 ID 為 `-100` 開頭，且 Bot 須為頻道管理員 |
 | `MA_CROSS_TELEGRAM_MAX_STOCKS` | 30 | 訊息最多列出幾檔（0 = 不限） |
 
+#### 均線多頭／空頭排列（同一個 ma-cross 排程一起執行）
+
+`ma-cross` 同時跑第二個策略，結果另發一則 Telegram、另存 CSV：
+
+- 🔴 **多頭排列**：日K 5MA ≥ 10MA ≥ 20MA
+- 🟢 **空頭排列**：日K 5MA ≤ 10MA ≤ 20MA
+- **只列新形成**：今天成立、昨天還沒成立（`MA_CROSS_ALIGN_LOOKBACK_DAYS=1`）；排列是持續狀態，每天有數百檔處於多頭排列，只看新形成才不會洗版
+- 三條均線完全相等時視為無方向，不列入
+- 與「穿越 60MA」共用成交量門檻（≥ 1,000 張）與熱門細產業過濾；兩個策略是**各自獨立的清單**（不是 AND）
+- 判斷邏輯：`src/domain/services/ma_cross_screener.py` → `detect_ma_alignment()`
+
+```bash
+python main.py ma-cross                            # 終端機同時印出兩個策略
+python main.py ma-cross --send-telegram            # 先發「均線穿越 60MA」，再發「均線排列」
+MA_CROSS_ALIGN_LOOKBACK_DAYS=3 python main.py ma-cross   # 放寬為最近 3 個交易日內形成
+MA_CROSS_ALIGN_ENABLED=false python main.py ma-cross     # 關閉此策略
+```
+
+**Telegram 範例：**
+
+```
+📊 均線排列（5/10/20MA）
+2026-10-22（四）・細產業過濾後 9 檔
+
+🔴 多頭排列（5MA≥10MA≥20MA）3 檔
+
+🏷 軟體服務/系統整合服務
+2468  華經  55.00  +11.56%
+5202  力新  15.55  +7.99%
+...
+
+🟢 空頭排列（5MA≤10MA≤20MA）6 檔
+
+🏷 人工智慧/運算設備
+2308  台達電  1560.00  -4.88%
+6669  緯穎  1840.00  -2.39%
+...
+```
+
+結果輸出至 `data/ma_cross/ma_align_YYYYMMDD.csv`（欄位含 `direction` = bull/bear、`formed_date`、`streak_days`、5/10/20MA）。
+
+| 環境變數 | 預設 | 說明 |
+|---|---|---|
+| `MA_CROSS_ALIGN_ENABLED` | true | 是否執行均線排列策略 |
+| `MA_CROSS_ALIGN_PERIODS` | [5, 10, 20] | 參與排列的均線（由短到長） |
+| `MA_CROSS_ALIGN_LOOKBACK_DAYS` | 1 | 排列需在最近 N 個交易日內形成（1 = 今天才形成；0 = 不限，持續中也列） |
+| `MA_CROSS_ALIGN_APPLY_SUB_INDUSTRY_FILTER` | true | 是否也套用熱門細產業過濾（`--no-sub-industry-filter` 時一律不套用） |
+
+> 熱門細產業是依當日**漲幅**排名，因此空頭排列套用後，列出的是「強勢族群中轉弱的個股」。
+
 **GCP 每日排程（台北時間週一至週五 14:30）：**
 
 Cloud Scheduler `bag-holder-run-ma-cross-trigger` → Workflow `bag-holder-run-ma-cross`
@@ -1382,6 +1432,15 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.45.0 - 2026-11-16
+
+**ma-cross 排程新增「均線多頭／空頭排列」策略**
+
+- 每日 14:30 `ma-cross` 排程同時篩出日K 5MA≥10MA≥20MA（多頭）與 5MA≤10MA≤20MA（空頭）**當日新形成**的股票
+- 共用成交量門檻與熱門細產業過濾，獨立一則 Telegram 訊息（多頭／空頭分段、依細產業分組），另存 `ma_align_YYYYMMDD.csv`
+- 新設定：`MA_CROSS_ALIGN_ENABLED`、`MA_CROSS_ALIGN_PERIODS`、`MA_CROSS_ALIGN_LOOKBACK_DAYS`、`MA_CROSS_ALIGN_APPLY_SUB_INDUSTRY_FILTER`
+- 不需改 Terraform / 排程（同一個 Cloud Run Job）
 
 ### v5.44.2 - 2026-10-27
 

@@ -124,7 +124,7 @@ def run_sync_trades(args):
         return False
 
 def run_ma_cross(args):
-    """Run ma-cross command（5/10MA 穿越下彎或走平 60MA + 細產業指標過濾）"""
+    """Run ma-cross command（5/10MA 穿越下彎或走平 60MA ＋ 均線多頭／空頭排列 + 細產業指標過濾）"""
     cmd = ['python', '-m', 'src.interfaces.cli.ma_cross_main']
 
     if getattr(args, 'no_sub_industry_filter', False):
@@ -287,7 +287,7 @@ def create_parser():
     # MA-cross command
     ma_cross_parser = subparsers.add_parser(
         'ma-cross',
-        help='5/10MA 穿越下彎或走平 60MA 篩選（含細產業指標過濾）'
+        help='5/10MA 穿越下彎或走平 60MA ＋ 均線多頭／空頭排列篩選（含細產業指標過濾）'
     )
     ma_cross_parser.add_argument(
         '--no-sub-industry-filter',

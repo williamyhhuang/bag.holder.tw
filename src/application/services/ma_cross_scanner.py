@@ -6,6 +6,8 @@
 3. 以產業價值鏈平台的細產業成分股合成細產業指標（sub_industry_index），
    保留「所屬細產業指標成交值 >= 門檻，且漲幅排名前 N」的股票
 4. 附上股票名稱、官方產業別、所屬細產業
+5. 另一策略：日K 5MA>=10MA>=20MA（多頭排列）或 5MA<=10MA<=20MA（空頭排列）新形成，
+   共用同一份日K、成交量門檻與細產業過濾，結果放在 align_candidates / align_stocks
 """
 
 import glob
@@ -17,7 +19,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from config.settings import settings
-from src.domain.services.ma_cross_screener import detect_ma_cross_flat60
+from src.domain.services.ma_cross_screener import detect_ma_alignment, detect_ma_cross_flat60
 from src.domain.services.sub_industry_index import (
     build_daily_snapshot,
     compute_sub_industry_metrics,
@@ -41,6 +43,12 @@ RESULT_COLUMNS = [
     "close", "change_pct", "ma5", "ma10", "ma20", "ma60", "ma60_slope_pct", "volume",
 ]
 
+ALIGN_COLUMNS = [
+    "formed_date", "direction", "streak_days", "code", "name", "market", "sector",
+    "sub_industries", "hot_sub_industries", "main_sub_industry",
+    "close", "change_pct", "ma5", "ma10", "ma20", "volume",
+]
+
 
 @dataclass
 class MACrossScanResult:
@@ -49,6 +57,9 @@ class MACrossScanResult:
     stocks: pd.DataFrame                     # 再通過細產業過濾的股票（未啟用過濾時 = candidates）
     sub_industry_metrics: pd.DataFrame = field(default_factory=pd.DataFrame)
     hot_sub_industries: pd.DataFrame = field(default_factory=pd.DataFrame)
+    # 均線多頭／空頭排列（direction 欄：bull / bear）
+    align_candidates: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=ALIGN_COLUMNS))
+    align_stocks: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=ALIGN_COLUMNS))
 
 
 def load_price_frames(stocks_dir: str) -> Dict[str, Dict]:
@@ -118,10 +129,15 @@ class MACrossScanner:
         hot_rank = {sub_id: i for i, sub_id in enumerate(hot["sub_id"])}  # 漲幅排名，0 = 第一名
 
         # ── 均線條件 ─────────────────────────────────────────────────
+        align_enabled = getattr(cfg, "align_enabled", False)
         rows: List[Dict] = []
+        align_rows: List[Dict] = []
         for code, item in price_frames.items():
             df = item["df"]
             if df["date"].iloc[-1] != as_of_ts:  # 停牌或資料未更新
+                continue
+            # 成交量門檻（CSV 成交量單位為股），兩個策略共用
+            if df["volume"].iloc[-1] < cfg.min_volume_lots * 1000:
                 continue
             hit = detect_ma_cross_flat60(
                 df,
@@ -130,35 +146,41 @@ class MACrossScanner:
                 flat_tolerance=cfg.ma60_flat_tolerance,
                 short_periods=tuple(cfg.short_ma_periods),
             )
-            if hit is None:
+            align = None
+            if align_enabled:
+                align = detect_ma_alignment(
+                    df,
+                    periods=tuple(cfg.align_periods),
+                    lookback_days=cfg.align_lookback_days,
+                )
+            if hit is None and align is None:
                 continue
-            # 成交量門檻（CSV 成交量單位為股）
-            if df["volume"].iloc[-1] < cfg.min_volume_lots * 1000:
-                continue
-            market = item["market"]
-            subs = stock_subs.get(code, [])
-            rows.append({
-                "cross_date": hit["cross_date"],
-                "code": code,
-                "name": names.get(f"{code}.{market}", ""),
-                "market": {"TW": "上市", "TWO": "上櫃"}.get(market, market),
-                "sector": get_sector_name(industries[code]) if code in industries else "",
-                "sub_industries": "、".join(format_sub_industry(sub_industries[s]) for s in subs),
-                "hot_sub_industries": "、".join(
-                    format_sub_industry(sub_industries[s]) for s in subs if s in hot_rank
-                ),
-                # 代表細產業：所屬熱門細產業中排名最前者；無熱門細產業時取第一個所屬細產業
-                "main_sub_industry": self._main_sub_industry(subs, hot_rank, sub_industries),
-                "close": round(hit["close"], 2),
-                # 當日漲跌幅（%）：相對該股前一個有交易的日子
-                "change_pct": round((df["close"].iloc[-1] / df["close"].iloc[-2] - 1) * 100, 2),
-                "ma5": round(hit["ma5"], 2),
-                "ma10": round(hit["ma10"], 2),
-                "ma20": round(hit["ma20"], 2),
-                "ma60": round(hit["ma60"], 2),
-                "ma60_slope_pct": round(hit["ma60_slope"] * 100, 2),
-                "volume": int(df["volume"].iloc[-1]),
-            })
+
+            base = self._stock_info(code, item, df, names, industries, stock_subs, sub_industries, hot_rank)
+            if hit is not None:
+                rows.append({
+                    "cross_date": hit["cross_date"],
+                    **base,
+                    "close": round(hit["close"], 2),
+                    "ma5": round(hit["ma5"], 2),
+                    "ma10": round(hit["ma10"], 2),
+                    "ma20": round(hit["ma20"], 2),
+                    "ma60": round(hit["ma60"], 2),
+                    "ma60_slope_pct": round(hit["ma60_slope"] * 100, 2),
+                    "volume": int(df["volume"].iloc[-1]),
+                })
+            if align is not None:
+                align_rows.append({
+                    "formed_date": align["formed_date"],
+                    "direction": align["direction"],
+                    "streak_days": align["streak_days"],
+                    **base,
+                    "close": round(align["close"], 2),
+                    "ma5": round(align.get("ma5", float("nan")), 2),
+                    "ma10": round(align.get("ma10", float("nan")), 2),
+                    "ma20": round(align.get("ma20", float("nan")), 2),
+                    "volume": int(df["volume"].iloc[-1]),
+                })
 
         candidates = pd.DataFrame(rows, columns=RESULT_COLUMNS)
         if not candidates.empty:
@@ -170,11 +192,40 @@ class MACrossScanner:
         if apply_sub_industry_filter:
             stocks = candidates[candidates["hot_sub_industries"] != ""].reset_index(drop=True)
 
+        align_candidates = pd.DataFrame(align_rows, columns=ALIGN_COLUMNS)
+        if not align_candidates.empty:
+            align_candidates = align_candidates.sort_values(
+                ["direction", "formed_date", "volume"], ascending=[True, False, False]
+            ).reset_index(drop=True)
+        align_stocks = align_candidates
+        if apply_sub_industry_filter and getattr(cfg, "align_apply_sub_industry_filter", True):
+            align_stocks = align_candidates[align_candidates["hot_sub_industries"] != ""].reset_index(drop=True)
+
         logger.info(
             f"{as_of}: 均線條件 {len(candidates)} 檔，熱門細產業 {len(hot)} 個，"
             f"過濾後 {len(stocks)} 檔"
+            + (f"；均線排列 {len(align_candidates)} 檔，過濾後 {len(align_stocks)} 檔" if align_enabled else "")
         )
-        return MACrossScanResult(as_of, candidates, stocks, metrics, hot)
+        return MACrossScanResult(as_of, candidates, stocks, metrics, hot, align_candidates, align_stocks)
+
+    def _stock_info(self, code, item, df, names, industries, stock_subs, sub_industries, hot_rank) -> Dict:
+        """兩個策略共用的股票基本欄位"""
+        market = item["market"]
+        subs = stock_subs.get(code, [])
+        return {
+            "code": code,
+            "name": names.get(f"{code}.{market}", ""),
+            "market": {"TW": "上市", "TWO": "上櫃"}.get(market, market),
+            "sector": get_sector_name(industries[code]) if code in industries else "",
+            "sub_industries": "、".join(format_sub_industry(sub_industries[s]) for s in subs),
+            "hot_sub_industries": "、".join(
+                format_sub_industry(sub_industries[s]) for s in subs if s in hot_rank
+            ),
+            # 代表細產業：所屬熱門細產業中排名最前者；無熱門細產業時取第一個所屬細產業
+            "main_sub_industry": self._main_sub_industry(subs, hot_rank, sub_industries),
+            # 當日漲跌幅（%）：相對該股前一個有交易的日子
+            "change_pct": round((df["close"].iloc[-1] / df["close"].iloc[-2] - 1) * 100, 2),
+        }
 
     @staticmethod
     def _main_sub_industry(subs: List[str], hot_rank: Dict[str, int], sub_industries: Dict[str, Dict]) -> str:
@@ -189,6 +240,9 @@ class MACrossScanner:
         stamp = result.as_of.strftime("%Y%m%d") if result.as_of else "unknown"
         path = os.path.join(out_dir, f"ma_cross_{stamp}.csv")
         result.stocks.to_csv(path, index=False, encoding="utf-8-sig")
+        if getattr(self.cfg, "align_enabled", False):
+            align_path = os.path.join(out_dir, f"ma_align_{stamp}.csv")
+            result.align_stocks.to_csv(align_path, index=False, encoding="utf-8-sig")
         metrics_path = os.path.join(out_dir, f"sub_industry_metrics_{stamp}.csv")
         result.sub_industry_metrics.sort_values("change_pct", ascending=False).to_csv(
             metrics_path, index=False, encoding="utf-8-sig"
