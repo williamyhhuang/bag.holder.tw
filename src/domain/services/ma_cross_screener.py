@@ -70,10 +70,11 @@ def detect_ma_cross_flat60(
 DEFAULT_ALIGN_PERIODS = (5, 10, 20)
 
 
-def _alignment_flags(close: pd.Series, periods: Sequence[int]):
+def _alignment_flags(close: pd.Series, periods: Sequence[int], slope_days: int = 0):
     """回傳 (多頭排列布林序列, 空頭排列布林序列, {週期: 均線})；均線未滿週期的日子兩者皆 False。
 
     多頭：短均線 >= 長均線（5MA >= 10MA >= 20MA）；空頭：短均線 <= 長均線。
+    slope_days > 0 時另需斜率同向：多頭每條均線 > slope_days 日前的自己（上揚），空頭每條均線 < slope_days 日前（下彎）。
     """
     ps = sorted(periods)
     ma = {n: close.rolling(n).mean() for n in ps}
@@ -83,6 +84,11 @@ def _alignment_flags(close: pd.Series, periods: Sequence[int]):
     for short, long in zip(ps, ps[1:]):
         bull &= ma[short] >= ma[long]
         bear &= ma[short] <= ma[long]
+    if slope_days > 0:
+        for n in ps:
+            prev = ma[n].shift(slope_days)
+            bull &= ma[n] > prev
+            bear &= ma[n] < prev
     # 所有均線完全相等時兩邊都成立，視為無方向
     both = bull & bear
     return bull & ~both, bear & ~both, ma
@@ -92,22 +98,25 @@ def detect_ma_alignment(
     df: pd.DataFrame,
     periods: Sequence[int] = DEFAULT_ALIGN_PERIODS,
     lookback_days: int = 1,
+    slope_days: int = 1,
 ) -> Optional[Dict]:
-    """檢查單一股票最新一日是否為均線多頭／空頭排列，且排列是最近 lookback_days 個交易日內才形成。
+    """檢查單一股票最新一日是否為均線多頭／空頭排列（含斜率），且是最近 lookback_days 個交易日內才形成。
 
     Args:
         df: 依日期升冪排序、含 date / close 欄位的日K資料
         periods: 參與排列的均線週期（預設 5/10/20）
         lookback_days: 排列需在最近 N 個交易日內形成（1 = 今天才形成；0 = 不限，持續中也算）
+        slope_days: 斜率比較區間；多頭三條均線皆需 > N 日前（上揚），空頭皆需 < N 日前（下彎）；0 = 不看斜率
     Returns:
         {"direction": "bull"/"bear", "formed_date", "streak_days", "close", "ma5"...}；不符合回傳 None
     """
     longest = max(periods)
-    if len(df) < longest + max(lookback_days, 0) + 1:
+    slope_days = max(slope_days, 0)
+    if len(df) < longest + slope_days + max(lookback_days, 0) + 1:
         return None
 
     close = df["close"].astype(float)
-    bull, bear, ma = _alignment_flags(close, periods)
+    bull, bear, ma = _alignment_flags(close, periods, slope_days)
     if bull.iloc[-1]:
         direction, flags = "bull", bull
     elif bear.iloc[-1]:
@@ -125,7 +134,9 @@ def detect_ma_alignment(
     start = len(arr) - streak
     if lookback_days > 0:
         # 形成日的前一天必須有完整均線且未成立，才算「新形成」
-        if streak > lookback_days or start == 0 or pd.isna(ma[longest].iloc[start - 1]):
+        # （斜率需要再往前 slope_days 天的均線）
+        first_valid = start - 1 - slope_days
+        if streak > lookback_days or first_valid < 0 or pd.isna(ma[longest].iloc[first_valid]):
             return None
 
     result = {
@@ -136,4 +147,6 @@ def detect_ma_alignment(
     }
     for n in sorted(periods):
         result[f"ma{n}"] = float(ma[n].iloc[-1])
+        if slope_days > 0:
+            result[f"ma{n}_slope"] = float(ma[n].iloc[-1] / ma[n].iloc[-1 - slope_days] - 1)
     return result

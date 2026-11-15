@@ -39,13 +39,14 @@ def up_then_down():
     return list(np.linspace(90, 120, 40)) + list(np.linspace(119, 95, 25))
 
 
-def formation_len(closes, direction):
-    """截到排列剛形成那天（含當天）的長度"""
+def formation_len(closes, direction, slope_days=1):
+    """截到排列（含斜率）剛形成那天（含當天）的長度"""
     s = pd.Series(closes, dtype=float)
-    bull, bear, _ = _alignment_flags(s, (5, 10, 20))
+    bull, bear, _ = _alignment_flags(s, (5, 10, 20), slope_days)
     flags = bull if direction == "bull" else bear
-    for i in range(21, len(s)):
-        if flags.iloc[i] and not flags.iloc[i - 1] and not pd.isna(s.rolling(20).mean().iloc[i - 1]):
+    ma20 = s.rolling(20).mean()
+    for i in range(21 + slope_days, len(s)):
+        if flags.iloc[i] and not flags.iloc[i - 1] and not pd.isna(ma20.iloc[i - 1 - slope_days]):
             return i + 1
     raise AssertionError("測試資料沒有形成排列")
 
@@ -63,6 +64,7 @@ class TestDetectMaAlignment:
         assert hit["streak_days"] == 1
         assert hit["formed_date"] == df["date"].iloc[-1].date()
         assert hit["ma5"] >= hit["ma10"] >= hit["ma20"]
+        assert hit["ma5_slope"] > 0 and hit["ma10_slope"] > 0 and hit["ma20_slope"] > 0
 
     def test_bear_formed_today(self):
         closes = up_then_down()
@@ -71,6 +73,7 @@ class TestDetectMaAlignment:
         assert hit is not None
         assert hit["direction"] == "bear"
         assert hit["ma5"] <= hit["ma10"] <= hit["ma20"]
+        assert hit["ma5_slope"] < 0 and hit["ma10_slope"] < 0 and hit["ma20_slope"] < 0
 
     def test_continuing_alignment_excluded_by_default(self):
         closes = down_then_up()
@@ -107,9 +110,36 @@ class TestDetectMaAlignment:
 
     def test_aligned_since_first_valid_day_is_not_new(self):
         # 從第一天就持續上漲：沒有「未成立的前一天」，不算新形成
-        df = make_df(list(np.linspace(50, 80, 21)))
+        df = make_df(list(np.linspace(50, 80, 30)))
         assert detect_ma_alignment(df, lookback_days=5) is None
         assert detect_ma_alignment(df, lookback_days=0) is not None
+
+    def test_bull_order_but_ma20_falling_rejected(self):
+        # 高檔崩跌後反彈：5≥10≥20 已成立，但 20MA 仍在下彎（移出視窗的是高價）→ 加斜率條件不算多頭
+        closes = [200.0] * 25 + [100.0] * 10 + list(np.linspace(103, 130, 10))
+        df = make_df(closes)
+        s = df["close"].astype(float)
+        ma = {n: s.rolling(n).mean() for n in (5, 10, 20)}
+        assert ma[5].iloc[-1] >= ma[10].iloc[-1] >= ma[20].iloc[-1]
+        assert ma[20].iloc[-1] < ma[20].iloc[-2]
+        assert detect_ma_alignment(df, lookback_days=0, slope_days=0)["direction"] == "bull"
+        assert detect_ma_alignment(df, lookback_days=0, slope_days=1) is None
+
+    def test_bear_order_but_ma5_rising_rejected(self):
+        # 意藍型：當日大漲讓 5MA 上揚，但 5≤10≤20 仍成立 → 加斜率條件不算空頭
+        closes = list(np.linspace(80, 120, 30)) + list(np.linspace(118, 95, 12)) + [104.0]
+        df = make_df(closes)
+        s = df["close"].astype(float)
+        ma = {n: s.rolling(n).mean() for n in (5, 10, 20)}
+        assert ma[5].iloc[-1] <= ma[10].iloc[-1] <= ma[20].iloc[-1]
+        assert ma[5].iloc[-1] > ma[5].iloc[-2]
+        assert detect_ma_alignment(df, lookback_days=0, slope_days=0)["direction"] == "bear"
+        assert detect_ma_alignment(df, lookback_days=0, slope_days=1) is None
+
+    def test_slope_days_window(self):
+        closes = down_then_up()
+        hit = detect_ma_alignment(make_df(closes), lookback_days=0, slope_days=3)
+        assert hit is not None and hit["ma20_slope"] > 0
 
     def test_custom_periods(self):
         closes = down_then_up()
@@ -125,7 +155,7 @@ def cfg(**over):
         min_volume_lots=0, enable_sub_industry_filter=True, sub_industry_min_trade_value=1e4,
         sub_industry_top_n=10, sub_industry_weighting="equal",
         sub_industry_cache_ttl_hours=168, output_dir="unused",
-        align_enabled=True, align_periods=[5, 10, 20], align_lookback_days=1,
+        align_enabled=True, align_periods=[5, 10, 20], align_lookback_days=1, align_slope_days=1,
         align_apply_sub_industry_filter=True,
     )
     base.update(over)
@@ -216,15 +246,19 @@ class TestAlignmentTelegram:
         chunks = cli.format_alignment_for_telegram(_align_result(), show_filter=True)
         assert chunks == [
             "<b>📊 均線排列（5/10/20MA）</b>\n2026-11-16（一）・細產業過濾後 <b>3</b> 檔\n\n"
-            "<b>🔴 多頭排列</b>（5MA≥10MA≥20MA）2 檔\n\n"
+            "<b>🔴 多頭排列</b>（5MA≥10MA≥20MA，均線皆上揚）2 檔\n\n"
             "🏷 <b>鏈/甲</b>\n<b>9000</b>  股0  50.00  +1.50%\n<b>9001</b>  股1  50.00  +1.50%\n\n"
-            "<b>🟢 空頭排列</b>（5MA≤10MA≤20MA）1 檔\n\n"
+            "<b>🟢 空頭排列</b>（5MA≤10MA≤20MA，均線皆下彎）1 檔\n\n"
             "🏷 <b>鏈/甲</b>\n<b>9002</b>  股2  50.00  +1.50%"
         ]
 
     def test_empty_direction(self):
         text = cli.format_alignment_for_telegram(_align_result(bull=1, bear=0), True)[0]
-        assert "🟢 空頭排列</b>（5MA≤10MA≤20MA）0 檔\n無" in text
+        assert "🟢 空頭排列</b>（5MA≤10MA≤20MA，均線皆下彎）0 檔\n無" in text
+
+    def test_rule_without_slope(self):
+        text = cli.format_alignment_for_telegram(_align_result(), True, slope_days=0)[0]
+        assert "（5MA≥10MA≥20MA）2 檔" in text and "上揚" not in text
 
     def test_empty(self):
         text = cli.format_alignment_for_telegram(_align_result(0, 0), True)[0]

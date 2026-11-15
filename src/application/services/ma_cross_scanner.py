@@ -152,6 +152,7 @@ class MACrossScanner:
                     df,
                     periods=tuple(cfg.align_periods),
                     lookback_days=cfg.align_lookback_days,
+                    slope_days=getattr(cfg, "align_slope_days", 1),
                 )
             if hit is None and align is None:
                 continue

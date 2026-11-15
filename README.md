@@ -546,9 +546,10 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 
 `ma-cross` 同時跑第二個策略，結果另發一則 Telegram、另存 CSV：
 
-- 🔴 **多頭排列**：日K 5MA ≥ 10MA ≥ 20MA
-- 🟢 **空頭排列**：日K 5MA ≤ 10MA ≤ 20MA
-- **只列新形成**：今天成立、昨天還沒成立（`MA_CROSS_ALIGN_LOOKBACK_DAYS=1`）；排列是持續狀態，每天有數百檔處於多頭排列，只看新形成才不會洗版
+- 🔴 **多頭排列**：日K 5MA ≥ 10MA ≥ 20MA，且三條均線**皆上揚**（今日 MA > 昨日 MA）
+- 🟢 **空頭排列**：日K 5MA ≤ 10MA ≤ 20MA，且三條均線**皆下彎**（今日 MA < 昨日 MA）
+- 斜率比較區間由 `MA_CROSS_ALIGN_SLOPE_DAYS` 設定（預設 1 日；0 = 不看斜率，只看排列順序）
+- **只列新形成**：「排列＋斜率」今天成立、昨天還沒成立（`MA_CROSS_ALIGN_LOOKBACK_DAYS=1`）；排列是持續狀態，每天有數百檔處於多頭排列，只看新形成才不會洗版
 - 三條均線完全相等時視為無方向，不列入
 - 與「穿越 60MA」共用成交量門檻（≥ 1,000 張）與熱門細產業過濾；兩個策略是**各自獨立的清單**（不是 AND）
 - 判斷邏輯：`src/domain/services/ma_cross_screener.py` → `detect_ma_alignment()`
@@ -557,6 +558,7 @@ python -m src.interfaces.cli.ma_cross_main --output-dir /tmp/ma_cross
 python main.py ma-cross                            # 終端機同時印出兩個策略
 python main.py ma-cross --send-telegram            # 先發「均線穿越 60MA」，再發「均線排列」
 MA_CROSS_ALIGN_LOOKBACK_DAYS=3 python main.py ma-cross   # 放寬為最近 3 個交易日內形成
+MA_CROSS_ALIGN_SLOPE_DAYS=0 python main.py ma-cross      # 不看斜率，只看排列順序
 MA_CROSS_ALIGN_ENABLED=false python main.py ma-cross     # 關閉此策略
 ```
 
@@ -564,30 +566,26 @@ MA_CROSS_ALIGN_ENABLED=false python main.py ma-cross     # 關閉此策略
 
 ```
 📊 均線排列（5/10/20MA）
-2026-10-22（四）・細產業過濾後 9 檔
+2026-11-13（五）・細產業過濾後 1 檔
 
-🔴 多頭排列（5MA≥10MA≥20MA）3 檔
+🔴 多頭排列（5MA≥10MA≥20MA，均線皆上揚）1 檔
 
-🏷 軟體服務/系統整合服務
-2468  華經  55.00  +11.56%
-5202  力新  15.55  +7.99%
-...
+🏷 雲端運算/顧問諮詢
+3029  零壹  138.00  +5.34%
 
-🟢 空頭排列（5MA≤10MA≤20MA）6 檔
-
-🏷 人工智慧/運算設備
-2308  台達電  1560.00  -4.88%
-6669  緯穎  1840.00  -2.39%
-...
+🟢 空頭排列（5MA≤10MA≤20MA，均線皆下彎）0 檔
+無
 ```
 
 結果輸出至 `data/ma_cross/ma_align_YYYYMMDD.csv`（欄位含 `direction` = bull/bear、`formed_date`、`streak_days`、5/10/20MA）。
+未套細產業過濾時 11/13 共 18 檔（多頭 16、空頭 2）。
 
 | 環境變數 | 預設 | 說明 |
 |---|---|---|
 | `MA_CROSS_ALIGN_ENABLED` | true | 是否執行均線排列策略 |
 | `MA_CROSS_ALIGN_PERIODS` | [5, 10, 20] | 參與排列的均線（由短到長） |
 | `MA_CROSS_ALIGN_LOOKBACK_DAYS` | 1 | 排列需在最近 N 個交易日內形成（1 = 今天才形成；0 = 不限，持續中也列） |
+| `MA_CROSS_ALIGN_SLOPE_DAYS` | 1 | 斜率比較區間：多頭三條 MA 皆需高於 N 日前、空頭皆需低於 N 日前（0 = 不看斜率） |
 | `MA_CROSS_ALIGN_APPLY_SUB_INDUSTRY_FILTER` | true | 是否也套用熱門細產業過濾（`--no-sub-industry-filter` 時一律不套用） |
 
 > 熱門細產業是依當日**漲幅**排名，因此空頭排列套用後，列出的是「強勢族群中轉弱的個股」。
@@ -1432,6 +1430,14 @@ docker compose up -d
 ```
 
 ## 📝 更新日誌
+
+### v5.45.1 - 2026-11-16
+
+**均線排列策略加入斜率條件**
+
+- 多頭排列需 5/10/20MA 皆上揚（今日 > 昨日），空頭排列需皆下彎；排除「順序成立但長均線仍反向」的假訊號（如當日大漲卻被判空頭）
+- 新設定 `MA_CROSS_ALIGN_SLOPE_DAYS`（預設 1；0 = 不看斜率）
+- Telegram 段落標題註明「均線皆上揚／皆下彎」
 
 ### v5.45.0 - 2026-11-16
 

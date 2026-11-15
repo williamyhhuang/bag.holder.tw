@@ -1317,6 +1317,11 @@ class MACrossSettings(BaseSettings):
         validation_alias=AliasChoices("MA_CROSS_ALIGN_LOOKBACK_DAYS"),
         description="排列需在最近 N 個交易日內形成（1 = 今天才形成；0 = 不限，持續中也列出）",
     )
+    align_slope_days: int = Field(
+        default=1,
+        validation_alias=AliasChoices("MA_CROSS_ALIGN_SLOPE_DAYS"),
+        description="均線斜率比較區間：多頭 5/10/20MA 皆需高於 N 日前（上揚），空頭皆需低於 N 日前（下彎）；0 = 不看斜率",
+    )
     align_apply_sub_industry_filter: bool = Field(
         default=True,
         validation_alias=AliasChoices("MA_CROSS_ALIGN_APPLY_SUB_INDUSTRY_FILTER"),

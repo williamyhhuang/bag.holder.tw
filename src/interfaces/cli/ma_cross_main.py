@@ -136,7 +136,7 @@ def _align_title(periods) -> str:
 
 
 def format_alignment_for_telegram(
-    result: MACrossScanResult, show_filter: bool, max_stocks: int = 30, periods=(5, 10, 20)
+    result: MACrossScanResult, show_filter: bool, max_stocks: int = 30, periods=(5, 10, 20), slope_days: int = 1
 ) -> List[str]:
     """均線多頭／空頭排列訊息：標題後分「多頭」「空頭」兩段，每段依細產業分組（版型同 format_for_telegram）"""
     as_of = result.as_of
@@ -144,8 +144,8 @@ def format_alignment_for_telegram(
     stocks = result.align_stocks
     label = "細產業過濾後" if show_filter else "符合"
     ps = sorted(periods)
-    bull_rule = "≥".join(f"{n}MA" for n in ps)
-    bear_rule = "≤".join(f"{n}MA" for n in ps)
+    bull_rule = "≥".join(f"{n}MA" for n in ps) + ("，均線皆上揚" if slope_days > 0 else "")
+    bear_rule = "≤".join(f"{n}MA" for n in ps) + ("，均線皆下彎" if slope_days > 0 else "")
     header = (
         f"<b>📊 均線排列（{_align_title(ps)}）</b>\n{day}・{label} <b>{len(stocks)}</b> 檔"
     )
@@ -167,7 +167,8 @@ def format_alignment_for_telegram(
 def print_alignment(result: MACrossScanResult, show_filter: bool) -> None:
     cfg = settings.ma_cross
     print(
-        f"\n📊 均線排列（{_align_title(cfg.align_periods)}，最近 {cfg.align_lookback_days} 日內形成，"
+        f"\n📊 均線排列（{_align_title(cfg.align_periods)}，斜率 {cfg.align_slope_days} 日同向，"
+        f"最近 {cfg.align_lookback_days} 日內形成，"
         f"成交量 ≥ {cfg.min_volume_lots:,} 張）：{len(result.align_candidates)} 檔"
         + (f"，細產業過濾後 {len(result.align_stocks)} 檔" if show_filter else "")
     )
@@ -238,7 +239,8 @@ def main(argv=None) -> int:
         chunks = format_for_telegram(result, show_filter, settings.ma_cross.telegram_max_stocks)
         if align_enabled:
             chunks += format_alignment_for_telegram(
-                result, align_filter, settings.ma_cross.telegram_max_stocks, settings.ma_cross.align_periods
+                result, align_filter, settings.ma_cross.telegram_max_stocks,
+                settings.ma_cross.align_periods, settings.ma_cross.align_slope_days,
             )
         if not send_telegram(chunks):
             logger.error("Telegram 發送失敗")
